@@ -1,0 +1,107 @@
+"""銘柄ピック（予測台帳エントリ）のスキーマ.
+
+`plans/03_システム設計` §1.1（`prediction_ledger`）に対応。中長期 / 短期の両系統が
+同じ形で台帳化される（CL-1）。
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+HorizonType = Literal["mid_term", "short_term"]
+Direction = Literal["bullish", "bearish", "neutral"]
+ConfidenceBucket = Literal["high", "mid", "low"]
+
+
+class SubScores(BaseModel):
+    """4 分析のサブスコア（各 0〜100）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    technical: float
+    trend: float
+    fundamental: float
+    sentiment: float
+
+
+class LedgerEntry(BaseModel):
+    """予測台帳の 1 行（予測時点で確定していた情報だけで構成する）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pick_id: str
+    run_id: str
+    issued_at: str  # ISO8601 JST
+    horizon_type: HorizonType
+    symbol: str  # 4 桁コード
+    direction: Direction
+    entry: float
+    stop: float
+    target: float
+    sub_scores: SubScores
+    composite_score: float
+    concordance: float
+    confidence_raw: float
+    confidence: float
+    confidence_bucket: ConfidenceBucket
+    feature_snapshot: dict[str, object]
+    rationale_struct: dict[str, object]
+    rationale_text: str
+    model_version: str
+    source_contributions: dict[str, object]
+    is_shadow: bool = False
+    created_at: str
+
+
+class PickSummary(BaseModel):
+    """API 応答用のピック要約（`feature_snapshot` は含めない）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pick_id: str
+    issued_at: str
+    horizon_type: HorizonType
+    symbol: str
+    direction: Direction
+    entry: float
+    stop: float
+    target: float
+    composite_score: float
+    concordance: float
+    confidence: float
+    confidence_bucket: ConfidenceBucket
+    rationale_text: str
+    model_version: str
+    source_contributions: dict[str, object]
+
+
+class RejectedPick(BaseModel):
+    """最終ピックから外れた候補とその理由."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    status: Literal[
+        "rejected_inconsistent",  # 3 値の内部矛盾（サーバ側検証で却下）
+        "rejected_hard_excluded",  # ハード除外（E1〜E3）
+        "rejected_low_confidence",  # 確度フロア未満
+        "llm_error",  # LLM 呼び出し失敗
+        "all_failed",  # 弱相場で LLM が全件 should_include=false
+    ]
+    reason: str
+
+
+class PickRunResult(BaseModel):
+    """1 回のピック実行の結果（中長期 or 短期）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    horizon_type: HorizonType
+    issued_at: str
+    status: Literal["ok", "empty", "not_configured", "error"]
+    picks: list[PickSummary]
+    rejected: list[RejectedPick]
+    message: str | None = None

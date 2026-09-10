@@ -50,6 +50,251 @@
         }
       }
     },
+    "/api/picks/mid-term": {
+      "get": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "中長期ピック一覧",
+        "description": "中長期ピックを確度・合成スコア順で返す（3 値・根拠・確度バケット付き）.",
+        "operationId": "list_mid_term_api_picks_mid_term_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD（省略時は全期間の新しい順）",
+              "title": "Date"
+            },
+            "description": "YYYY-MM-DD（省略時は全期間の新しい順）"
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "確度バケット high/mid/low",
+              "title": "Bucket"
+            },
+            "description": "確度バケット high/mid/low"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PickSummary__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/picks/short-term": {
+      "get": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "短期（デイトレ）ピック一覧",
+        "description": "短期ピックを確度・合成スコア順で返す.",
+        "operationId": "list_short_term_api_picks_short_term_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PickSummary__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/picks/run": {
+      "post": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "ピックを手動実行",
+        "description": "指定系統のピックを 1 回生成し、台帳化して結果を返す（beat と冪等でない点に注意）.",
+        "operationId": "run_api_picks_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PickRunResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/picks/{pick_id}": {
+      "get": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "単一ピック詳細",
+        "description": "単一ピックの詳細（`feature_snapshot` を除いた台帳行）を返す.",
+        "operationId": "get_pick_detail_api_picks__pick_id__get",
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -75,6 +320,157 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_PickRunResult_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PickRunResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[PickRunResult]"
+      },
+      "ApiResponse_dict_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[dict]"
+      },
+      "ApiResponse_list_PickSummary__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PickSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[PickSummary]]"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "HealthCheckResponse": {
         "properties": {
           "status": {
@@ -115,6 +511,284 @@
         ],
         "title": "LivenessResponse",
         "description": "API プロセス自体の生存確認（依存先は見ない軽量応答）."
+      },
+      "PageMeta": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ],
+        "title": "PageMeta",
+        "description": "ページネーション応答のメタ情報."
+      },
+      "PickRunResult": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          },
+          "issued_at": {
+            "type": "string",
+            "title": "Issued At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "empty",
+              "not_configured",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/PickSummary"
+            },
+            "type": "array",
+            "title": "Picks"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedPick"
+            },
+            "type": "array",
+            "title": "Rejected"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "horizon_type",
+          "issued_at",
+          "status",
+          "picks",
+          "rejected"
+        ],
+        "title": "PickRunResult",
+        "description": "1 回のピック実行の結果（中長期 or 短期）."
+      },
+      "PickSummary": {
+        "properties": {
+          "pick_id": {
+            "type": "string",
+            "title": "Pick Id"
+          },
+          "issued_at": {
+            "type": "string",
+            "title": "Issued At"
+          },
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "bullish",
+              "bearish",
+              "neutral"
+            ],
+            "title": "Direction"
+          },
+          "entry": {
+            "type": "number",
+            "title": "Entry"
+          },
+          "stop": {
+            "type": "number",
+            "title": "Stop"
+          },
+          "target": {
+            "type": "number",
+            "title": "Target"
+          },
+          "composite_score": {
+            "type": "number",
+            "title": "Composite Score"
+          },
+          "concordance": {
+            "type": "number",
+            "title": "Concordance"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "confidence_bucket": {
+            "type": "string",
+            "enum": [
+              "high",
+              "mid",
+              "low"
+            ],
+            "title": "Confidence Bucket"
+          },
+          "rationale_text": {
+            "type": "string",
+            "title": "Rationale Text"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "source_contributions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Source Contributions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pick_id",
+          "issued_at",
+          "horizon_type",
+          "symbol",
+          "direction",
+          "entry",
+          "stop",
+          "target",
+          "composite_score",
+          "concordance",
+          "confidence",
+          "confidence_bucket",
+          "rationale_text",
+          "model_version",
+          "source_contributions"
+        ],
+        "title": "PickSummary",
+        "description": "API 応答用のピック要約（`feature_snapshot` は含めない）."
+      },
+      "RejectedPick": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "rejected_inconsistent",
+              "rejected_hard_excluded",
+              "rejected_low_confidence",
+              "llm_error",
+              "all_failed"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "status",
+          "reason"
+        ],
+        "title": "RejectedPick",
+        "description": "最終ピックから外れた候補とその理由."
+      },
+      "RunRequest": {
+        "properties": {
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon_type"
+        ],
+        "title": "RunRequest",
+        "description": "`POST /api/picks/run` のリクエストボディ."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     }
   }

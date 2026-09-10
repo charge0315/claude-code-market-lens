@@ -1,0 +1,199 @@
+"""中長期 / 短期ピックパイプラインの検証（外部依存はすべてモック）."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
+
+import pytest
+
+from backend.services.anthropic_errors import AnthropicRateLimitError
+from backend.services.ledger import prediction_ledger as pl
+from backend.services.picks import pipeline as pp
+
+_DEFAULT_LLM: dict[str, object] = {
+    "should_include": True,
+    "buy_price": 1002.0,
+    "stop_loss_price": 985.0,
+    "take_profit_price": 1050.0,
+    "confidence": 72.0,
+    "reasoning": "反発余地あり",
+    "holding_period_days": 7,
+}
+
+
+def _rec(
+    code: str,
+    *,
+    composite: float = 62.0,
+    recommendation: str = "BUY",
+    direction: str = "bullish",
+    value_trap: bool = False,
+    agreement: str = "aligned",
+    current_price: float = 1000.0,
+) -> dict[str, object]:
+    return {
+        "ticker": code,
+        "company_name": f"会社{code}",
+        "recommendation": recommendation,
+        "composite_score": composite,
+        "concordance": 0.67,
+        "direction": direction,
+        "score_breakdown": {"technical": 60.0, "fundamental": 55.0, "sentiment": None},
+        "source_contributions": {"technical": {"weight_share": 0.64, "contribution": 38.4}},
+        "technical_signals": {"current_price": current_price, "signal_agreement": agreement},
+        "fundamental_signals": {"value_trap": value_trap, "per": 12.0},
+        "sentiment_average": 0.5,
+        "ml_prediction_rate": None,
+        "reasoning": ["RSI 売られすぎ"],
+    }
+
+
+class _FakeRankings:
+    def __init__(self, codes: list[str]) -> None:
+        self.gainers = [type("E", (), {"code": c})() for c in codes]
+        self.volume_leaders: list[object] = []
+        self.losers: list[object] = []
+
+
+@dataclass
+class WiredState:
+    codes: list[str] = field(default_factory=lambda: ["7203", "6758"])
+    recs: dict[str, dict[str, object]] = field(default_factory=dict)
+    llm: dict[str, object] = field(default_factory=dict)  # code -> 応答 dict or Exception
+
+    async def propose_stock_pick(self, *, ticker: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
+        resp = self.llm.get(ticker)
+        if isinstance(resp, Exception):
+            raise resp
+        return resp if isinstance(resp, dict) else dict(_DEFAULT_LLM)
+
+
+class _FakeLLM:
+    """`is_configured` を素の属性で持つ AnthropicClient スタブ."""
+
+    def __init__(self, state: WiredState) -> None:
+        self._state = state
+        self.is_configured = True
+
+    async def propose_stock_pick(self, *, ticker: str, prompt: str) -> dict[str, object]:
+        return await self._state.propose_stock_pick(ticker=ticker, prompt=prompt)
+
+
+@pytest.fixture
+def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
+    """パイプラインの外部依存をすべて差し替える."""
+    state = WiredState()
+    monkeypatch.setattr(pp, "anthropic_client", _FakeLLM(state))
+
+    async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
+        return _FakeRankings(list(state.codes))
+
+    # pipeline は `from ... import get_rankings` で名前を取り込んでいるため pp 側を差し替える。
+    monkeypatch.setattr(pp, "get_rankings", fake_get_rankings)
+
+    async def fake_fundamental(code: str) -> dict[str, object]:
+        return {"per": 12.0, "company_name": f"会社{code}"}
+
+    monkeypatch.setattr(pp, "get_fundamental_with_vault_fallback", fake_fundamental)
+
+    def fake_score_one(code: str, _f: dict[str, object]) -> tuple[dict[str, object], float | None, float | None]:
+        return state.recs.get(code) or _rec(code), 20.0, 55.0
+
+    monkeypatch.setattr(pp, "_score_one", fake_score_one)
+
+    async def fake_brand(_code: str) -> None:
+        return None
+
+    monkeypatch.setattr(pp, "get_brand_note", fake_brand)
+
+    async def fake_digest() -> tuple[()]:
+        return ()
+
+    monkeypatch.setattr(pp, "get_market_news_digest", fake_digest)
+    monkeypatch.setattr(pp, "render_news_digest_block", lambda _i: None)
+    return state
+
+
+async def test_not_configured(wired: WiredState, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLLM(wired)
+    fake.is_configured = False
+    monkeypatch.setattr(pp, "anthropic_client", fake)
+    result = await pp.run_picks("mid_term")
+    assert result.status == "not_configured"
+    assert result.picks == []
+
+
+async def test_empty_pool(wired: WiredState) -> None:
+    wired.codes = []
+    result = await pp.run_picks("mid_term")
+    assert result.status == "empty"
+
+
+async def test_happy_path_writes_ledger(wired: WiredState, migrated_db: Path) -> None:
+    result = await pp.run_picks("mid_term")
+    assert result.status == "ok"
+    assert {p.symbol for p in result.picks} == {"7203", "6758"}
+    for p in result.picks:
+        assert p.stop < p.entry < p.target
+        assert p.confidence_bucket in ("high", "mid", "low")
+
+    stored = await pl.list_picks(horizon_type="mid_term")
+    assert len(stored) == 2
+    raw = await pl.get_pick(result.picks[0].pick_id)
+    assert raw is not None
+    assert "atr_14" in cast("dict[str, object]", raw["feature_snapshot"])
+
+
+async def test_e1_recommender_sell_is_hard_excluded(wired: WiredState, migrated_db: Path) -> None:
+    wired.recs = {"7203": _rec("7203", recommendation="SELL", direction="bearish")}
+    result = await pp.run_picks("mid_term")
+    ex = [r for r in result.rejected if r.symbol == "7203"]
+    assert ex and ex[0].status == "rejected_hard_excluded" and "SELL" in ex[0].reason
+
+
+async def test_e2_value_trap_caps_confidence_below_floor(wired: WiredState, migrated_db: Path) -> None:
+    wired.recs = {"7203": _rec("7203", value_trap=True)}
+    result = await pp.run_picks("mid_term")
+    ex = [r for r in result.rejected if r.symbol == "7203"]
+    assert ex and ex[0].status == "rejected_low_confidence"  # 72 → 35(cap) → < 40 floor
+
+
+async def test_inconsistent_bracket_rejected(wired: WiredState, migrated_db: Path) -> None:
+    wired.llm = {
+        "7203": {
+            "should_include": True,
+            "buy_price": 1002,
+            "stop_loss_price": 1010,
+            "take_profit_price": 1050,
+            "confidence": 80,
+            "reasoning": "x",
+        }
+    }
+    result = await pp.run_picks("mid_term")
+    ex = [r for r in result.rejected if r.symbol == "7203"]
+    assert ex and ex[0].status == "rejected_inconsistent"
+
+
+async def test_llm_error_is_recorded(wired: WiredState, migrated_db: Path) -> None:
+    wired.llm = {"7203": AnthropicRateLimitError("stock_pick")}
+    result = await pp.run_picks("mid_term")
+    ex = [r for r in result.rejected if r.symbol == "7203"]
+    assert ex and ex[0].status == "llm_error"
+
+
+async def test_should_include_false_excluded(wired: WiredState, migrated_db: Path) -> None:
+    wired.llm = {
+        "6758": {
+            "should_include": False,
+            "buy_price": 1,
+            "stop_loss_price": 1,
+            "take_profit_price": 1,
+            "confidence": 0,
+            "reasoning": "x",
+        }
+    }
+    result = await pp.run_picks("mid_term")
+    ex = [r for r in result.rejected if r.symbol == "6758"]
+    assert ex and ex[0].status == "rejected_hard_excluded"

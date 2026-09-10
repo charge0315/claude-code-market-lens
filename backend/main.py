@@ -20,6 +20,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from backend.config import settings  # noqa: E402
 from backend.models.health import LivenessResponse  # noqa: E402
 from backend.routers.health import router as health_router  # noqa: E402
+from backend.routers.picks import router as picks_router  # noqa: E402
 from backend.services.db.database import dispose_db, init_db  # noqa: E402
 from backend.services.security_headers import register_security_headers  # noqa: E402
 from backend.services.task_registry import close_redis_client  # noqa: E402
@@ -64,6 +65,7 @@ register_security_headers(app)
 # 経由でしか到達できないため、同じ router を /api/system 配下にも重ねてマウントする。
 app.include_router(health_router)
 app.include_router(health_router, prefix="/api/system")
+app.include_router(picks_router)
 
 
 @app.get("/api/health", response_model=LivenessResponse, tags=["health"], summary="Liveness check")
