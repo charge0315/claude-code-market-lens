@@ -58,10 +58,28 @@ def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Pat
 
 @pytest_asyncio.fixture
 async def initialized_db(isolated_db: Path) -> AsyncIterator[Path]:
-    """`init_db()` 済みの隔離 DB を渡す."""
+    """`init_db()` 済みの隔離 DB を渡す（テーブルは作らない）."""
     from backend.services.db.database import dispose_db, init_db
 
     await init_db()
+    yield isolated_db
+    await dispose_db()
+
+
+@pytest_asyncio.fixture
+async def migrated_db(isolated_db: Path) -> AsyncIterator[Path]:
+    """Alembic を head まで適用した隔離 DB を渡す（実テーブルが必要なテスト用）."""
+    from alembic import command
+    from alembic.config import Config
+
+    from backend.services.db.database import dispose_db
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(repo_root / "backend" / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "backend" / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{isolated_db.as_posix()}")
+    command.upgrade(cfg, "head")
+
     yield isolated_db
     await dispose_db()
 

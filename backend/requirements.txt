@@ -17,6 +17,9 @@ alembic==1.19.1
 celery>=5.6.3
 redis>=8.1.0
 
+# LLM（P3）
+anthropic==1.2.0
+
 # HTTP クライアント（外部 API 取得層で使用）
 httpx==0.28.1
 

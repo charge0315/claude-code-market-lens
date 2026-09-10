@@ -27,6 +27,7 @@ _EXPECTED_TABLES = {
     "push_subscriptions",
     "notifications",
     "eod_reviews",
+    "api_costs",
 }
 
 
