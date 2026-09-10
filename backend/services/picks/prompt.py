@@ -24,6 +24,7 @@ def build_pick_prompt(
     atr: float | None,
     brand_frontmatter: Mapping[str, object] | None,
     news_digest_block: str | None,
+    trend_context_block: str | None = None,
 ) -> str:
     """1 銘柄分の深掘りプロンプトを組み立てる（forced tool-use `propose_stock_pick` 前提）."""
     symbol = str(recommendation.get("ticker", ""))
@@ -51,6 +52,10 @@ def build_pick_prompt(
         lines.append(
             f"- 目安ブラケット（ATR ベース）: {json.dumps(suggested_bracket(current_price, atr), ensure_ascii=False)}"
         )
+
+    if trend_context_block:
+        lines.append("")
+        lines.append(trend_context_block)
 
     if news_digest_block:
         lines.append("")

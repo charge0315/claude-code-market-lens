@@ -28,6 +28,7 @@ _EXPECTED_TABLES = {
     "notifications",
     "eod_reviews",
     "api_costs",
+    "trend_snapshots",
 }
 
 

@@ -30,6 +30,7 @@ from backend.services.anthropic_client import anthropic_client
 from backend.services.anthropic_errors import AnthropicError
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
+from backend.services.data.trend.context import render_trend_context
 from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
@@ -174,6 +175,8 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         )
 
     news_block = render_news_digest_block(await get_market_news_digest())
+    # 最新トレンドスナップショット（読み取りのみ。同期は beat が別途行う）。
+    trend_block = await render_trend_context()
 
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []
@@ -202,6 +205,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             atr=atr,
             brand_frontmatter=brand.to_prompt_dict() if brand else None,
             news_digest_block=news_block,
+            trend_context_block=trend_block,
         )
         try:
             raw = await anthropic_client.propose_stock_pick(ticker=code, prompt=prompt)

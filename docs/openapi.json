@@ -295,6 +295,72 @@
         }
       }
     },
+    "/api/trend": {
+      "get": {
+        "tags": [
+          "trend"
+        ],
+        "summary": "最新トレンドスナップショット",
+        "description": "永続化済みの最新トレンドスナップショットを返す（無ければ data=None）.",
+        "operationId": "latest_api_trend_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_TrendSnapshot__NoneType__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trend/sync": {
+      "post": {
+        "tags": [
+          "trend"
+        ],
+        "summary": "トレンドを手動同期",
+        "description": "収集 → LLM 構造化 → 永続化を実行する（TTL 内は再利用。`force=true` で強制）.",
+        "operationId": "sync_api_trend_sync_post",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrendSnapshot_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -363,6 +429,94 @@
           "success"
         ],
         "title": "ApiResponse[PickRunResult]"
+      },
+      "ApiResponse_TrendSnapshot_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[TrendSnapshot]"
+      },
+      "ApiResponse_Union_TrendSnapshot__NoneType__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Union[TrendSnapshot, NoneType]]"
       },
       "ApiResponse_dict_": {
         "properties": {
@@ -732,6 +886,30 @@
         "title": "RejectedPick",
         "description": "最終ピックから外れた候補とその理由."
       },
+      "RelatedTicker": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "correlation_rationale": {
+            "type": "string",
+            "title": "Correlation Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "name",
+          "correlation_rationale"
+        ],
+        "title": "RelatedTicker",
+        "description": "トレンドに関連する銘柄と、その関連づけの根拠."
+      },
       "RunRequest": {
         "properties": {
           "horizon_type": {
@@ -749,6 +927,151 @@
         ],
         "title": "RunRequest",
         "description": "`POST /api/picks/run` のリクエストボディ."
+      },
+      "Trend": {
+        "properties": {
+          "trend_id": {
+            "type": "string",
+            "title": "Trend Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "theme_name": {
+            "type": "string",
+            "title": "Theme Name"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "lifecycle_stage": {
+            "type": "string",
+            "enum": [
+              "EMERGING",
+              "EXPANDING",
+              "PEAK",
+              "DECLINING"
+            ],
+            "title": "Lifecycle Stage"
+          },
+          "sentiment_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Sentiment Score"
+          },
+          "momentum_score": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Momentum Score"
+          },
+          "impact_horizon": {
+            "type": "string",
+            "enum": [
+              "SHORT",
+              "MID",
+              "LONG"
+            ],
+            "title": "Impact Horizon"
+          },
+          "related_tickers": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedTicker"
+            },
+            "type": "array",
+            "title": "Related Tickers",
+            "default": []
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keywords",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "trend_id",
+          "timestamp",
+          "theme_name",
+          "summary",
+          "lifecycle_stage",
+          "sentiment_score",
+          "momentum_score",
+          "impact_horizon"
+        ],
+        "title": "Trend",
+        "description": "1 つの構造化トレンド（トレンドオントロジーの 1 要素）.\n\nsentiment_score は -1.0（極めて弱気）〜 +1.0（極めて強気）、\nmomentum_score は 0〜100（話題の急上昇度）。"
+      },
+      "TrendSnapshot": {
+        "properties": {
+          "snapshot_at": {
+            "type": "string",
+            "title": "Snapshot At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "mock",
+              "not_configured",
+              "llm_error",
+              "no_signals"
+            ],
+            "title": "Status"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "trends": {
+            "items": {
+              "$ref": "#/components/schemas/Trend"
+            },
+            "type": "array",
+            "title": "Trends",
+            "default": []
+          },
+          "signal_count": {
+            "type": "integer",
+            "title": "Signal Count",
+            "default": 0
+          },
+          "source_summary": {
+            "type": "string",
+            "title": "Source Summary",
+            "default": ""
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snapshot_at",
+          "status",
+          "model",
+          "generated_at"
+        ],
+        "title": "TrendSnapshot",
+        "description": "ある時点で収集・分析したトレンド一覧のスナップショット（1 行 = 1 スナップショット）."
       },
       "ValidationError": {
         "properties": {

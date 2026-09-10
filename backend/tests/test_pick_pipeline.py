@@ -113,6 +113,11 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
 
     monkeypatch.setattr(pp, "get_market_news_digest", fake_digest)
     monkeypatch.setattr(pp, "render_news_digest_block", lambda _i: None)
+
+    async def fake_trend_ctx() -> None:
+        return None
+
+    monkeypatch.setattr(pp, "render_trend_context", fake_trend_ctx)
     return state
 
 
