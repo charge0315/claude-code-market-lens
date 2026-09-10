@@ -1,0 +1,16 @@
+# CI 用依存（実行時 + 静的検査 + テスト）。torch 等の重い ML ライブラリは含めない
+# （P5 で導入時に CI 側の扱いを Market Lens と同様に決める）。
+
+-r requirements.txt
+
+# 静的検査
+ruff==0.16.4
+black==25.9.0
+mypy==1.18.2
+bandit==1.8.6
+pip-audit==2.9.0
+
+# テスト
+pytest==8.4.2
+pytest-asyncio==1.2.0
+pytest-cov==7.0.0

@@ -1,0 +1,39 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["backend/tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["backend/alembic/versions", "data"]
+
+[tool.ruff.lint]
+# ANN401: 明示的な Any アノテーションを禁止（CLAUDE.md「Any 禁止」を静的強制）
+select = ["E", "F", "I", "B", "UP", "ANN401"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Security"]
+
+[tool.ruff.lint.per-file-ignores]
+# main.py は load_dotenv() を全 import より前に実行する必要があるため import 順を崩す。
+"backend/main.py" = ["E402"]
+"backend/celery_app.py" = ["E402"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.11"
+mypy_path = "."
+explicit_package_bases = true
+exclude = ["backend/alembic", "data"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["backend/tests", "backend/alembic"]

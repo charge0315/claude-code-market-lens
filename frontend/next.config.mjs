@@ -1,0 +1,29 @@
+// バックエンドのプロキシ先はサーバー側でのみ参照する（ブラウザに露出させない）。
+// Alpha Forge の backend は 8002（Market Lens 8001 と非衝突）。
+const backendUrl = process.env.BACKEND_PROXY_TARGET || 'http://127.0.0.1:8002';
+
+// クリックジャッキング・MIME スニッフィング対策の基本ヘッダー。
+// nonce ベース CSP は src/middleware.ts がリクエストごとに付与する。
+const securityHeaders = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+];
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Next.js の AI エージェント検出による AGENTS.md/CLAUDE.md 自動生成を無効化
+  // （このリポジトリは CLAUDE.md を自前管理する）。
+  agentRules: false,
+  output: 'standalone',
+  outputFileTracingRoot: import.meta.dirname,
+  async headers() {
+    return [{ source: '/:path*', headers: securityHeaders }];
+  },
+  async rewrites() {
+    return [{ source: '/api/:path*', destination: `${backendUrl}/api/:path*` }];
+  },
+};
+
+export default nextConfig;

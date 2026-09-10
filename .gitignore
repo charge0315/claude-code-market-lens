@@ -1,0 +1,42 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# --- Node / Next.js ---
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/tsconfig.tsbuildinfo
+next-env.d.ts
+
+# --- データ・成果物（コミットしない） ---
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/models/
+data/calibrators/
+data/cache/
+celerybeat-schedule*
+logs/
+
+# --- 環境・秘密 ---
+.env
+.env.local
+*.pem
+
+# --- OS / エディタ ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,24 @@
+# Alpha Forge backend 依存（P1 基盤）。
+# ML ライブラリ（xgboost / scikit-learn / torch）は P3/P5 で移植時に追加する。
+# バージョン方針は Market Lens に揃える（同一構成踏襲）。
+
+fastapi==0.141.1
+uvicorn[standard]==0.39.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.1
+
+# DB / マイグレーション
+SQLAlchemy[asyncio]==2.0.44
+aiosqlite==0.21.0
+alembic==1.19.1
+
+# 非同期基盤
+celery>=5.6.3
+redis>=8.1.0
+
+# HTTP クライアント（外部 API 取得層で使用）
+httpx==0.28.1
+
+# Web Push（VAPID）
+pywebpush==2.0.3

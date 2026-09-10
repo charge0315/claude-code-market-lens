@@ -1,0 +1,121 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Alpha Forge API",
+    "description": "日本株の AI 銘柄ピック（中長期 / 短期）と継続学習ループを提供する分析支援 API。出力は分析結果・参考情報であり、投資助言ではない。ブローカー発注は一切行わない。",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "DB/Redis疎通を含むヘルスチェック",
+        "description": "DB・Redis へ実接続を試み、いずれか失敗なら 503 を返す（疎通確認は並行実行）.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "DB/Redis疎通を含むヘルスチェック",
+        "description": "DB・Redis へ実接続を試み、いずれか失敗なら 503 を返す（疎通確認は並行実行）.",
+        "operationId": "health_check_api_system_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness check",
+        "description": "API プロセス自体の生存確認（依存先は見ない）.",
+        "operationId": "liveness_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthCheckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "HealthCheckResponse",
+        "description": "DB / Redis 疎通を含む依存先ヘルスチェック応答.\n\nいずれかが `error` なら呼び出し側ルーターが 503 を返す。未認証エンドポイントの\nため、レスポンスには正常/異常のみを含め生の例外文言は載せない（Market Lens 踏襲）。"
+      },
+      "LivenessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "LivenessResponse",
+        "description": "API プロセス自体の生存確認（依存先は見ない軽量応答）."
+      }
+    }
+  }
+}
