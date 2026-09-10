@@ -20,5 +20,10 @@ redis>=8.1.0
 # HTTP クライアント（外部 API 取得層で使用）
 httpx==0.28.1
 
+# データ層（P2）。バージョンは Market Lens に揃える。
+pandas==3.0.5
+yfinance==1.7.0
+PyYAML==6.0.3
+
 # Web Push（VAPID）
 pywebpush==2.0.3

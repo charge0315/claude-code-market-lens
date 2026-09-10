@@ -15,6 +15,7 @@ os.environ.setdefault("ML_SECRET_KEY", "test-secret-key-32chars-minimum!!")
 os.environ.setdefault("ML_PASSWORD_HASH", "$2b$12$0123456789012345678901uAbCdEfGhIjKlMnOpQrStUvWxYz012")
 
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
@@ -63,3 +64,38 @@ async def initialized_db(isolated_db: Path) -> AsyncIterator[Path]:
     await init_db()
     yield isolated_db
     await dispose_db()
+
+
+@dataclass(frozen=True)
+class VaultDirs:
+    """テスト用の一時 Vault ディレクトリ一式."""
+
+    root: Path
+    tickers: Path
+    daily: Path
+
+
+@pytest.fixture
+def vault_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> VaultDirs:
+    """`settings.vault_root` を一時ディレクトリへ差し替え、`Tickers/` `Daily/` を用意する.
+
+    `resolved_brand_notes_dir` / `resolved_daily_notes_dir` は vault_root からの導出プロパティ
+    なので、`brand_notes_dir` / `daily_notes_dir` は空のままにして vault_root だけを差し替える。
+    """
+    from backend import config
+    from backend.services.vault import brand_notes_service, daily_note_service, news_digest_service
+
+    root = tmp_path / "vault"
+    tickers = root / "Tickers"
+    daily = root / "Daily"
+    tickers.mkdir(parents=True)
+    daily.mkdir(parents=True)
+
+    new_settings = config.settings.model_copy(
+        update={"vault_root": str(root), "brand_notes_dir": "", "daily_notes_dir": ""}
+    )
+    for mod in (config, brand_notes_service, news_digest_service, daily_note_service):
+        monkeypatch.setattr(mod, "settings", new_settings)
+    brand_notes_service.clear_cache()
+    news_digest_service.clear_cache()
+    return VaultDirs(root=root, tickers=tickers, daily=daily)
