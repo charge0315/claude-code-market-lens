@@ -1,0 +1,118 @@
+/* ============================================
+   モデルラボ（P8b）
+   GrowthChart / CalibrationChart / ChampionsPanel / DriftPanel / WeeklyLearningPanel
+   ============================================ */
+
+.model-lab-panel + .model-lab-panel {
+  margin-top: var(--spacing-2xl);
+}
+
+.model-lab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+.model-lab-select {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.model-lab-select select {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.model-lab-brier {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.model-lab-chart {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.model-lab-subheading {
+  font-size: var(--font-size-lg);
+  margin: var(--spacing-xl) 0 var(--spacing-sm);
+}
+
+.model-lab-panel .model-lab-subheading:first-child {
+  margin-top: 0;
+}
+
+.model-lab-applied {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.model-lab-panel button {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.model-lab-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-lab-as-of {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--spacing-md);
+}
+
+.weekly-learning-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.weekly-learning-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-learning-label {
+  font-variant-numeric: normal;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .model-lab-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .weekly-learning-list li {
+    grid-template-columns: 1fr;
+  }
+}

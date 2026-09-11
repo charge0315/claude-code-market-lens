@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { Sidebar } from '@/components/layout/Sidebar';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -22,37 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
     <html lang="ja">
       <body>
         <div style={{ display: 'flex', minHeight: '100vh' }}>
-          <aside
-            aria-label="メインナビゲーション"
-            style={{
-              width: 'var(--sidebar-width)',
-              borderRight: '1px solid var(--color-border)',
-              background: 'var(--color-bg-secondary)',
-              padding: 'var(--spacing-lg)',
-            }}
-          >
-            <div
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 'var(--font-size-xl)',
-                letterSpacing: '0.04em',
-                marginBottom: 'var(--spacing-xl)',
-              }}
-            >
-              ALPHA FORGE
-            </div>
-            <nav>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
-                {NAV.map((item) => (
-                  <li key={item.href}>
-                    <a href={item.href} style={{ display: 'block', padding: 'var(--spacing-sm)' }}>
-                      {item.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          </aside>
+          <Sidebar items={NAV} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {/* flex アイテムは既定で min-width: auto のため、内側に横幅の大きい要素（データ
                 テーブル等）があるとページ全体が横スクロールしてしまう（flexbox の既知の罠）。

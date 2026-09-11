@@ -1,0 +1,61 @@
+/* ============================================
+   ダッシュボード（P8a）— PicksBoard
+   ============================================ */
+
+.picks-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+.picks-board-tabs {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.picks-board-tabs button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.picks-board-tabs button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.picks-board-tabs button.is-active {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.picks-board-toolbar > button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.picks-board-toolbar > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .picks-board-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
