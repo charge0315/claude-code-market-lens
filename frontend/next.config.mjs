@@ -18,6 +18,11 @@ const nextConfig = {
   agentRules: false,
   output: 'standalone',
   outputFileTracingRoot: import.meta.dirname,
+  // Playwright（e2e/playwright.config.ts）は baseURL に 127.0.0.1 を使う。Next.js 16 の dev
+  // サーバーは既定で localhost 以外からの HMR 接続を安全のためブロックし、ブロックされると
+  // クライアント側の再接続ループで React のハイドレーションが実質的に止まる（P6d の E2E で
+  // 「ボタンを押しても aria-pressed が変わらない」という形で発覚した）。
+  allowedDevOrigins: ['127.0.0.1'],
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

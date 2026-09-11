@@ -225,6 +225,81 @@
   margin-top: var(--spacing-lg);
 }
 
+/* --- PipelineTraceViewer ツールバー --- */
+
+.pipeline-viewer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+.pipeline-run-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.pipeline-run-picker select {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  width: 100%;
+  min-width: 0;
+}
+
+.pipeline-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.pipeline-mode-toggle button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.pipeline-mode-toggle button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.pipeline-mode-toggle button.is-active {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.pipeline-viewer-status {
+  font-size: var(--font-size-xs);
+  color: var(--color-stage-running);
+}
+
+.pipeline-viewer-error {
+  color: var(--color-term-red);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.pipeline-viewer-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 @media (max-width: 640px) {
   .thinking-entry {
     grid-template-columns: 1fr;
@@ -237,5 +312,19 @@
 
   .pipeline-preview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pipeline-viewer-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pipeline-run-picker {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pipeline-run-picker select {
+    max-width: 100%;
   }
 }
