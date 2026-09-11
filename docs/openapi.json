@@ -1989,6 +1989,66 @@
         }
       }
     },
+    "/api/stock/{symbol}/ohlc": {
+      "get": {
+        "tags": [
+          "stock"
+        ],
+        "summary": "日足 OHLC 取得",
+        "description": "指定銘柄の日足 OHLC を返す（チャート表示用、取得できなければ空配列）.",
+        "operationId": "get_ohlc_api_stock__symbol__ohlc_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "1mo",
+                "3mo",
+                "6mo",
+                "1y",
+                "2y"
+              ],
+              "type": "string",
+              "default": "6mo",
+              "title": "Period"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_OhlcBar__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2534,6 +2594,54 @@
         ],
         "title": "ApiResponse[list[Notification]]"
       },
+      "ApiResponse_list_OhlcBar__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OhlcBar"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[OhlcBar]]"
+      },
       "ApiResponse_list_PickSummary__": {
         "properties": {
           "success": {
@@ -2923,6 +3031,45 @@
         ],
         "title": "Notification",
         "description": "通知 1 件（`notifications` テーブルに対応）."
+      },
+      "OhlcBar": {
+        "properties": {
+          "time": {
+            "type": "string",
+            "title": "Time"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OhlcBar",
+        "description": "日足 1 本分（`lightweight-charts` のローソク足フォーマットに合わせる）."
       },
       "PageMeta": {
         "properties": {

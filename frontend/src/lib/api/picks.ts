@@ -56,3 +56,22 @@ export function fetchPicks(
 export function runPicks(horizonType: HorizonType): Promise<PickRunResult> {
   return api.post<PickRunResult>('/picks/run', { horizon_type: horizonType });
 }
+
+export interface PickDetail {
+  pick_id: string;
+  symbol: string;
+  direction: Direction;
+  sub_score_technical: number;
+  sub_score_trend: number;
+  sub_score_fundamental: number;
+  sub_score_sentiment: number;
+  composite_score: number;
+  concordance: number;
+  confidence: number;
+  confidence_bucket: ConfidenceBucket;
+  rationale_text: string;
+}
+
+export function fetchPickDetail(pickId: string): Promise<PickDetail> {
+  return api.get<PickDetail>(`/picks/${encodeURIComponent(pickId)}`);
+}

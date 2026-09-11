@@ -26,6 +26,11 @@
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 72px;
+  /* 子の .visually-hidden（position: absolute）の containing block をここに固定する。
+     位置指定祖先が無いと絶対配置要素の static position がドキュメントルート基準になり、
+     横スクロールする .stage-dag（overflow-x: auto）の外側（320px 幅の実機確認で
+     ドキュメント全体の横スクロールとして検出）まで見えないボックスがはみ出していた。 */
+  position: relative;
 }
 
 .stage-node-dot {

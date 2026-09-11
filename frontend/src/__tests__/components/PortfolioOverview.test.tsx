@@ -1,0 +1,69 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import { axe } from 'jest-axe';
+import { PortfolioOverview } from '@/components/portfolio/PortfolioOverview';
+import { fetchPortfolio } from '@/lib/api/portfolio';
+import type { PortfolioSummary } from '@/lib/api/portfolio';
+
+jest.mock('@/lib/api/portfolio');
+
+const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
+
+const SUMMARY: PortfolioSummary = {
+  total_value: 303100,
+  total_cost: 250000,
+  total_gain_loss: 53100,
+  total_return_pct: 0.2124,
+  day_gain_loss: 3700,
+  holdings: [
+    {
+      holding_id: 'h1',
+      symbol: '7203',
+      company_name: 'トヨタ',
+      sector: '輸送用機器',
+      quantity: 100,
+      avg_cost: 2500,
+      current_price: 3031,
+      current_value: 303100,
+      cost_basis: 250000,
+      gain_loss: 53100,
+      return_pct: 0.2124,
+      acquired_at: '2026-01-15',
+    },
+  ],
+  sector_allocations: [{ sector: '輸送用機器', value: 303100, pct: 100 }],
+  holding_count: 1,
+  updated_at: '2026-09-11T20:00:00+09:00',
+};
+
+describe('PortfolioOverview', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('評価額・評価損益・保有一覧を表示する', async () => {
+    mockFetchPortfolio.mockResolvedValue(SUMMARY);
+
+    render(<PortfolioOverview />);
+
+    expect(await screen.findByText('7203 トヨタ')).toBeInTheDocument();
+    expect(screen.getAllByText('¥303,100')).toHaveLength(2); // 評価額合計 + 保有明細の評価額
+    expect(screen.getAllByText('21.24%')).toHaveLength(2); // 騰落率サマリ + 保有明細
+  });
+
+  it('取得失敗でエラーメッセージを出す', async () => {
+    mockFetchPortfolio.mockRejectedValue(new Error('boom'));
+
+    render(<PortfolioOverview />);
+
+    expect(await screen.findByText('ポートフォリオの取得に失敗しました')).toBeInTheDocument();
+  });
+
+  it('アクセシビリティ違反がない', async () => {
+    mockFetchPortfolio.mockResolvedValue(SUMMARY);
+
+    const { container } = render(<PortfolioOverview />);
+    await waitFor(() => expect(mockFetchPortfolio).toHaveBeenCalled());
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});

@@ -1,0 +1,95 @@
+/* ============================================
+   銘柄詳細（P8c）— StockOverview / PriceChart / SubScorePanel
+   ============================================ */
+
+.stock-overview-symbol {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  margin: 0 0 var(--spacing-md);
+}
+
+.price-chart-toolbar {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.price-chart-toolbar button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.price-chart-toolbar button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.price-chart-toolbar button.is-active {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.price-chart-canvas {
+  width: 100%;
+  min-width: 0;
+}
+
+.sub-score-panel {
+  margin-top: var(--spacing-lg);
+}
+
+.sub-score-list {
+  list-style: none;
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sub-score-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 40px;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.sub-score-label {
+  color: var(--color-text-secondary);
+}
+
+.sub-score-track {
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  height: 8px;
+  overflow: hidden;
+}
+
+.sub-score-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent-bright);
+}
+
+.sub-score-value {
+  text-align: right;
+}
+
+.sub-score-rationale {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .sub-score-row {
+    grid-template-columns: 72px 1fr 32px;
+  }
+}

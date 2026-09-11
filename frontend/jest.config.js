@@ -20,12 +20,17 @@ const config = {
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
     '!src/**/layout.tsx',
+    // 画面ページ（app/**/page.tsx）は各コンポーネントへ委譲するだけの配線のみで
+    // ロジックを持たない。実体は components/ 側のユニットテストと e2e/ の画面単位
+    // テストでカバーする方針にした（layout.tsx と同じ扱い）。
+    '!src/app/**/page.tsx',
     '!src/proxy.ts',
     '!src/__tests__/**',
   ],
-  // P1 雛形時点の下限ガード。画面実装が進む P8 で実測に合わせて引き上げる。
+  // P8 で実測（statements/lines ~89%, branches ~83%, functions ~71%）に合わせて引き上げ。
+  // 実測ちょうどにはせず、テスト追加の余地を残す少し保守的な下限にする。
   coverageThreshold: {
-    global: { statements: 60, branches: 60, functions: 60, lines: 60 },
+    global: { statements: 85, branches: 75, functions: 65, lines: 85 },
   },
   modulePathIgnorePatterns: ['<rootDir>/.next/'],
 };
