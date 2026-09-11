@@ -1,0 +1,241 @@
+/* ============================================
+   推論パイプライン可視化（P6, VZ-6/N4）
+   StageDag / ThinkingPanel / ShapBar 共通スタイル
+   ============================================ */
+
+/* --- StageDag --- */
+
+.stage-dag {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-md) 0;
+  overflow-x: auto;
+}
+
+.stage-dag-item {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.stage-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 72px;
+}
+
+.stage-node-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-stage-pending);
+  color: var(--color-bg-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.stage-node--pending .stage-node-dot {
+  background: transparent;
+  border-color: var(--color-stage-pending);
+}
+
+.stage-node--running .stage-node-dot {
+  background: var(--color-stage-running);
+  border-color: var(--color-stage-running);
+  animation: stage-pulse 1.4s ease-in-out infinite;
+}
+
+.stage-node--done .stage-node-dot {
+  background: var(--color-stage-done);
+  border-color: var(--color-stage-done);
+}
+
+.stage-node--failed .stage-node-dot {
+  background: var(--color-stage-failed);
+  border-color: var(--color-stage-failed);
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+    transform: scale(1.06);
+  }
+}
+
+.stage-node-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.stage-node--running .stage-node-label {
+  color: var(--color-stage-running);
+  font-weight: 600;
+}
+
+.stage-node--failed .stage-node-label {
+  color: var(--color-stage-failed);
+}
+
+.stage-dag-connector {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 2px;
+  margin: 0 var(--spacing-xs) 18px;
+  background: var(--color-border);
+  transition: background-color var(--transition-slow);
+}
+
+.stage-dag-connector--filled {
+  background: var(--color-stage-done);
+}
+
+/* --- ThinkingPanel --- */
+
+.thinking-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.thinking-panel-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-sm) 0;
+}
+
+.thinking-entry {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 2px solid var(--color-stage-pending);
+  background: var(--color-bg-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.thinking-entry--running {
+  border-left-color: var(--color-stage-running);
+}
+
+.thinking-entry--done {
+  border-left-color: var(--color-stage-done);
+}
+
+.thinking-entry--failed {
+  border-left-color: var(--color-stage-failed);
+  background: rgba(255, 77, 79, 0.06);
+}
+
+.thinking-entry-stage {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.thinking-entry-text {
+  color: var(--color-text-primary);
+}
+
+.thinking-entry-time {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* --- ShapBar --- */
+
+.shap-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shap-bar-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.shap-bar-row {
+  display: grid;
+  grid-template-columns: 96px 1fr 56px;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.shap-bar-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.shap-bar-track {
+  height: 8px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.shap-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent-bright);
+  transition: width var(--transition-slow);
+}
+
+.shap-bar-fill--negative {
+  background: var(--color-term-yellow);
+}
+
+.shap-bar-value {
+  font-size: var(--font-size-sm);
+  text-align: right;
+}
+
+/* --- レイアウト（銘柄詳細画面のプレビュー用グリッド） --- */
+
+.pipeline-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+}
+
+@media (max-width: 640px) {
+  .thinking-entry {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .shap-bar-row {
+    grid-template-columns: 72px 1fr 48px;
+  }
+
+  .pipeline-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
