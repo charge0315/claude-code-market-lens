@@ -9,6 +9,7 @@ import pytest
 
 from backend.models.pick import LedgerEntry, SubScores
 from backend.services.db import pick_outcome_db
+from backend.services.inference import orchestrator as orch
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks import pipeline as pp
 from backend.tests.test_pick_pipeline import WiredState, _FakeLLM, _FakeRankings, _rec  # noqa: F401
@@ -80,7 +81,9 @@ async def test_e3_gate_dormant_without_enough_samples(wired: WiredState, migrate
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     """test_pick_pipeline の wired フィクスチャを再利用（同じ差し替えを行う）."""
     state = WiredState()
-    monkeypatch.setattr(pp, "anthropic_client", _FakeLLM(state))
+    fake_llm = _FakeLLM(state)
+    monkeypatch.setattr(pp, "anthropic_client", fake_llm)
+    monkeypatch.setattr(orch, "anthropic_client", fake_llm)
 
     async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
         return _FakeRankings(list(state.codes))
@@ -98,7 +101,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     async def fake_brand(_code: str) -> None:
         return None
 
-    monkeypatch.setattr(pp, "get_brand_note", fake_brand)
+    monkeypatch.setattr(orch, "get_brand_note", fake_brand)
 
     async def fake_digest() -> tuple[()]:
         return ()

@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from backend.services.anthropic_errors import AnthropicRateLimitError
+from backend.services.inference import orchestrator as orch
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks import pipeline as pp
 
@@ -84,9 +85,13 @@ class _FakeLLM:
 
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
-    """パイプラインの外部依存をすべて差し替える."""
+    """パイプラインの外部依存をすべて差し替える（LLM 深掘り以降は orchestrator 側に配線する）."""
     state = WiredState()
-    monkeypatch.setattr(pp, "anthropic_client", _FakeLLM(state))
+    fake_llm = _FakeLLM(state)
+    # pipeline は起動ゲート（is_configured チェック）、orchestrator は実呼び出し（propose_stock_pick）
+    # でそれぞれ `anthropic_client` を参照しているため、両モジュールの参照先を差し替える。
+    monkeypatch.setattr(pp, "anthropic_client", fake_llm)
+    monkeypatch.setattr(orch, "anthropic_client", fake_llm)
 
     async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
         return _FakeRankings(list(state.codes))
@@ -121,7 +126,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     async def fake_brand(_code: str) -> None:
         return None
 
-    monkeypatch.setattr(pp, "get_brand_note", fake_brand)
+    monkeypatch.setattr(orch, "get_brand_note", fake_brand)
 
     async def fake_digest() -> tuple[()]:
         return ()
