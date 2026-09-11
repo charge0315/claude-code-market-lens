@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.models.common import ApiResponse
+from backend.models.eod_review import EodReview
 from backend.models.portfolio import (
     AddHoldingRequest,
     PortfolioSignal,
@@ -22,6 +23,8 @@ from backend.models.portfolio import (
 from backend.models.risk import PortfolioRiskReport
 from backend.services.db.portfolio_db import delete_holding, insert_holding, update_holding
 from backend.services.db.portfolio_signal_db import get_signal, list_signals, set_fill_report, set_status
+from backend.services.portfolio.eod_review_service import get_latest as get_latest_eod_review
+from backend.services.portfolio.eod_review_service import run_eod_review
 from backend.services.portfolio.portfolio_service import build_portfolio
 from backend.services.portfolio.risk_service import analyze_portfolio_risk
 from backend.services.portfolio.signal_service import run_portfolio_monitor
@@ -130,3 +133,15 @@ async def report_fill(signal_id: str, req: ReportFillRequest) -> ApiResponse[dic
         raise HTTPException(status_code=409, detail=detail)
     await set_fill_report(signal_id, json.dumps(req.model_dump(), ensure_ascii=False))
     return ApiResponse.ok({"signal_id": signal_id, "status": "executed"})
+
+
+@router.get("/eod-review", response_model=ApiResponse[EodReview | None], summary="大引け後レビュー取得")
+async def get_eod_review_endpoint() -> ApiResponse[EodReview | None]:
+    """最新の大引け後レビューを返す（1 件も無ければ `data: null`）."""
+    return ApiResponse.ok(await get_latest_eod_review())
+
+
+@router.post("/eod-review/run", response_model=ApiResponse[EodReview], summary="大引け後レビューを手動実行")
+async def run_eod_review_endpoint(force: bool = False) -> ApiResponse[EodReview]:
+    """本日分のレビューを実行する（通常は beat が 16:31 JST に実行）。既にあれば再利用（`force=true` で再生成）."""
+    return ApiResponse.ok(await run_eod_review(force=force))

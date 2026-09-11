@@ -72,6 +72,16 @@ async def list_signals(*, status: str | None = None, limit: int = 100) -> list[d
         return [dict(r._mapping) for r in result]
 
 
+async def list_signals_for_date(run_date: str) -> list[dict[str, object]]:
+    """指定日（`evaluated_at` の日付部分）に評価された判定を全件返す（EOD レビュー用）."""
+    async with get_db() as db:
+        result = await db.execute(
+            text("SELECT * FROM portfolio_signals WHERE substr(evaluated_at, 1, 10) = :run_date ORDER BY evaluated_at"),
+            {"run_date": run_date},
+        )
+        return [dict(r._mapping) for r in result]
+
+
 async def get_signal(signal_id: str) -> dict[str, object] | None:
     """1件を返す（無ければ None）."""
     async with get_db() as db:

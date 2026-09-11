@@ -3,8 +3,10 @@
 Market Lens `backend/services/anthropic_client.py` から移植。変更点:
 - P3 時点では `propose_stock_pick` / `propose_trends` / `converse` の 3 メソッドのみ移植した。
   P7b で `propose_portfolio_signal`（🆕、Market Lens に対応物なし — 保有 1 件の
-  継続保有/一部利確/損切/買い増し判定）を同じ形（forced tool-use + ブレーカ + api_cost 記録）
-  で追加。`propose_eod_review` / `propose_improvement_plan` は P7d / 対象外（P5c 参照）。
+  継続保有/一部利確/損切/買い増し判定）、P7d で `propose_eod_review`（🆕、Market Lens 版とは
+  ツールスキーマが異なる — `portfolio_signals` の集計を要約する設計）を同じ形
+  （forced tool-use + ブレーカ + api_cost 記録）で追加した。`propose_improvement_plan` は対象外
+  （P5c 参照）。
 
 環境変数 `ANTHROPIC_API_KEY` を設定すると有効になる。未設定なら `is_configured=False` を返し、
 呼び出し元が「機能未設定」を返せるようにする（フェイルソフト）。forced tool-use で
@@ -172,6 +174,37 @@ _PORTFOLIO_SIGNAL_TOOL_SCHEMA: JsonDict = {
 }
 
 
+# 当日の portfolio_signals 集計（承認/却下/実約定件数・action 内訳）と判定明細を踏まえ、
+# 翌営業日以降の判定精度向上に資する教訓を forced tool-use で構造化取得する（🆕 P7d）。
+_EOD_REVIEW_TOOL_SCHEMA: JsonDict = {
+    "name": "submit_eod_review",
+    "description": (
+        "本日のポートフォリオ判定（継続保有/一部利確/損切/買い増し）の集計と、人間による"
+        "承認・却下・実約定の結果を踏まえ、翌営業日以降の判定精度向上に資する教訓を提出する。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "本日の総括（日本語、2〜4文）"},
+            "heuristics": {
+                "type": "array",
+                "description": "学習した教訓（0〜5件、有用なものが無ければ空配列）",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "heuristic": {"type": "string", "description": "教訓（日本語、1文）"},
+                        "evidence": {"type": "string", "description": "根拠となった判定の要約（日本語）"},
+                        "confidence": {"type": "number", "description": "この教訓への確信度 0.0-1.0"},
+                    },
+                    "required": ["heuristic"],
+                },
+            },
+        },
+        "required": ["summary", "heuristics"],
+    },
+}
+
+
 class AnthropicClient:
     """Anthropic API の非同期シングルトンクライアント."""
 
@@ -271,6 +304,16 @@ class AnthropicClient:
             feature="portfolio_signal",
             model=settings.anthropic_model,
             tool_schema=_PORTFOLIO_SIGNAL_TOOL_SCHEMA,
+            max_tokens=_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_eod_review(self, *, prompt: str) -> JsonDict:
+        """forced tool-use で当日のポートフォリオ判定総括と学習教訓を取得する."""
+        return await self._forced_tool_call(
+            feature="eod_review",
+            model=settings.anthropic_model,
+            tool_schema=_EOD_REVIEW_TOOL_SCHEMA,
             max_tokens=_MAX_TOKENS,
             prompt=prompt,
         )

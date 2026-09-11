@@ -27,7 +27,12 @@ const nextConfig = {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
   async rewrites() {
-    return [{ source: '/api/:path*', destination: `${backendUrl}/api/:path*` }];
+    return [
+      { source: '/api/:path*', destination: `${backendUrl}/api/:path*` },
+      // WS はプレフィックス無しの /ws/notifications（`routers/notify.py` 参照）。Next.js の
+      // rewrites は外部 destination への WebSocket アップグレードも透過する。
+      { source: '/ws/:path*', destination: `${backendUrl}/ws/:path*` },
+    ];
   },
 };
 

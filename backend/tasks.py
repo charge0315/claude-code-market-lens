@@ -144,3 +144,16 @@ def run_portfolio_monitor_task() -> dict[str, object] | None:
         return None
     signal_ids = asyncio.run(run_portfolio_monitor())
     return {"signal_ids": signal_ids, "count": len(signal_ids)}
+
+
+@celery_app.task(name="backend.tasks.run_eod_review_task")
+def run_eod_review_task() -> dict[str, object]:
+    """本日の `portfolio_signals` を集計し大引け後レビューを生成する（🆕 P7d、JST 16:31）.
+
+    `run_eod_review` 自体が `review_date` PK で冪等（既にあれば再利用）なので、ここでは
+    weekday ガードを掛けない — 非営業日は判定 0 件のため軽量なフォールバック文言が入るだけ。
+    """
+    from backend.services.portfolio.eod_review_service import run_eod_review
+
+    review = asyncio.run(run_eod_review())
+    return {"review_date": review.review_date, "heuristics": len(review.learned_heuristics)}

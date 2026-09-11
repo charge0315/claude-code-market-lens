@@ -215,3 +215,27 @@ async def test_signals_run_endpoint_evaluates_holdings(migrated_db: Path, monkey
     body = res.json()
     assert body["success"] is True
     assert body["data"]["count"] == 1
+
+
+async def test_eod_review_endpoint_returns_null_when_none_generated_yet(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/portfolio/eod-review")
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] is None
+
+
+async def test_eod_review_run_endpoint_generates_and_is_idempotent(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/portfolio/eod-review/run")
+        assert first.json()["data"]["summary"] == "本日は判定がありませんでした。"
+
+        latest = await client.get("/api/portfolio/eod-review")
+        assert latest.json()["data"]["summary"] == "本日は判定がありませんでした。"
+
+        second = await client.post("/api/portfolio/eod-review/run")
+        assert second.json()["data"]["created_at"] == first.json()["data"]["created_at"]

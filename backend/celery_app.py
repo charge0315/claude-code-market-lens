@@ -79,6 +79,10 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         # （`run_signal_scan_task` 等、既存の場中限定タスクと同じ idiom）。
         "schedule": crontab(minute="*/5"),
     },
+    "run-eod-review": {
+        "task": "backend.tasks.run_eod_review_task",
+        "schedule": crontab(hour=7, minute=31),  # JST 16:31（大引け後）
+    },
 }
 
 celery_app.conf.update(

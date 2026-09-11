@@ -35,11 +35,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   // エンベロープ形式なら data を取り出す。素の JSON（liveness 等）はそのまま返す。
+  // data: null は「取得失敗」ではなく「該当データが無い」を表す正常系もある
+  // （例: `GET /api/portfolio/eod-review` はレビュー未生成時に success:true, data:null を返す）
+  // ため、成否は `success` フラグだけで判定する。
   if (isEnvelope<T>(body)) {
-    if (!body.success || body.data === null) {
+    if (!body.success) {
       throw new ApiError(body.error ?? 'unknown error', res.status);
     }
-    return body.data;
+    return body.data as T;
   }
   return body as T;
 }

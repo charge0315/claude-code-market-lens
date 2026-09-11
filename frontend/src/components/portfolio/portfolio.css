@@ -1,0 +1,254 @@
+/* ============================================
+   ポートフォリオ（P7a-d）
+   SignalQueue（承認キュー）/ EodReviewPanel 共通スタイル
+   ============================================ */
+
+.signal-queue-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--spacing-md);
+}
+
+.signal-queue-tabs button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.signal-queue-tabs button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.signal-queue-tabs button.is-active {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.signal-queue-error {
+  color: var(--color-term-red);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.signal-queue-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.signal-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.signal-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.signal-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.signal-card-symbol {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+}
+
+.signal-card-action {
+  font-size: var(--font-size-xs);
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.signal-card-action--stop_loss {
+  background: var(--color-loss-bg);
+  color: var(--color-loss);
+}
+
+.signal-card-action--trim,
+.signal-card-action--add {
+  background: var(--color-gain-bg);
+  color: var(--color-gain);
+}
+
+.signal-card-status {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.signal-card-rationale {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--spacing-sm);
+}
+
+.signal-card-bracket {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+  margin: 0 0 var(--spacing-sm);
+}
+
+.signal-card-bracket dt {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.signal-card-bracket dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+}
+
+.signal-card-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.signal-card-actions button,
+.signal-fill-form-actions button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.signal-card-actions button:first-child {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.signal-card-actions button:disabled,
+.signal-fill-form-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.signal-card-fill-report {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.signal-fill-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: end;
+}
+
+.signal-fill-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.signal-fill-form input {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.signal-fill-form-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* --- EodReviewPanel --- */
+
+.eod-review-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.eod-review-header button {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.eod-review-date {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.eod-review-summary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md);
+}
+
+.eod-review-heuristics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.eod-review-heuristics li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.eod-review-heuristic-confidence {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .signal-card-bracket {
+    gap: var(--spacing-sm);
+  }
+
+  .signal-fill-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .eod-review-heuristics li {
+    flex-direction: column;
+    gap: 2px;
+  }
+}

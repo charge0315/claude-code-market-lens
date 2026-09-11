@@ -1718,6 +1718,72 @@
         }
       }
     },
+    "/api/portfolio/eod-review": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "大引け後レビュー取得",
+        "description": "最新の大引け後レビューを返す（1 件も無ければ `data: null`）.",
+        "operationId": "get_eod_review_endpoint_api_portfolio_eod_review_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_EodReview__NoneType__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/eod-review/run": {
+      "post": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "大引け後レビューを手動実行",
+        "description": "本日分のレビューを実行する（通常は beat が 16:31 JST に実行）。既にあれば再利用（`force=true` で再生成）.",
+        "operationId": "run_eod_review_endpoint_api_portfolio_eod_review_run_post",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EodReview_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/notify/notifications": {
       "get": {
         "tags": [
@@ -1976,6 +2042,50 @@
         ],
         "title": "AddHoldingRequest"
       },
+      "ApiResponse_EodReview_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EodReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[EodReview]"
+      },
       "ApiResponse_Notification_": {
         "properties": {
           "success": {
@@ -2195,6 +2305,50 @@
           "success"
         ],
         "title": "ApiResponse[TrendSnapshot]"
+      },
+      "ApiResponse_Union_EodReview__NoneType__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EodReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Union[EodReview, NoneType]]"
       },
       "ApiResponse_Union_TrendSnapshot__NoneType__": {
         "properties": {
@@ -2571,6 +2725,38 @@
         "title": "CorrelationWarning",
         "description": "値動きが似ている（分散効果が薄い）銘柄ペアの警告."
       },
+      "EodReview": {
+        "properties": {
+          "review_date": {
+            "type": "string",
+            "title": "Review Date"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "learned_heuristics": {
+            "items": {
+              "$ref": "#/components/schemas/HeuristicItem"
+            },
+            "type": "array",
+            "title": "Learned Heuristics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "review_date",
+          "created_at",
+          "summary",
+          "learned_heuristics"
+        ],
+        "title": "EodReview",
+        "description": "大引け後レビュー 1 日分（`eod_reviews` テーブルに対応、`review_date` で 1 日 1 件）."
+      },
       "EvaluatePromotionRequest": {
         "properties": {
           "lane": {
@@ -2634,6 +2820,30 @@
         ],
         "title": "HealthCheckResponse",
         "description": "DB / Redis 疎通を含む依存先ヘルスチェック応答.\n\nいずれかが `error` なら呼び出し側ルーターが 503 を返す。未認証エンドポイントの\nため、レスポンスには正常/異常のみを含め生の例外文言は載せない（Market Lens 踏襲）。"
+      },
+      "HeuristicItem": {
+        "properties": {
+          "heuristic": {
+            "type": "string",
+            "title": "Heuristic"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "heuristic",
+          "evidence",
+          "confidence"
+        ],
+        "title": "HeuristicItem",
+        "description": "学習した教訓 1 件."
       },
       "LivenessResponse": {
         "properties": {

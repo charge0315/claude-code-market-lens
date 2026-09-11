@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime as real_datetime
+from pathlib import Path
 
 import pytest
 
@@ -61,3 +62,10 @@ def test_run_portfolio_monitor_task_noops_outside_market_hours(monkeypatch: pyte
 def test_frozen_time_is_jst(monkeypatch: pytest.MonkeyPatch) -> None:
     _freeze(monkeypatch, "2026-06-02T10:00:00+09:00")
     assert tasks.datetime.now(JST).hour == 10
+
+
+def test_run_eod_review_task_generates_review_regardless_of_weekday(migrated_db: Path) -> None:
+    result = tasks.run_eod_review_task()
+
+    assert result["review_date"] is not None
+    assert result["heuristics"] == 0

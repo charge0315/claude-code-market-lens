@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     'coverage/**',
     'playwright-report/**',
     'test-results/**',
+    // Service Worker は素の ES2017+ ブラウザスクリプト（self/importScripts 等の Worker
+    // グローバルを使う）で Next.js のビルドを通らない静的配信ファイルのため、
+    // アプリ本体（TypeScript strict）の lint 対象から外す。
+    'public/**',
   ]),
 ]);
 

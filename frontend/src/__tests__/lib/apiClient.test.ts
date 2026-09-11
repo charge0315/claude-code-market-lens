@@ -25,6 +25,11 @@ describe('api client', () => {
     await expect(api.get<{ status: string }>('/health')).resolves.toEqual({ status: 'ok', version: '0.1.0' });
   });
 
+  it('success=true かつ data=null は「該当データなし」として null を返す（エラーにしない）', async () => {
+    mockFetch(200, { success: true, data: null, error: null });
+    await expect(api.get('/portfolio/eod-review')).resolves.toBeNull();
+  });
+
   it('success=false なら error を持つ ApiError を投げる', async () => {
     mockFetch(200, { success: false, data: null, error: '候補プールが空です' });
     await expect(api.get('/picks/mid-term')).rejects.toThrow('候補プールが空です');

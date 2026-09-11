@@ -53,8 +53,11 @@ export default function RootLayout({ children }: { children: ReactNode }): React
               </ul>
             </nav>
           </aside>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <main style={{ flex: 1, padding: 'var(--spacing-xl)' }}>{children}</main>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* flex アイテムは既定で min-width: auto のため、内側に横幅の大きい要素（データ
+                テーブル等）があるとページ全体が横スクロールしてしまう（flexbox の既知の罠）。
+                min-width: 0 でコンテンツ幅ではなく親の残り幅に収める。 */}
+            <main style={{ flex: 1, minWidth: 0, padding: 'var(--spacing-xl)' }}>{children}</main>
             <DisclaimerFooter />
           </div>
         </div>
