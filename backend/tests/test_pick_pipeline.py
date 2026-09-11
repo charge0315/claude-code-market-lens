@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+import pandas as pd
 import pytest
 
 from backend.services.anthropic_errors import AnthropicRateLimitError
@@ -98,10 +99,24 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
 
     monkeypatch.setattr(pp, "get_fundamental_with_vault_fallback", fake_fundamental)
 
-    def fake_score_one(code: str, _f: dict[str, object]) -> tuple[dict[str, object], float | None, float | None]:
+    def fake_score_one(
+        code: str, _f: dict[str, object], _provider: object = None
+    ) -> tuple[dict[str, object], float | None, float | None]:
         return state.recs.get(code) or _rec(code), 20.0, 55.0
 
     monkeypatch.setattr(pp, "_score_one", fake_score_one)
+
+    async def fake_panel_context(as_of: str) -> object:
+        from backend.services.learning.panel_feature_service import PanelContext
+
+        return PanelContext(as_of=as_of, frame=pd.DataFrame())
+
+    monkeypatch.setattr(pp, "get_cached_panel_context", fake_panel_context)
+
+    async def fake_load_champion() -> None:
+        return None
+
+    monkeypatch.setattr(pp, "load_champion_pool_classifier", fake_load_champion)
 
     async def fake_brand(_code: str) -> None:
         return None

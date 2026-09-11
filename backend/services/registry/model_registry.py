@@ -16,12 +16,20 @@ from __future__ import annotations
 import logging
 
 from backend.services.db import model_registry_db
+from backend.services.learning.pool_model import POOL_LANE, POOL_MODEL_TYPE
 
 logger = logging.getLogger(__name__)
 
 
 def model_type_for_lane(lane: str) -> str:
-    """lane を `model_registry.model_type` へ符号化する."""
+    """lane を `model_registry.model_type` へ符号化する.
+
+    `lane="ml_pool"`（🆕 P5d、断面プール XGBoost 分類器）だけは他の lane（LLM パイプライン
+    構成スナップショット）と違い実モデルファイルを持つため、Market Lens 由来の識別子
+    `xgboost_pool`（`services/learning/pool_model.POOL_MODEL_TYPE`）をそのまま使う。
+    """
+    if lane == POOL_LANE:
+        return POOL_MODEL_TYPE
     return f"recommender_llm_{lane}"
 
 
@@ -31,11 +39,13 @@ async def ensure_registered(
     lane: str,
     val_metrics: dict[str, object] | None = None,
     feature_list: list[str] | None = None,
+    artifact_path: str = "",
 ) -> None:
     """バージョンが未登録なら `model_registry` へ追加する（既存なら val_metrics のみ更新）."""
     await model_registry_db.upsert_model(
         version=version,
         model_type=model_type_for_lane(lane),
+        artifact_path=artifact_path,
         val_metrics=val_metrics,
         feature_list=feature_list or ["technical", "trend", "fundamental", "sentiment"],
     )

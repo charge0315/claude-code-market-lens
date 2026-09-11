@@ -96,3 +96,17 @@ def run_promotion_evaluation_task() -> dict[str, str]:
     from backend.services.registry.promotion import evaluate_all_challengers
 
     return asyncio.run(evaluate_all_challengers())
+
+
+@celery_app.task(name="backend.tasks.run_pool_training_task")
+def run_pool_training_task() -> dict[str, object]:
+    """断面プール分類器（lane="ml_pool"）を月次で再学習する（P5d）.
+
+    初回バージョンは無条件で champion になる（N1 ブートストラップ）。2 本目以降は登録のみ
+    行い、`run_promotion_evaluation_task`（週次、`evaluate_all_challengers` が ml_pool lane も
+    走査する）の提案を経て `POST /api/registry/promotions/{id}/apply` の人手承認で昇格する。
+    """
+    from backend.services.learning.pool_training_service import run_pool_training
+
+    summary = asyncio.run(run_pool_training())
+    return summary.to_dict()

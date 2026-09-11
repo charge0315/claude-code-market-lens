@@ -18,12 +18,14 @@ API 経由でのみ呼ばれる、`settings.model_auto_promote` は常に false 
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass
 
 from backend.config import settings
 from backend.services.db import model_registry_db, pick_outcome_db
+from backend.services.learning.pool_model import POOL_LANE
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,80 @@ async def evaluate_promotion(lane: str, challenger_version: str, *, horizon_days
     return {"promotion_id": promotion_id, "verdict": verdict, "rationale": rationale}
 
 
+def _val_metrics_of(row: dict[str, object]) -> dict[str, object]:
+    """`model_registry` 行の `val_metrics`（JSON 文字列）を dict へ復元する."""
+    raw = row.get("val_metrics")
+    if not isinstance(raw, str) or not raw:
+        return {}
+    parsed = json.loads(raw)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+async def evaluate_ml_pool_promotion(challenger_version: str) -> dict[str, object]:
+    """lane="ml_pool"（断面プール XGBoost 分類器）専用の昇格判定.
+
+    `evaluate_promotion` はピック単位の実測勝率（`prediction_ledger`）で champion/challenger を
+    比較するが、プールモデルはパイプラインそのものではなく `recommender` の ML ファクター
+    1つの寄与元にすぎず、ピックの勝敗は技術/ファンダメンタル/センチメントとの合成後にしか
+    決着しない（プール単体の的中率をピック勝率から逆算できない）。代わりに学習時の held-out
+    検証指標（`model_registry.val_metrics` に保存済みの AUC/Brier、`pool_training_service.
+    train_pool_model` が算出）を champion と直接比較する。ペーパー日数の概念は適用しない
+    （オフライン検証のみで判定する）。
+
+    champion 未設定 / challenger が既に champion なら `hold`。held-out AUC が champion を
+    上回り、かつ Brier が悪化していなければ `propose_promote`。AUC が下回れば `reject`、
+    それ以外（Brier 悪化のみ）は `hold`。
+    """
+    champion_version = await model_registry_db.get_champion(POOL_LANE)
+    challenger_row = await model_registry_db.get_model(challenger_version)
+    if challenger_row is None:
+        raise ValueError(f"model_registry に未登録のバージョンです: {challenger_version}")
+    challenger_metrics = _val_metrics_of(challenger_row)
+
+    rationale: dict[str, object] = {"champion_version": champion_version, "challenger_metrics": challenger_metrics}
+
+    if champion_version is None or champion_version == challenger_version:
+        verdict = "hold"
+        auc_delta = 0.0
+        brier_regressed = False
+        rationale["reason"] = "champion 未設定、または challenger が既に champion のため比較不要"
+    else:
+        champion_row = await model_registry_db.get_model(champion_version)
+        champion_metrics = _val_metrics_of(champion_row) if champion_row is not None else {}
+        rationale["champion_metrics"] = champion_metrics
+
+        auc_delta = _f(challenger_metrics.get("auc")) - _f(champion_metrics.get("auc"))
+        challenger_brier = _f(challenger_metrics.get("brier"))
+        champion_brier = _f(champion_metrics.get("brier"))
+        brier_regressed = challenger_brier > champion_brier + _CALIB_REGRESSION_EPS
+
+        if auc_delta > 0 and not brier_regressed:
+            verdict = "propose_promote"
+            rationale["reason"] = "held-out AUC が champion を上回り、Brier も非劣化"
+        elif auc_delta < 0:
+            verdict = "reject"
+            rationale["reason"] = "held-out AUC が champion を下回った"
+        else:
+            verdict = "hold"
+            rationale["reason"] = "Brier 悪化、または AUC 差なしのため見送り"
+
+    promotion_id = str(uuid.uuid4())
+    await model_registry_db.insert_promotion(
+        promotion_id=promotion_id,
+        lane=POOL_LANE,
+        challenger_version=challenger_version,
+        champion_version=champion_version,
+        holdout_delta=round(auc_delta, 4),
+        calib_regressed=brier_regressed,
+        paper_perf_delta=0.0,
+        paper_days=0,
+        verdict=verdict,
+        rationale=rationale,
+    )
+    logger.info("昇格ゲート(ml_pool): challenger=%s verdict=%s", challenger_version, verdict)
+    return {"promotion_id": promotion_id, "verdict": verdict, "rationale": rationale}
+
+
 async def apply_promotion(promotion_id: str) -> bool:
     """`propose_promote` かつ未適用の判定のみ、champion を差し替える（人手承認 API 専用）."""
     row = await model_registry_db.get_promotion(promotion_id)
@@ -153,7 +229,13 @@ _LANE_HORIZON: dict[str, int] = {"mid_term": 20, "short_term": 3}
 
 
 async def evaluate_all_challengers() -> dict[str, str]:
-    """全 lane について、champion 以外の登録済みバージョンを challenger として評価する（週次）."""
+    """全 lane について、champion 以外の登録済みバージョンを challenger として評価する（週次）.
+
+    `mid_term`/`short_term`（LLM パイプライン）はピック実測（`evaluate_promotion`）、
+    `ml_pool`（断面プール分類器）は held-out 検証指標（`evaluate_ml_pool_promotion`）で判定する
+    — 判定方法は異なるが、どちらも提案のみで `apply_promotion` の人手承認を経ないと
+    champion は変わらない。
+    """
     from backend.services.registry.model_registry import model_type_for_lane
 
     results: dict[str, str] = {}
@@ -165,4 +247,13 @@ async def evaluate_all_challengers() -> dict[str, str]:
                 continue
             outcome = await evaluate_promotion(lane, version, horizon_days=horizon_days)
             results[f"{lane}:{version}"] = str(outcome["verdict"])
+
+    pool_champion = await model_registry_db.get_champion(POOL_LANE)
+    pool_versions = await model_registry_db.list_versions_by_model_type(model_type_for_lane(POOL_LANE))
+    for version in pool_versions:
+        if version == pool_champion:
+            continue
+        pool_outcome = await evaluate_ml_pool_promotion(version)
+        results[f"{POOL_LANE}:{version}"] = str(pool_outcome["verdict"])
+
     return results

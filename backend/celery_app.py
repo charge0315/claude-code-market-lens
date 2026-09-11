@@ -68,6 +68,11 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "backend.tasks.run_promotion_evaluation_task",
         "schedule": crontab(hour=18, minute=45, day_of_week="sun"),  # JST 日曜 03:45（ドリフト検知の後）
     },
+    "run-pool-training": {
+        "task": "backend.tasks.run_pool_training_task",
+        # JST 毎月1日 04:00（月次。J-Quants 一括バー呼び出しが重いため週次より粗い頻度にする）。
+        "schedule": crontab(hour=19, minute=0, day_of_month=1),
+    },
 }
 
 celery_app.conf.update(

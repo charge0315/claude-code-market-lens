@@ -1388,7 +1388,8 @@
             "type": "string",
             "enum": [
               "mid_term",
-              "short_term"
+              "short_term",
+              "ml_pool"
             ],
             "title": "Lane"
           },
@@ -1408,7 +1409,7 @@
           "challenger_version"
         ],
         "title": "EvaluatePromotionRequest",
-        "description": "`POST /api/registry/promotions/evaluate` のリクエストボディ."
+        "description": "`POST /api/registry/promotions/evaluate` のリクエストボディ.\n\n`lane=\"ml_pool\"`（断面プール分類器、P5d）は held-out 検証指標で判定するため\n`horizon_days` を無視する（`evaluate_ml_pool_promotion` 参照）。"
       },
       "HTTPValidationError": {
         "properties": {

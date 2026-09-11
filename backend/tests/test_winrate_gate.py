@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from backend.models.pick import LedgerEntry, SubScores
@@ -90,7 +91,9 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
         return {"per": 12.0, "company_name": f"会社{code}"}
 
     monkeypatch.setattr(pp, "get_fundamental_with_vault_fallback", fake_fundamental)
-    monkeypatch.setattr(pp, "_score_one", lambda code, _f: (state.recs.get(code) or _rec(code), 20.0, 55.0))
+    monkeypatch.setattr(
+        pp, "_score_one", lambda code, _f, _provider=None: (state.recs.get(code) or _rec(code), 20.0, 55.0)
+    )
 
     async def fake_brand(_code: str) -> None:
         return None
@@ -107,4 +110,16 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
         return None
 
     monkeypatch.setattr(pp, "render_trend_context", fake_trend_ctx)
+
+    async def fake_panel_context(as_of: str) -> object:
+        from backend.services.learning.panel_feature_service import PanelContext
+
+        return PanelContext(as_of=as_of, frame=pd.DataFrame())
+
+    monkeypatch.setattr(pp, "get_cached_panel_context", fake_panel_context)
+
+    async def fake_load_champion() -> None:
+        return None
+
+    monkeypatch.setattr(pp, "load_champion_pool_classifier", fake_load_champion)
     return state

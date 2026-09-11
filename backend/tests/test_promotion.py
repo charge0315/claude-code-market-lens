@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from backend.models.pick import LedgerEntry, SubScores
 from backend.services.db import model_registry_db, pick_outcome_db
 from backend.services.ledger import prediction_ledger as pl
@@ -163,3 +165,77 @@ async def test_evaluate_all_challengers_skips_champion_itself(migrated_db: Path)
 
     results = await promotion.evaluate_all_challengers()
     assert "mid_term:champ" not in results
+
+
+# ---------------------------------------------------------------------------
+# lane="ml_pool"（held-out AUC/Brier ベースの昇格判定、ピック実測は使わない）
+# ---------------------------------------------------------------------------
+
+
+async def test_evaluate_ml_pool_promotion_holds_when_no_champion(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-v1", lane="ml_pool", val_metrics={"auc": 0.6, "brier": 0.2})
+
+    out = await promotion.evaluate_ml_pool_promotion("pool-v1")
+
+    assert out["verdict"] == "hold"
+    stored = await model_registry_db.list_promotions(lane="ml_pool")
+    assert len(stored) == 1 and stored[0]["applied"] == 0
+
+
+async def test_evaluate_ml_pool_promotion_proposes_when_auc_improves(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.22})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.20})
+
+    out = await promotion.evaluate_ml_pool_promotion("pool-chal")
+
+    assert out["verdict"] == "propose_promote"
+    rationale = out["rationale"]
+    assert isinstance(rationale, dict) and rationale["champion_version"] == "pool-champ"
+
+
+async def test_evaluate_ml_pool_promotion_rejects_when_auc_worse(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.20})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.20})
+
+    out = await promotion.evaluate_ml_pool_promotion("pool-chal")
+
+    assert out["verdict"] == "reject"
+
+
+async def test_evaluate_ml_pool_promotion_holds_when_brier_regresses(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.10})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    # AUC は上回るが Brier が大きく悪化 → hold
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.50})
+
+    out = await promotion.evaluate_ml_pool_promotion("pool-chal")
+
+    assert out["verdict"] == "hold"
+
+
+async def test_evaluate_ml_pool_promotion_unknown_version_raises(migrated_db: Path) -> None:
+    with pytest.raises(ValueError, match="未登録"):
+        await promotion.evaluate_ml_pool_promotion("does-not-exist")
+
+
+async def test_apply_ml_pool_promotion_switches_champion(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.22})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.20})
+
+    out = await promotion.evaluate_ml_pool_promotion("pool-chal")
+    assert await promotion.apply_promotion(str(out["promotion_id"])) is True
+    assert await model_registry_db.get_champion("ml_pool") == "pool-chal"
+
+
+async def test_evaluate_all_challengers_includes_ml_pool_lane(migrated_db: Path) -> None:
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.22})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.20})
+
+    results = await promotion.evaluate_all_challengers()
+
+    assert results.get("ml_pool:pool-chal") == "propose_promote"
+    assert "ml_pool:pool-champ" not in results

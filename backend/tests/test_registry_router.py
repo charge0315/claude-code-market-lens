@@ -132,3 +132,20 @@ async def test_apply_promotion_unknown_id_returns_failure(migrated_db: Path) -> 
         res = await client.post("/api/registry/promotions/does-not-exist/apply")
     body = res.json()
     assert body["success"] is False
+
+
+async def test_evaluate_promotion_routes_ml_pool_lane_to_holdout_gate(migrated_db: Path) -> None:
+    """lane="ml_pool" は held-out AUC/Brier ゲート（`evaluate_ml_pool_promotion`）へ分岐する."""
+    await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.22})
+    await mr.bootstrap_champion_if_missing("ml_pool", "pool-champ")
+    await mr.ensure_registered("pool-chal", lane="ml_pool", val_metrics={"auc": 0.65, "brier": 0.20})
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/registry/promotions/evaluate", json={"lane": "ml_pool", "challenger_version": "pool-chal"}
+        )
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["verdict"] == "propose_promote"

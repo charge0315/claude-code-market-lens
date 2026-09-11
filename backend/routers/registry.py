@@ -14,15 +14,20 @@ from pydantic import BaseModel
 from backend.models.common import ApiResponse
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
-from backend.services.registry.promotion import apply_promotion, evaluate_promotion
+from backend.services.learning.pool_model import POOL_LANE
+from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
 router = APIRouter(prefix="/api/registry", tags=["registry"])
 
 
 class EvaluatePromotionRequest(BaseModel):
-    """`POST /api/registry/promotions/evaluate` のリクエストボディ."""
+    """`POST /api/registry/promotions/evaluate` のリクエストボディ.
 
-    lane: Literal["mid_term", "short_term"]
+    `lane="ml_pool"`（断面プール分類器、P5d）は held-out 検証指標で判定するため
+    `horizon_days` を無視する（`evaluate_ml_pool_promotion` 参照）。
+    """
+
+    lane: Literal["mid_term", "short_term", "ml_pool"]
     challenger_version: str
     horizon_days: int = 20
 
@@ -45,7 +50,10 @@ async def promotions(
 @router.post("/promotions/evaluate", response_model=ApiResponse[dict], summary="昇格ゲートを手動評価")
 async def evaluate(req: EvaluatePromotionRequest) -> ApiResponse[dict]:
     """challenger を champion と比較し `model_promotions` へ判定を記録する（提案のみ）."""
-    result = await evaluate_promotion(req.lane, req.challenger_version, horizon_days=req.horizon_days)
+    if req.lane == POOL_LANE:
+        result = await evaluate_ml_pool_promotion(req.challenger_version)
+    else:
+        result = await evaluate_promotion(req.lane, req.challenger_version, horizon_days=req.horizon_days)
     return ApiResponse.ok(result)
 
 

@@ -33,13 +33,19 @@ from backend.services.data.ranking_service import get_rankings
 from backend.services.data.trend.context import render_trend_context
 from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.jst_time import JST
+from backend.services.learning.panel_feature_service import get_cached_panel_context
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
 from backend.services.registry.model_registry import bootstrap_champion_if_missing, ensure_registered
 from backend.services.scoring.fundamental_analyzer import get_fundamental_with_vault_fallback
-from backend.services.scoring.recommender import compute_recommendation
+from backend.services.scoring.ml_score_provider import (
+    MlScoreProvider,
+    load_champion_pool_classifier,
+    make_pool_ml_score_provider,
+)
+from backend.services.scoring.recommender import compute_recommendation, null_ml_score
 from backend.services.scoring.signal_scan_scoring import compute_trend_score
 from backend.services.scoring.technical_analysis import compute_atr
 from backend.services.vault.brand_notes_service import get_brand_note
@@ -117,9 +123,11 @@ async def _candidate_pool(horizon_type: str, limit: int) -> list[str]:
     return out
 
 
-def _score_one(code: str, fundamental: Mapping[str, object]) -> tuple[dict[str, object], float | None, float | None]:
+def _score_one(
+    code: str, fundamental: Mapping[str, object], ml_score_provider: MlScoreProvider = null_ml_score
+) -> tuple[dict[str, object], float | None, float | None]:
     """recommender スコアリング + ATR + trend サブスコアを同期で計算する（to_thread から呼ぶ）."""
-    rec = compute_recommendation(code, fundamental=fundamental)
+    rec = compute_recommendation(code, fundamental=fundamental, ml_score_provider=ml_score_provider)
     df3 = get_stock_data(code, period=_ATR_LOOKBACK)
     atr = compute_atr(df3, _ATR_PERIOD)
     trend_score, _ = compute_trend_score(df3)
@@ -189,11 +197,17 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     # 最新トレンドスナップショット（読み取りのみ。同期は beat が別途行う）。
     trend_block = await render_trend_context()
 
+    # 断面プールモデル（N1 lane="ml_pool"）の ML ファクター。champion 未登録ならフォールバック
+    # せず (None, None) を返す provider になる（recommender が残り3ファクターで再正規化）。
+    panel_ctx = await get_cached_panel_context(issued_at[:10])
+    pool_clf = await load_champion_pool_classifier()
+    ml_score_provider = make_pool_ml_score_provider(panel_ctx, pool_clf)
+
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []
     for code in codes:
         fundamental = await get_fundamental_with_vault_fallback(code)
-        rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental)
+        rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
         scored.append((code, rec, atr, trend_score))
     scored.sort(key=lambda s: _num(s[1].get("composite_score")) or 0.0, reverse=True)
     shortlist = scored[: cfg["shortlist"]]

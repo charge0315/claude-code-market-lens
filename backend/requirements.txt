@@ -28,9 +28,13 @@ pandas==3.0.5
 yfinance==1.7.0
 PyYAML==6.0.3
 
-# 評価指標（P4）: Brier / ROC-AUC / isotonic 較正。ML predictor stack（xgboost/torch）は P5。
+# 評価指標（P4）: Brier / ROC-AUC / isotonic 較正。
 scikit-learn==1.7.2
 joblib==1.6.0
+
+# ML predictor（P5d）: 断面プール分類器。xgboost>=3.3.0 は Python 3.11 サポート打ち切りのため上限固定
+# （Market Lens requirements.txt と同じ理由）。
+xgboost>=3.2.0,<3.3.0
 
 # Web Push（VAPID）
 pywebpush==2.0.3
