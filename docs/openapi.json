@@ -1321,6 +1321,186 @@
         }
       }
     },
+    "/api/portfolio": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "ポートフォリオ取得",
+        "description": "保有銘柄一覧をリアルタイム株価で時価評価し、P&L・評価損益率を含むサマリーを返す.",
+        "operationId": "get_portfolio_api_portfolio_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PortfolioSummary_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/risk": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "ポートフォリオのリスクチェック",
+        "description": "セクター集中度・銘柄間相関の警告を返す.",
+        "operationId": "get_portfolio_risk_api_portfolio_risk_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PortfolioRiskReport_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/holdings": {
+      "post": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "保有銘柄追加",
+        "description": "銘柄コード・株数・平均取得単価・取得日を指定して保有ロットを追加する.",
+        "operationId": "add_holding_api_portfolio_holdings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddHoldingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/holdings/{holding_id}": {
+      "put": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "保有銘柄更新",
+        "description": "指定ロットの株数・平均取得単価を更新する.",
+        "operationId": "update_holding_endpoint_api_portfolio_holdings__holding_id__put",
+        "parameters": [
+          {
+            "name": "holding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Holding Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHoldingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "保有銘柄削除",
+        "description": "指定ロットを削除する.",
+        "operationId": "remove_holding_api_portfolio_holdings__holding_id__delete",
+        "parameters": [
+          {
+            "name": "holding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Holding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -1346,6 +1526,34 @@
   },
   "components": {
     "schemas": {
+      "AddHoldingRequest": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "avg_cost": {
+            "type": "number",
+            "title": "Avg Cost"
+          },
+          "acquired_at": {
+            "type": "string",
+            "title": "Acquired At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "quantity",
+          "avg_cost",
+          "acquired_at"
+        ],
+        "title": "AddHoldingRequest"
+      },
       "ApiResponse_PickRunResult_": {
         "properties": {
           "success": {
@@ -1389,6 +1597,94 @@
           "success"
         ],
         "title": "ApiResponse[PickRunResult]"
+      },
+      "ApiResponse_PortfolioRiskReport_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortfolioRiskReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[PortfolioRiskReport]"
+      },
+      "ApiResponse_PortfolioSummary_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortfolioSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[PortfolioSummary]"
       },
       "ApiResponse_TrendSnapshot_": {
         "properties": {
@@ -1667,6 +1963,52 @@
         ],
         "title": "ApiResponse[list[dict]]"
       },
+      "CorrelationWarning": {
+        "properties": {
+          "symbol_a": {
+            "type": "string",
+            "title": "Symbol A"
+          },
+          "symbol_b": {
+            "type": "string",
+            "title": "Symbol B"
+          },
+          "company_name_a": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name A"
+          },
+          "company_name_b": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name B"
+          },
+          "correlation": {
+            "type": "number",
+            "title": "Correlation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol_a",
+          "symbol_b",
+          "correlation"
+        ],
+        "title": "CorrelationWarning",
+        "description": "値動きが似ている（分散効果が薄い）銘柄ペアの警告."
+      },
       "EvaluatePromotionRequest": {
         "properties": {
           "lane": {
@@ -1939,6 +2281,227 @@
         "title": "PickSummary",
         "description": "API 応答用のピック要約（`feature_snapshot` は含めない）."
       },
+      "PortfolioHolding": {
+        "properties": {
+          "holding_id": {
+            "type": "string",
+            "title": "Holding Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "avg_cost": {
+            "type": "number",
+            "title": "Avg Cost"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "cost_basis": {
+            "type": "number",
+            "title": "Cost Basis"
+          },
+          "gain_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Loss"
+          },
+          "return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Pct"
+          },
+          "acquired_at": {
+            "type": "string",
+            "title": "Acquired At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "holding_id",
+          "symbol",
+          "quantity",
+          "avg_cost",
+          "cost_basis",
+          "acquired_at"
+        ],
+        "title": "PortfolioHolding",
+        "description": "リアルタイム価格で評価済みの保有銘柄（1 ロット）."
+      },
+      "PortfolioRiskReport": {
+        "properties": {
+          "analyzed_count": {
+            "type": "integer",
+            "title": "Analyzed Count"
+          },
+          "sector_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/SectorConcentrationWarning"
+            },
+            "type": "array",
+            "title": "Sector Warnings"
+          },
+          "correlation_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CorrelationWarning"
+            },
+            "type": "array",
+            "title": "Correlation Warnings"
+          },
+          "correlation_skipped": {
+            "type": "boolean",
+            "title": "Correlation Skipped"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "analyzed_count",
+          "sector_warnings",
+          "correlation_warnings",
+          "correlation_skipped",
+          "generated_at"
+        ],
+        "title": "PortfolioRiskReport",
+        "description": "ポートフォリオのリスクチェック結果."
+      },
+      "PortfolioSummary": {
+        "properties": {
+          "total_value": {
+            "type": "number",
+            "title": "Total Value"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "total_gain_loss": {
+            "type": "number",
+            "title": "Total Gain Loss"
+          },
+          "total_return_pct": {
+            "type": "number",
+            "title": "Total Return Pct"
+          },
+          "day_gain_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Gain Loss"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/PortfolioHolding"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "sector_allocations": {
+            "items": {
+              "$ref": "#/components/schemas/SectorAllocation"
+            },
+            "type": "array",
+            "title": "Sector Allocations"
+          },
+          "holding_count": {
+            "type": "integer",
+            "title": "Holding Count"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_value",
+          "total_cost",
+          "total_gain_loss",
+          "total_return_pct",
+          "holdings",
+          "sector_allocations",
+          "holding_count",
+          "updated_at"
+        ],
+        "title": "PortfolioSummary"
+      },
       "RejectedPick": {
         "properties": {
           "symbol": {
@@ -2011,6 +2574,53 @@
         ],
         "title": "RunRequest",
         "description": "`POST /api/picks/run` のリクエストボディ."
+      },
+      "SectorAllocation": {
+        "properties": {
+          "sector": {
+            "type": "string",
+            "title": "Sector"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "pct": {
+            "type": "number",
+            "title": "Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sector",
+          "value",
+          "pct"
+        ],
+        "title": "SectorAllocation"
+      },
+      "SectorConcentrationWarning": {
+        "properties": {
+          "sector": {
+            "type": "string",
+            "title": "Sector"
+          },
+          "pct": {
+            "type": "number",
+            "title": "Pct"
+          },
+          "exceeds_threshold": {
+            "type": "boolean",
+            "title": "Exceeds Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sector",
+          "pct",
+          "exceeds_threshold"
+        ],
+        "title": "SectorConcentrationWarning",
+        "description": "特定セクターへ評価額が集中している警告."
       },
       "Trend": {
         "properties": {
@@ -2156,6 +2766,24 @@
         ],
         "title": "TrendSnapshot",
         "description": "ある時点で収集・分析したトレンド一覧のスナップショット（1 行 = 1 スナップショット）."
+      },
+      "UpdateHoldingRequest": {
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "avg_cost": {
+            "type": "number",
+            "title": "Avg Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "quantity",
+          "avg_cost"
+        ],
+        "title": "UpdateHoldingRequest"
       },
       "ValidationError": {
         "properties": {
