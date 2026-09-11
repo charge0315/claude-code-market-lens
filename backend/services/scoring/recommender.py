@@ -32,7 +32,8 @@ from backend.services.scoring.subscores import (
 logger = logging.getLogger(__name__)
 
 # 合成スコアの重み（Market Lens 準拠）。利用可能ファクターだけで再正規化する。
-_WEIGHTS: dict[str, float] = {
+# `services/registry/factor_weight_service`（P5、shadow）が実測 IC との比較対象として参照するため public。
+FACTOR_WEIGHTS: dict[str, float] = {
     "technical": 0.35,
     "ml_prediction": 0.20,
     "fundamental": 0.20,
@@ -102,13 +103,13 @@ def _source_contributions(scores: Mapping[str, float | None]) -> dict[str, dict[
     - contribution: そのファクターが composite に足した点数（合計 ≈ composite）。
     - score: 元のサブスコア（0〜100）。
     """
-    available = {k: float(v) for k in _WEIGHTS if (v := scores.get(k)) is not None}
+    available = {k: float(v) for k in FACTOR_WEIGHTS if (v := scores.get(k)) is not None}
     if not available:
         return {}
-    total_weight = sum(_WEIGHTS[k] for k in available)
+    total_weight = sum(FACTOR_WEIGHTS[k] for k in available)
     out: dict[str, dict[str, float]] = {}
     for k, score in available.items():
-        weight_share = _WEIGHTS[k] / total_weight
+        weight_share = FACTOR_WEIGHTS[k] / total_weight
         out[k] = {
             "weight_share": round(weight_share, 4),
             "contribution": round(weight_share * score, 2),
@@ -206,7 +207,7 @@ def compute_recommendation(
         "fundamental": fund_score,
         "sentiment": sentiment_score,
     }
-    composite = compute_composite(scores, weights=_WEIGHTS)
+    composite = compute_composite(scores, weights=FACTOR_WEIGHTS)
     # technical/fundamental は常に中立 50 を返す設計のため composite が None になることは無い。
     composite = round(max(0.0, min(100.0, composite if composite is not None else 50.0)), 1)
 

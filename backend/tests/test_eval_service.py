@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
@@ -120,3 +121,13 @@ async def test_ledger_and_eval_endpoints(client: AsyncClient) -> None:
 
     eq = (await client.get("/api/eval/equity-curve?scope=mid_term&horizon=20")).json()
     assert eq["success"] and eq["data"]["n"] == 12 and len(eq["data"]["equity"]) == 12
+
+    fw = (await client.get("/api/eval/factor-weights?horizon_days=20")).json()
+    assert fw["success"]
+    assert set(fw["data"]["shadow_weights"].keys()) == set(fw["data"]["production_weights"].keys())
+    assert sum(fw["data"]["shadow_weights"].values()) == pytest.approx(1.0, abs=1e-3)
+
+    weekly = (await client.get("/api/eval/weekly-learning?window_days=7")).json()
+    assert weekly["success"]
+    assert weekly["data"]["window_days"] == 7
+    assert isinstance(weekly["data"]["metric_deltas"], list)

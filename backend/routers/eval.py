@@ -13,6 +13,8 @@ from backend.models.common import ApiResponse
 from backend.services.db import eval_db, pick_outcome_db
 from backend.services.ledger import eval_metrics as em
 from backend.services.ledger.eval_service import run_eval_batch
+from backend.services.ledger.weekly_learning_service import build_weekly_learning_summary
+from backend.services.registry.factor_weight_service import DEFAULT_HORIZON_DAYS, compute_ic_weights
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
@@ -71,3 +73,26 @@ async def equity_curve(
 async def run() -> ApiResponse[dict]:
     """全 scope × 主要ホライズンの評価指標を算出・永続化する（通常は beat が夜間に実行）."""
     return ApiResponse.ok(await run_eval_batch())
+
+
+@router.get("/factor-weights", response_model=ApiResponse[dict], summary="ファクター実測 IC の重み（shadow）")
+async def factor_weights(
+    horizon_days: int = Query(default=DEFAULT_HORIZON_DAYS, ge=1, le=60),
+) -> ApiResponse[dict]:
+    """`recommender.FACTOR_WEIGHTS`（本番使用）と実測 |IC| 比例の重み（shadow）を並べて返す.
+
+    shadow 側はここでは一切合成へ反映されない参考値（`services/registry/factor_weight_service`）。
+    """
+    from backend.services.scoring.recommender import FACTOR_WEIGHTS
+
+    shadow = await compute_ic_weights(horizon_days=horizon_days)
+    data = {"horizon_days": horizon_days, "production_weights": FACTOR_WEIGHTS, "shadow_weights": shadow}
+    return ApiResponse.ok(data)
+
+
+@router.get("/weekly-learning", response_model=ApiResponse[dict], summary="週次学習差分サマリ")
+async def weekly_learning(
+    window_days: int = Query(default=7, ge=1, le=90),
+) -> ApiResponse[dict]:
+    """直近 `window_days` 日の評価指標差分・昇格判定・ドリフト検知のロールアップを返す."""
+    return ApiResponse.ok(await build_weekly_learning_summary(window_days=window_days))

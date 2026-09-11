@@ -803,6 +803,98 @@
         }
       }
     },
+    "/api/eval/factor-weights": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "ファクター実測 IC の重み（shadow）",
+        "description": "`recommender.FACTOR_WEIGHTS`（本番使用）と実測 |IC| 比例の重み（shadow）を並べて返す.\n\nshadow 側はここでは一切合成へ反映されない参考値（`services/registry/factor_weight_service`）。",
+        "operationId": "factor_weights_api_eval_factor_weights_get",
+        "parameters": [
+          {
+            "name": "horizon_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 20,
+              "title": "Horizon Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval/weekly-learning": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "週次学習差分サマリ",
+        "description": "直近 `window_days` 日の評価指標差分・昇格判定・ドリフト検知のロールアップを返す.",
+        "operationId": "weekly_learning_api_eval_weekly_learning_get",
+        "parameters": [
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 7,
+              "title": "Window Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registry/champions": {
       "get": {
         "tags": [

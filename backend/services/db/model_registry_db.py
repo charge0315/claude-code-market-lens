@@ -125,6 +125,7 @@ async def insert_promotion(
     paper_days: int,
     verdict: str,
     rationale: dict[str, object],
+    evaluated_at: str | None = None,
 ) -> None:
     """昇格ゲートの判定結果を 1 行追加する（`applied=0` で作成、適用は別 API）."""
     async with get_db() as db:
@@ -147,7 +148,7 @@ async def insert_promotion(
                 "lane": lane,
                 "challenger_version": challenger_version,
                 "champion_version": champion_version,
-                "evaluated_at": datetime.now(JST).isoformat(timespec="seconds"),
+                "evaluated_at": evaluated_at or datetime.now(JST).isoformat(timespec="seconds"),
                 "holdout_delta": holdout_delta,
                 "calib_regressed": 1 if calib_regressed else 0,
                 "paper_perf_delta": paper_perf_delta,
