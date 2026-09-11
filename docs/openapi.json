@@ -1718,6 +1718,211 @@
         }
       }
     },
+    "/api/notify/notifications": {
+      "get": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "通知一覧取得",
+        "description": "通知履歴を新しい順で返す。`unread_only=true` で未読のみ絞り込み.",
+        "operationId": "get_notifications_api_notify_notifications_get",
+        "parameters": [
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unread Only"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_Notification__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notify/notifications/{notification_id}/read": {
+      "patch": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "通知既読化",
+        "description": "指定した通知を既読にする.",
+        "operationId": "mark_notification_read_api_notify_notifications__notification_id__read_patch",
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Notification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Notification_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notify/vapid-key": {
+      "get": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "Web Push 公開鍵取得",
+        "description": "VAPID 公開鍵を返す（未設定なら空文字 — フロントは Push 購読 UI を非表示にする）.",
+        "operationId": "get_vapid_key_api_notify_vapid_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notify/subscribe": {
+      "post": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "Web Push 購読登録",
+        "description": "ブラウザの `PushSubscription` を登録する（同一 endpoint は鍵を更新）.",
+        "operationId": "subscribe_api_notify_subscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notify/unsubscribe": {
+      "post": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "Web Push 購読解除",
+        "description": "購読を無効化し以後の配信対象から除外する.",
+        "operationId": "unsubscribe_api_notify_unsubscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -1770,6 +1975,50 @@
           "acquired_at"
         ],
         "title": "AddHoldingRequest"
+      },
+      "ApiResponse_Notification_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Notification"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Notification]"
       },
       "ApiResponse_PickRunResult_": {
         "properties": {
@@ -2083,6 +2332,54 @@
         ],
         "title": "ApiResponse[dict]"
       },
+      "ApiResponse_list_Notification__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Notification"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[Notification]]"
+      },
       "ApiResponse_list_PickSummary__": {
         "properties": {
           "success": {
@@ -2356,6 +2653,66 @@
         ],
         "title": "LivenessResponse",
         "description": "API プロセス自体の生存確認（依存先は見ない軽量応答）."
+      },
+      "Notification": {
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "title": "Notification Id"
+          },
+          "run_date": {
+            "type": "string",
+            "title": "Run Date"
+          },
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "trim",
+              "stop_loss",
+              "add"
+            ],
+            "title": "Kind"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "notification_id",
+          "run_date",
+          "ticker",
+          "kind",
+          "channel",
+          "body",
+          "created_at"
+        ],
+        "title": "Notification",
+        "description": "通知 1 件（`notifications` テーブルに対応）."
       },
       "PageMeta": {
         "properties": {
@@ -2855,6 +3212,41 @@
         ],
         "title": "PortfolioSummary"
       },
+      "PushSubscriptionRequest": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          },
+          "p256dh": {
+            "type": "string",
+            "title": "P256Dh"
+          },
+          "auth": {
+            "type": "string",
+            "title": "Auth"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "title": "PushSubscriptionRequest",
+        "description": "ブラウザの `PushSubscription` をそのまま受け取る登録リクエスト."
+      },
       "RejectedPick": {
         "properties": {
           "symbol": {
@@ -3154,6 +3546,19 @@
         ],
         "title": "TrendSnapshot",
         "description": "ある時点で収集・分析したトレンド一覧のスナップショット（1 行 = 1 スナップショット）."
+      },
+      "UnsubscribeRequest": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint"
+        ],
+        "title": "UnsubscribeRequest"
       },
       "UpdateHoldingRequest": {
         "properties": {

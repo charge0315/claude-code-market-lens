@@ -9,6 +9,7 @@ import pytest
 
 from backend.models.portfolio import PortfolioHolding
 from backend.services.anthropic_errors import AnthropicRateLimitError
+from backend.services.db.notification_db import list_notifications
 from backend.services.db.portfolio_db import insert_holding
 from backend.services.db.portfolio_signal_db import get_signal, list_signals
 from backend.services.portfolio import signal_service as svc
@@ -78,6 +79,14 @@ async def test_evaluate_holding_hold_action_persists_signal(migrated_db: Path, m
     assert row["status"] == "proposed"
 
 
+async def test_evaluate_holding_hold_action_does_not_notify(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
+
+    await svc.evaluate_holding(_holding())
+
+    assert await list_notifications() == []
+
+
 async def test_evaluate_holding_add_action_persists_entry(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         svc,
@@ -101,6 +110,11 @@ async def test_evaluate_holding_add_action_persists_entry(migrated_db: Path, mon
     assert row is not None
     assert row["action"] == "add"
     assert row["entry"] == pytest.approx(1055.0)
+
+    notifications = await list_notifications()
+    assert len(notifications) == 1
+    assert notifications[0]["ticker"] == "7203"
+    assert notifications[0]["kind"] == "add"
 
 
 async def test_evaluate_holding_returns_none_when_current_price_missing(migrated_db: Path) -> None:

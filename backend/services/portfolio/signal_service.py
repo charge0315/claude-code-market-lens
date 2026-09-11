@@ -18,6 +18,7 @@ from backend.services.anthropic_client import anthropic_client
 from backend.services.anthropic_errors import AnthropicError
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.db.portfolio_signal_db import insert_signal
+from backend.services.notify.notification_service import notify_signal
 from backend.services.picks.bracket import Bracket, finalize_bracket
 from backend.services.portfolio.portfolio_service import build_portfolio
 from backend.services.portfolio.prompt import build_portfolio_signal_prompt
@@ -99,15 +100,29 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
         logger.info("ポートフォリオ判定却下（3値不整合）: %s (%s)", holding.symbol, reason)
         return None
 
-    return await insert_signal(
+    entry = round(bracket.entry, 2) if action == "add" else None
+    stop = round(bracket.stop, 2)
+    target = round(bracket.target, 2)
+    rationale = str(raw.get("reasoning") or "定量分析に基づく判定")
+    signal_id = await insert_signal(
         symbol=holding.symbol,
         action=action,
-        entry=round(bracket.entry, 2) if action == "add" else None,
-        stop=round(bracket.stop, 2),
-        target=round(bracket.target, 2),
+        entry=entry,
+        stop=stop,
+        target=target,
         confidence=confidence,
-        rationale=str(raw.get("reasoning") or "定量分析に基づく判定"),
+        rationale=rationale,
     )
+    await notify_signal(
+        symbol=holding.symbol,
+        action=action,
+        stop=stop,
+        target=target,
+        confidence=confidence,
+        rationale=rationale,
+        entry=entry,
+    )
+    return signal_id
 
 
 async def run_portfolio_monitor() -> list[str]:
