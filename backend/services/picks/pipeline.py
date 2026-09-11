@@ -37,6 +37,7 @@ from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
+from backend.services.registry.model_registry import bootstrap_champion_if_missing, ensure_registered
 from backend.services.scoring.fundamental_analyzer import get_fundamental_with_vault_fallback
 from backend.services.scoring.recommender import compute_recommendation
 from backend.services.scoring.signal_scan_scoring import compute_trend_score
@@ -155,6 +156,11 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     issued_at = datetime.now(JST).isoformat(timespec="seconds")
 
     horizon = cast("HorizonType", horizon_type)
+
+    # モデルレジストリへ登録し、その lane に champion が無ければ無条件で champion にする
+    # （N1、`plans/03` §1.4）。2 本目以降のバージョンは昇格ゲートを通さない限り champion にならない。
+    await ensure_registered(MODEL_VERSION, lane=horizon_type)
+    await bootstrap_champion_if_missing(horizon_type, MODEL_VERSION)
 
     if not anthropic_client.is_configured:
         return PickRunResult(

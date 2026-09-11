@@ -64,6 +64,10 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "backend.tasks.run_drift_check_task",
         "schedule": crontab(hour=18, minute=30, day_of_week="sun"),  # JST 日曜 03:30（深夜・週次）
     },
+    "run-promotion-evaluation": {
+        "task": "backend.tasks.run_promotion_evaluation_task",
+        "schedule": crontab(hour=18, minute=45, day_of_week="sun"),  # JST 日曜 03:45（ドリフト検知の後）
+    },
 }
 
 celery_app.conf.update(

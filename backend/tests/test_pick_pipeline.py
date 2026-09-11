@@ -121,7 +121,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     return state
 
 
-async def test_not_configured(wired: WiredState, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_not_configured(wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeLLM(wired)
     fake.is_configured = False
     monkeypatch.setattr(pp, "anthropic_client", fake)
@@ -130,7 +130,7 @@ async def test_not_configured(wired: WiredState, monkeypatch: pytest.MonkeyPatch
     assert result.picks == []
 
 
-async def test_empty_pool(wired: WiredState) -> None:
+async def test_empty_pool(wired: WiredState, migrated_db: Path) -> None:
     wired.codes = []
     result = await pp.run_picks("mid_term")
     assert result.status == "empty"

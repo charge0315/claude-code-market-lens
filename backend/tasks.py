@@ -84,3 +84,15 @@ def run_drift_check_task() -> dict[str, object]:
         )
     )
     return {"checked": len(results), "drifted": sum(1 for r in results if r.drift_flag)}
+
+
+@celery_app.task(name="backend.tasks.run_promotion_evaluation_task")
+def run_promotion_evaluation_task() -> dict[str, str]:
+    """全 lane の challenger（champion 以外の登録済みバージョン）を週次で評価する（N1）.
+
+    判定は `model_promotions` へ記録するのみ（`applied=0`）。champion の実差し替えは
+    `POST /api/registry/promotions/{id}/apply` の人手承認でのみ行う（自動昇格 OFF）。
+    """
+    from backend.services.registry.promotion import evaluate_all_challengers
+
+    return asyncio.run(evaluate_all_challengers())

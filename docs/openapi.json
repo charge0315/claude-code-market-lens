@@ -803,6 +803,175 @@
         }
       }
     },
+    "/api/registry/champions": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "系統別 champion 一覧",
+        "description": "全系統（lane）の現行 champion を返す.",
+        "operationId": "champions_api_registry_champions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/promotions": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "昇格判定ログ",
+        "description": "昇格ゲートの判定履歴を新しい順で返す（`applied` 済みか、提案止まりかも含む）.",
+        "operationId": "promotions_api_registry_promotions_get",
+        "parameters": [
+          {
+            "name": "lane",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/promotions/evaluate": {
+      "post": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "昇格ゲートを手動評価",
+        "description": "challenger を champion と比較し `model_promotions` へ判定を記録する（提案のみ）.",
+        "operationId": "evaluate_api_registry_promotions_evaluate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluatePromotionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/promotions/{promotion_id}/apply": {
+      "post": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "昇格を人手承認で適用",
+        "description": "`propose_promote` かつ未適用の判定のみ champion を差し替える（唯一の昇格経路）.",
+        "operationId": "apply_api_registry_promotions__promotion_id__apply_post",
+        "parameters": [
+          {
+            "name": "promotion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Promotion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registry/drift": {
       "get": {
         "tags": [
@@ -1212,6 +1381,34 @@
           "success"
         ],
         "title": "ApiResponse[list[dict]]"
+      },
+      "EvaluatePromotionRequest": {
+        "properties": {
+          "lane": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Lane"
+          },
+          "challenger_version": {
+            "type": "string",
+            "title": "Challenger Version"
+          },
+          "horizon_days": {
+            "type": "integer",
+            "title": "Horizon Days",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "lane",
+          "challenger_version"
+        ],
+        "title": "EvaluatePromotionRequest",
+        "description": "`POST /api/registry/promotions/evaluate` のリクエストボディ."
       },
       "HTTPValidationError": {
         "properties": {
