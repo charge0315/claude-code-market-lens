@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from backend.services.db.portfolio_signal_db import insert_signal
 from backend.services.portfolio import portfolio_service as psvc
 
 
@@ -106,3 +107,111 @@ async def test_risk_endpoint_returns_report(migrated_db: Path) -> None:
     assert body["success"] is True
     assert body["data"]["analyzed_count"] == 0
     assert body["data"]["message"] == "保有銘柄がありません"
+
+
+async def test_signals_list_and_filter_by_status(migrated_db: Path) -> None:
+    proposed_id = await insert_signal(
+        symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        all_res = await client.get("/api/portfolio/signals")
+        assert len(all_res.json()["data"]) == 1
+        assert all_res.json()["data"][0]["signal_id"] == proposed_id
+
+        filtered = await client.get("/api/portfolio/signals?status=approved")
+        assert filtered.json()["data"] == []
+
+
+async def test_signal_approve_then_report_fill_flow(migrated_db: Path) -> None:
+    signal_id = await insert_signal(
+        symbol="7203", action="trim", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        approve_res = await client.post(f"/api/portfolio/signals/{signal_id}/approve")
+        assert approve_res.json()["data"]["status"] == "approved"
+
+        fill_res = await client.post(
+            f"/api/portfolio/signals/{signal_id}/report-fill",
+            json={"executed_price": 1050.0, "executed_quantity": 50, "executed_at": "2026-06-01T10:00:00+09:00"},
+        )
+        assert fill_res.json()["data"]["status"] == "executed"
+
+        signals = (await client.get("/api/portfolio/signals")).json()["data"]
+        assert signals[0]["status"] == "executed"
+        assert signals[0]["fill_report"] is not None
+
+
+async def test_signal_reject_flow(migrated_db: Path) -> None:
+    signal_id = await insert_signal(
+        symbol="7203", action="stop_loss", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(f"/api/portfolio/signals/{signal_id}/reject")
+    assert res.json()["data"]["status"] == "rejected"
+
+
+async def test_signal_approve_unknown_returns_404(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/portfolio/signals/does-not-exist/approve")
+    assert res.status_code == 404
+
+
+async def test_signal_approve_twice_returns_conflict(migrated_db: Path) -> None:
+    signal_id = await insert_signal(
+        symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post(f"/api/portfolio/signals/{signal_id}/approve")
+        assert first.status_code == 200
+        second = await client.post(f"/api/portfolio/signals/{signal_id}/approve")
+    assert second.status_code == 409
+
+
+async def test_report_fill_before_approval_returns_conflict(migrated_db: Path) -> None:
+    signal_id = await insert_signal(
+        symbol="7203", action="trim", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(
+            f"/api/portfolio/signals/{signal_id}/report-fill",
+            json={"executed_price": 1000.0, "executed_quantity": 10, "executed_at": "2026-06-01T10:00:00+09:00"},
+        )
+    assert res.status_code == 409
+
+
+async def test_signals_run_endpoint_evaluates_holdings(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.db.portfolio_db import insert_holding
+    from backend.services.portfolio import signal_service as ssvc
+
+    class _FakeLLM:
+        async def propose_portfolio_signal(self, *, symbol: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
+            return {
+                "action": "hold",
+                "stop_loss_price": 950.0,
+                "take_profit_price": 1150.0,
+                "confidence": 70.0,
+                "reasoning": "堅調",
+            }
+
+    monkeypatch.setattr(ssvc, "anthropic_client", _FakeLLM())
+    await insert_holding(symbol="7203", quantity=100, avg_cost=1000.0, acquired_at="2026-01-15")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/portfolio/signals/run")
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["count"] == 1

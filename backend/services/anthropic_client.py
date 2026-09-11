@@ -1,9 +1,10 @@
 """Anthropic (Claude) API 非同期クライアント.
 
 Market Lens `backend/services/anthropic_client.py` から移植。変更点:
-- P3 時点では `propose_stock_pick` / `propose_trends` / `converse` の 3 メソッドのみ移植する。
-  `propose_eod_review` / `propose_improvement_plan` / `propose_portfolio_trades` は
-  それぞれ P7 / P5 で同じ形（forced tool-use + ブレーカ + api_cost 記録）で追加する。
+- P3 時点では `propose_stock_pick` / `propose_trends` / `converse` の 3 メソッドのみ移植した。
+  P7b で `propose_portfolio_signal`（🆕、Market Lens に対応物なし — 保有 1 件の
+  継続保有/一部利確/損切/買い増し判定）を同じ形（forced tool-use + ブレーカ + api_cost 記録）
+  で追加。`propose_eod_review` / `propose_improvement_plan` は P7d / 対象外（P5c 参照）。
 
 環境変数 `ANTHROPIC_API_KEY` を設定すると有効になる。未設定なら `is_configured=False` を返し、
 呼び出し元が「機能未設定」を返せるようにする（フェイルソフト）。forced tool-use で
@@ -141,6 +142,36 @@ _TREND_TOOL_SCHEMA: JsonDict = {
 }
 
 
+# 保有 1 件について継続保有/一部利確/損切/買い増しを判定し、更新後の stop/target
+# （買い増し時は entry も）・確信度・根拠を forced tool-use で構造化取得する（🆕 P7b）。
+_PORTFOLIO_SIGNAL_TOOL_SCHEMA: JsonDict = {
+    "name": "propose_portfolio_signal",
+    "description": (
+        "保有銘柄1件の現状を分析し、継続保有(hold)/一部利確(trim)/損切(stop_loss)/買い増し(add)の"
+        "いずれかを判定して、更新後の損切り価格・利確目標・確信度・根拠を提案する。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["hold", "trim", "stop_loss", "add"],
+                "description": "hold=継続保有 / trim=一部利確 / stop_loss=損切り / add=買い増し",
+            },
+            "entry": {
+                "type": "number",
+                "description": "買い増し時の推奨買値（円）。action=add のときのみ使用する。",
+            },
+            "stop_loss_price": {"type": "number", "description": "更新後の損切り価格（円）。現在値より低い値。"},
+            "take_profit_price": {"type": "number", "description": "更新後の利確目標（円）。現在値より高い値。"},
+            "confidence": {"type": "number", "description": "この判定への確信度 0-100"},
+            "reasoning": {"type": "string", "description": "日本語での判定根拠（2〜4文）"},
+        },
+        "required": ["action", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
+    },
+}
+
+
 class AnthropicClient:
     """Anthropic API の非同期シングルトンクライアント."""
 
@@ -230,6 +261,16 @@ class AnthropicClient:
             feature="stock_pick",
             model=settings.anthropic_model,
             tool_schema=_TOOL_SCHEMA,
+            max_tokens=_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_portfolio_signal(self, *, symbol: str, prompt: str) -> JsonDict:
+        """forced tool-use で保有 1 件の継続保有/一部利確/損切/買い増し判定を取得する."""
+        return await self._forced_tool_call(
+            feature="portfolio_signal",
+            model=settings.anthropic_model,
+            tool_schema=_PORTFOLIO_SIGNAL_TOOL_SCHEMA,
             max_tokens=_MAX_TOKENS,
             prompt=prompt,
         )

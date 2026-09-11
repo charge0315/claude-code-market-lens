@@ -73,6 +73,12 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         # JST 毎月1日 04:00（月次。J-Quants 一括バー呼び出しが重いため週次より粗い頻度にする）。
         "schedule": crontab(hour=19, minute=0, day_of_month=1),
     },
+    "run-portfolio-monitor": {
+        "task": "backend.tasks.run_portfolio_monitor_task",
+        # 5分おき常時発火。立会時間外（JST 平日 9:00-15:30 外）はタスク内部で軽い早期 return
+        # （`run_signal_scan_task` 等、既存の場中限定タスクと同じ idiom）。
+        "schedule": crontab(minute="*/5"),
+    },
 }
 
 celery_app.conf.update(

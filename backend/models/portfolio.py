@@ -7,7 +7,12 @@ baseline スキーマに合わせて `holding_id`（UUID 文字列 PK）/ `symbo
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, field_validator
+
+PortfolioSignalAction = Literal["hold", "trim", "stop_loss", "add"]
+PortfolioSignalStatus = Literal["proposed", "approved", "rejected", "executed"]
 
 
 class AddHoldingRequest(BaseModel):
@@ -93,3 +98,50 @@ class PortfolioSummary(BaseModel):
     sector_allocations: list[SectorAllocation]
     holding_count: int
     updated_at: str
+
+
+class PortfolioSignal(BaseModel):
+    """保有 1 件に対する AI 売買タイミング判定（HITL 承認キュー、PF-3〜PF-5）.
+
+    `entry` は `action="add"` のときのみ値を持つ（新規買い増し価格）。`hold`/`trim`/`stop_loss`
+    は既存ポジションの更新後 stop/target のみを提案し `entry=None`。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    signal_id: str
+    symbol: str
+    evaluated_at: str
+    action: PortfolioSignalAction
+    entry: float | None = None
+    stop: float
+    target: float
+    confidence: float
+    rationale: str
+    status: PortfolioSignalStatus
+    fill_report: str | None = None  # JSON 文字列（ReportFillRequest の内容）
+
+
+class ReportFillRequest(BaseModel):
+    """承認済みシグナルに対する実約定結果の報告（人間が入力、HITL）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    executed_price: float
+    executed_quantity: int
+    executed_at: str  # 約定日時（ISO8601）
+    note: str | None = None
+
+    @field_validator("executed_price")
+    @classmethod
+    def executed_price_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("約定価格は正の値を指定してください")
+        return v
+
+    @field_validator("executed_quantity")
+    @classmethod
+    def executed_quantity_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("約定株数は正の値を指定してください")
+        return v

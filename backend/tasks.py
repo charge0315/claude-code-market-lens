@@ -10,10 +10,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, time
 
 from backend.celery_app import celery_app
+from backend.services.jst_time import JST
 
 logger = logging.getLogger(__name__)
+
+# 東証の立会時間（大引け 15:00、監視は 15:30 まで。祝日は非対応 — `plans/01_PRD` PF-2）。
+_MARKET_OPEN_JST = time(9, 0)
+_MARKET_CLOSE_JST = time(15, 30)
+
+
+def _is_weekday_jst() -> bool:
+    """現在の曜日が JST 基準で平日かを判定する（祝日は非対応）."""
+    return datetime.now(JST).weekday() < 5  # 5=土, 6=日
+
+
+def _is_market_hours_jst() -> bool:
+    """現在時刻が JST 基準の平日・東証立会時間内かを判定する（祝日は非対応）."""
+    if not _is_weekday_jst():
+        return False
+    return _MARKET_OPEN_JST <= datetime.now(JST).time() <= _MARKET_CLOSE_JST
 
 
 @celery_app.task(name="backend.tasks.ping")
@@ -110,3 +128,19 @@ def run_pool_training_task() -> dict[str, object]:
 
     summary = asyncio.run(run_pool_training())
     return summary.to_dict()
+
+
+@celery_app.task(name="backend.tasks.run_portfolio_monitor_task")
+def run_portfolio_monitor_task() -> dict[str, object] | None:
+    """保有銘柄を AI 判定し `portfolio_signals` へ記録する（🆕 P7b、PF-2、場中 5 分周期）.
+
+    立会時間外（`_is_market_hours_jst()` が False）は判定のみの軽い早期 return（`run_signal_scan_task`
+    等の既存の自走タスクと同じ理由 — 価格データが古い可能性があるため場中のみ実行）。
+    判定は `portfolio_signals` へ `status="proposed"` で記録するだけで、実際の売買は一切行わない。
+    """
+    from backend.services.portfolio.signal_service import run_portfolio_monitor
+
+    if not _is_market_hours_jst():
+        return None
+    signal_ids = asyncio.run(run_portfolio_monitor())
+    return {"signal_ids": signal_ids, "count": len(signal_ids)}

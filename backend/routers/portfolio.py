@@ -5,16 +5,26 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from backend.models.common import ApiResponse
-from backend.models.portfolio import AddHoldingRequest, PortfolioSummary, UpdateHoldingRequest
+from backend.models.portfolio import (
+    AddHoldingRequest,
+    PortfolioSignal,
+    PortfolioSignalStatus,
+    PortfolioSummary,
+    ReportFillRequest,
+    UpdateHoldingRequest,
+)
 from backend.models.risk import PortfolioRiskReport
 from backend.services.db.portfolio_db import delete_holding, insert_holding, update_holding
+from backend.services.db.portfolio_signal_db import get_signal, list_signals, set_fill_report, set_status
 from backend.services.portfolio.portfolio_service import build_portfolio
 from backend.services.portfolio.risk_service import analyze_portfolio_risk
+from backend.services.portfolio.signal_service import run_portfolio_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -62,3 +72,61 @@ async def remove_holding(holding_id: str) -> ApiResponse[dict]:
     if not ok:
         raise HTTPException(status_code=404, detail=f"保有銘柄 {holding_id} が見つかりません")
     return ApiResponse.ok({"holding_id": holding_id})
+
+
+@router.get("/signals", response_model=ApiResponse[list[PortfolioSignal]], summary="AI 売買タイミング判定一覧")
+async def get_signals(
+    status: PortfolioSignalStatus | None = Query(default=None),
+) -> ApiResponse[list[PortfolioSignal]]:
+    """判定履歴（承認キュー）を新しい順で返す."""
+    rows = await list_signals(status=status)
+    return ApiResponse.ok([PortfolioSignal.model_validate(r) for r in rows])
+
+
+@router.post("/signals/run", response_model=ApiResponse[dict], summary="保有監視を手動実行")
+async def run_signals() -> ApiResponse[dict]:
+    """全保有ロットを AI 判定し `portfolio_signals` へ記録する（通常は beat が場中に実行）."""
+    signal_ids = await run_portfolio_monitor()
+    return ApiResponse.ok({"signal_ids": signal_ids, "count": len(signal_ids)})
+
+
+@router.post("/signals/{signal_id}/approve", response_model=ApiResponse[dict], summary="判定を承認")
+async def approve_signal(signal_id: str) -> ApiResponse[dict]:
+    """`proposed` の判定を `approved` にする（人手承認 API 専用）."""
+    row = await get_signal(signal_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"判定 {signal_id} が見つかりません")
+    if row["status"] != "proposed":
+        detail = f"判定 {signal_id} は proposed 状態ではありません（{row['status']}）"
+        raise HTTPException(status_code=409, detail=detail)
+    await set_status(signal_id, "approved")
+    return ApiResponse.ok({"signal_id": signal_id, "status": "approved"})
+
+
+@router.post("/signals/{signal_id}/reject", response_model=ApiResponse[dict], summary="判定を却下")
+async def reject_signal(signal_id: str) -> ApiResponse[dict]:
+    """`proposed` の判定を `rejected` にする."""
+    row = await get_signal(signal_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"判定 {signal_id} が見つかりません")
+    if row["status"] != "proposed":
+        detail = f"判定 {signal_id} は proposed 状態ではありません（{row['status']}）"
+        raise HTTPException(status_code=409, detail=detail)
+    await set_status(signal_id, "rejected")
+    return ApiResponse.ok({"signal_id": signal_id, "status": "rejected"})
+
+
+@router.post("/signals/{signal_id}/report-fill", response_model=ApiResponse[dict], summary="実約定結果を報告")
+async def report_fill(signal_id: str, req: ReportFillRequest) -> ApiResponse[dict]:
+    """`approved` の判定に対し、人間が実際に行った約定結果を報告する（`executed` へ遷移）.
+
+    アプリ自体はブローカー発注を一切行わない（CLAUDE.md）。ここは実約定の事後記録専用。
+    """
+    row = await get_signal(signal_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"判定 {signal_id} が見つかりません")
+    if row["status"] != "approved":
+        detail = f"判定 {signal_id} は approved 状態ではありません（{row['status']}）"
+        raise HTTPException(status_code=409, detail=detail)
+    await set_fill_report(signal_id, json.dumps(req.model_dump(), ensure_ascii=False))
+    return ApiResponse.ok({"signal_id": signal_id, "status": "executed"})
