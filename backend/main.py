@@ -21,6 +21,7 @@ from backend.config import settings  # noqa: E402
 from backend.models.health import LivenessResponse  # noqa: E402
 from backend.routers.eval import router as eval_router  # noqa: E402
 from backend.routers.health import router as health_router  # noqa: E402
+from backend.routers.inference import router as inference_router  # noqa: E402
 from backend.routers.ledger import router as ledger_router  # noqa: E402
 from backend.routers.picks import router as picks_router  # noqa: E402
 from backend.routers.registry import router as registry_router  # noqa: E402
@@ -74,6 +75,7 @@ app.include_router(trend_router)
 app.include_router(ledger_router)
 app.include_router(eval_router)
 app.include_router(registry_router)
+app.include_router(inference_router)
 
 
 @app.get("/api/health", response_model=LivenessResponse, tags=["health"], summary="Liveness check")
