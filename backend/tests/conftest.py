@@ -41,6 +41,19 @@ def _reset_shared_clients() -> Iterator[None]:
     database._engine = None
 
 
+@pytest.fixture(autouse=True)
+def _isolated_calibrator_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """較正器（joblib）の保存先を毎テスト一時ディレクトリへ差し替える.
+
+    `services/registry/calibration` はモジュールレベルの `_CALIBRATOR_DIR`（実リポジトリの
+    `data/calibrators/`）へ無条件に書き込むため、これを autouse で隔離しないと、ある
+    テストが学習した較正器を別テストが誤って読み込んでしまう（DB の per-file 隔離と同じ理由）。
+    """
+    from backend.services.registry import calibration
+
+    monkeypatch.setattr(calibration, "_CALIBRATOR_DIR", tmp_path / "calibrators")
+
+
 @pytest.fixture
 def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """このテスト関数専用の SQLite ファイルへ `settings.database_url` を差し替える."""

@@ -78,8 +78,14 @@ async def test_compute_and_persist_writes_snapshots_and_calibration(migrated_db:
 
     curve = await eval_db.get_latest_calibration_curve(scope="mid_term", horizon_days=20)
     assert curve is not None
-    assert curve["is_calibrated"] == 0  # raw confidence（P5 で isotonic）
+    # 12 件（>= _MIN_PLATT_SAMPLES=10、< _MIN_ISOTONIC_SAMPLES=40）→ Platt で較正される。
+    assert curve["is_calibrated"] == 1
     assert isinstance(curve["points"], list) and curve["points"]
+
+    from backend.services.registry import calibration
+
+    loaded = calibration.load_calibrator("mid_term", 20)
+    assert loaded is not None and loaded[1] == "platt"
 
 
 async def test_compute_and_persist_skips_when_too_few(migrated_db: Path) -> None:

@@ -36,6 +36,7 @@ from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
+from backend.services.registry.calibration import apply_calibration
 from backend.services.scoring.fundamental_analyzer import get_fundamental_with_vault_fallback
 from backend.services.scoring.recommender import compute_recommendation
 from backend.services.scoring.signal_scan_scoring import compute_trend_score
@@ -233,11 +234,15 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             )
             continue
 
-        confidence = confidence_raw
+        capped = confidence_raw
         if _as_dict(rec.get("fundamental_signals")).get("value_trap"):
-            confidence = min(confidence, _VALUE_TRAP_CONFIDENCE_CAP)  # E2
+            capped = min(capped, _VALUE_TRAP_CONFIDENCE_CAP)  # E2
         if tech.get("signal_agreement") == "conflicting":
-            confidence = min(confidence, _CONFLICTING_CONFIDENCE_CAP)
+            capped = min(capped, _CONFLICTING_CONFIDENCE_CAP)
+
+        # 確度の事後較正（CL-7 / N3）。台帳が薄いうちは較正器が無く恒等写像のまま。
+        gate_horizon = 3 if horizon_type == "short_term" else 20
+        confidence, _calib_method = apply_calibration(horizon_type, gate_horizon, capped)
 
         bracket, reason = finalize_bracket(current_price, atr, raw_entry, raw_stop, raw_target)
         if bracket is None:
@@ -259,7 +264,6 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         # E3: 実測勝率ゲート。決着済みコホート（確度バケット × 方向）の勝率が閾値未満で、
         # かつ約定サンプルが十分（>= _WINRATE_GATE_MIN_SAMPLE）なら、LLM の確度に関わらず除外する。
         # pick_outcomes が薄いうち（サンプル不足）はゲートが発動せず挙動は変わらない。
-        gate_horizon = 3 if horizon_type == "short_term" else 20
         win_rate, n_filled = await cohort_winrate(
             confidence_bucket=bucket, direction=direction, horizon_days=gate_horizon
         )

@@ -60,3 +60,27 @@ def sync_trends_task() -> dict[str, object]:
 
     snap = asyncio.run(sync_trends())
     return {"status": snap.status, "trends": len(snap.trends), "signals": snap.signal_count}
+
+
+@celery_app.task(name="backend.tasks.run_drift_check_task")
+def run_drift_check_task() -> dict[str, object]:
+    """特徴量分布ドリフト（PSI）を週次で計測する（N5）.
+
+    ベースライン = 直近 90〜30 日前、直近 = 過去 30 日。台帳が薄いうちは
+    `run_drift_batch` がサンプル不足の特徴量を自然にスキップする。
+    """
+    from datetime import datetime, timedelta
+
+    from backend.services.jst_time import JST
+    from backend.services.registry.drift import run_drift_batch
+
+    now = datetime.now(JST)
+    results = asyncio.run(
+        run_drift_batch(
+            baseline_start=(now - timedelta(days=90)).isoformat(timespec="seconds"),
+            baseline_end=(now - timedelta(days=30)).isoformat(timespec="seconds"),
+            current_start=(now - timedelta(days=30)).isoformat(timespec="seconds"),
+            current_end=now.isoformat(timespec="seconds"),
+        )
+    )
+    return {"checked": len(results), "drifted": sum(1 for r in results if r.drift_flag)}

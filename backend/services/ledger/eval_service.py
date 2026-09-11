@@ -6,8 +6,10 @@
 - ピックポートフォリオ成績（勝率・平均 R 倍数・期待値・最大 DD・Sharpe、excess ベース）
 を算出し、`eval_snapshots` / `calibration_curves` へ時系列で追記する（成長曲線用）。
 
-Alpha Forge の raw confidence はまだ事後較正していないため `is_calibrated=False`。
-isotonic / Platt 較正の適用は P5（継続学習ループ N3）で行う。
+確度較正（isotonic / Platt、CL-7 / N3）はここで **学習** する（`confidence_raw` → `win`）。
+学習した較正器は `services/registry/calibration` が永続化し、ピック生成時（軽量・同期）に
+適用する。台帳が薄いうちは `calibration.fit_and_save` が identity へフォールバックするため
+`is_calibrated=False` のままになる。
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import logging
 
 from backend.services.db import eval_db, pick_outcome_db
 from backend.services.ledger import eval_metrics as em
+from backend.services.registry import calibration
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,8 @@ async def compute_and_persist(*, scope: str, horizon_days: int) -> dict[str, flo
     excess = [_f(r["excess_return"]) for r in rows]
     realized = [_f(r["realized_return"]) for r in rows]
     composite = [_f(r["composite_score"]) for r in rows]
-    probs = [_f(r["confidence"]) / 100.0 for r in rows]
+    confidence_raw = [_f(r["confidence_raw"]) for r in rows]
+    probs = [c / 100.0 for c in confidence_raw]
 
     win_rate = round(sum(wins) / n, 4)
     ic = em.spearman_ic(composite, excess)
@@ -96,11 +100,15 @@ async def compute_and_persist(*, scope: str, horizon_days: int) -> dict[str, flo
     # 較正曲線（予測確度バケット → 実測勝率）。
     table = em.calibration_table(wins, probs, n_buckets=5)
     points = [{"p_pred": round(mean_p, 4), "p_obs": round(obs, 4), "n": float(cnt)} for _lo, mean_p, obs, cnt in table]
+
+    # 較正器の学習（identity/isotonic/platt は confidence_raw の件数から自動選択、CL-7）。
+    method = calibration.fit_and_save(scope, horizon_days, confidence_raw, [bool(w) for w in wins])
+
     await eval_db.upsert_calibration_curve(
         scope=scope,
         points=points,
         brier=round(brier, 6) if brier is not None else None,
-        is_calibrated=False,  # raw confidence（事後較正は P5）
+        is_calibrated=(method != "identity"),
         horizon_days=horizon_days,
     )
 

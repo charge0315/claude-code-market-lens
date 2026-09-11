@@ -161,6 +161,49 @@ async def list_picks(
         return [_row_to_summary(dict(r._mapping)) for r in result]
 
 
+def _dig(payload: object, dotted_path: str) -> object:
+    """dict の入れ子から `a.b.c` 形式のパスで値を取り出す（無ければ None）."""
+    node = payload
+    for key in dotted_path.split("."):
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+async def list_feature_values(
+    feature_path: str, *, since: str, until: str, horizon_type: str | None = None
+) -> list[float]:
+    """期間内の `feature_snapshot` から dotted path（例: "score_breakdown.technical"）の
+    数値を抽出して返す（欠損・非数値はスキップ）. PSI ドリフト検知（N5）が使う.
+    """
+    clauses = ["is_shadow = 0", "issued_at >= :since", "issued_at < :until"]
+    params: dict[str, object] = {"since": since, "until": until}
+    if horizon_type is not None:
+        clauses.append("horizon_type = :horizon_type")
+        params["horizon_type"] = horizon_type
+    where = " AND ".join(clauses)
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                f"SELECT feature_snapshot FROM prediction_ledger WHERE {where}"  # noqa: S608  # nosec B608 - where は定数のみ
+            ),
+            params,
+        )
+        rows = result.all()
+
+    values: list[float] = []
+    for row in rows:
+        try:
+            snapshot = json.loads(str(row[0]))
+        except (TypeError, ValueError):
+            continue
+        value = _dig(snapshot, feature_path)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(float(value))
+    return values
+
+
 async def get_pick(pick_id: str) -> dict[str, object] | None:
     """単一ピックの生行（`feature_snapshot` 含む）を返す."""
     async with get_db() as db:

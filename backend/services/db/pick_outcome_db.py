@@ -122,7 +122,7 @@ async def list_resolved_for_eval(*, horizon_days: int, since: str | None = None)
                 f"""
                 SELECT
                     p.pick_id, p.horizon_type, p.issued_at, p.symbol, p.direction AS pick_direction,
-                    p.composite_score, p.confidence, p.confidence_bucket, p.model_version,
+                    p.composite_score, p.confidence, p.confidence_raw, p.confidence_bucket, p.model_version,
                     p.entry, p.stop, p.target,
                     o.horizon_days, o.realized_return, o.win, o.first_hit, o.excess_return,
                     o.mfe, o.mae

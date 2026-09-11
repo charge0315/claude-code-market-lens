@@ -803,6 +803,70 @@
         }
       }
     },
+    "/api/registry/drift": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "PSI ドリフト履歴",
+        "description": "特徴量分布ドリフト（PSI）の履歴を古い順で返す（モデルラボの推移グラフ用）.",
+        "operationId": "drift_api_registry_drift_get",
+        "parameters": [
+          {
+            "name": "feature",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "feature_snapshot の dotted path",
+              "title": "Feature"
+            },
+            "description": "feature_snapshot の dotted path"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
