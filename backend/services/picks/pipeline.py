@@ -31,6 +31,7 @@ from backend.services.anthropic_errors import AnthropicError
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
 from backend.services.data.trend.context import render_trend_context
+from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
@@ -61,6 +62,9 @@ _ATR_LOOKBACK = "3mo"
 _MIN_CONFIDENCE = 40.0
 _VALUE_TRAP_CONFIDENCE_CAP = 35.0
 _CONFLICTING_CONFIDENCE_CAP = 60.0
+# E3 実測勝率ゲート: コホート約定 n がこれ以上で、勝率がこれ未満なら除外。
+_WINRATE_GATE = 0.45
+_WINRATE_GATE_MIN_SAMPLE = 20
 
 # horizon 別の候補プール / ショートリスト設定。
 _CONFIG: dict[str, dict[str, int]] = {
@@ -248,7 +252,27 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             )
             continue
 
-        # E3（実測勝率ゲート）は pick_outcomes が貯まる P4 以降で有効化する。
+        raw_direction = str(rec.get("direction") or "neutral")
+        direction = cast("Direction", _DIRECTION_MAP.get(raw_direction, "neutral"))
+        bucket = pl.confidence_bucket(confidence)
+
+        # E3: 実測勝率ゲート。決着済みコホート（確度バケット × 方向）の勝率が閾値未満で、
+        # かつ約定サンプルが十分（>= _WINRATE_GATE_MIN_SAMPLE）なら、LLM の確度に関わらず除外する。
+        # pick_outcomes が薄いうち（サンプル不足）はゲートが発動せず挙動は変わらない。
+        gate_horizon = 3 if horizon_type == "short_term" else 20
+        win_rate, n_filled = await cohort_winrate(
+            confidence_bucket=bucket, direction=direction, horizon_days=gate_horizon
+        )
+        if n_filled >= _WINRATE_GATE_MIN_SAMPLE and win_rate is not None and win_rate < _WINRATE_GATE:
+            rejected.append(
+                RejectedPick(
+                    symbol=code,
+                    status="rejected_hard_excluded",
+                    reason=f"実測勝率ゲート: {bucket}/{direction} コホート勝率 {win_rate:.0%}"
+                    f"（n={n_filled}）が基準 {_WINRATE_GATE:.0%} 未満",
+                )
+            )
+            continue
 
         if confidence < _MIN_CONFIDENCE:
             rejected.append(
@@ -260,8 +284,6 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             )
             continue
 
-        raw_direction = str(rec.get("direction") or "neutral")
-        direction = cast("Direction", _DIRECTION_MAP.get(raw_direction, "neutral"))
         picks.append(
             LedgerEntry(
                 pick_id=pl.new_pick_id(),

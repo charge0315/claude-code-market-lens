@@ -34,19 +34,33 @@ celery_app = Celery(
     include=["backend.tasks"],
 )
 
-# beat スケジュール（枠）。各タスクは対応フェーズで実装し、その時点で有効化する。
-# 時刻方針（`plans/03_システム設計.md` §3.6、JST → UTC 換算）:
-#   ピック生成 08:50 JST / 保有監視 場中 5 分周期 / 決着・評価・軽量再学習・PSI 夜間 /
-#   フル再学習 + 昇格ゲート 週次 / EOD レビュー 16:31 JST。
+# beat スケジュール。時刻は UTC 固定で評価されるため JST は UTC へ換算して書く（JST は DST なし）。
+# 方針（`plans/03_システム設計.md` §3.6）: ピック生成 08:50 JST / 決着・評価は夜間 /
+# トレンド同期 1 日 4 回。保有監視・フル再学習・昇格ゲートは P5/P7 で追加する。
 _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
-    # 例（P3 で有効化）: "run-picks-daily": {
-    #     "task": "backend.tasks.run_picks_task",
-    #     "schedule": crontab(hour=23, minute=50),  # JST 08:50
-    # },
+    "run-picks-mid-term": {
+        "task": "backend.tasks.run_picks_task",
+        "args": ("mid_term",),
+        "schedule": crontab(hour=23, minute=50),  # JST 08:50（寄り付き前）
+    },
+    "run-picks-short-term": {
+        "task": "backend.tasks.run_picks_task",
+        "args": ("short_term",),
+        "schedule": crontab(hour=23, minute=52),  # JST 08:52（2 分ずらして直列ワーカーの二重占有回避）
+    },
+    "resolve-pick-outcomes": {
+        "task": "backend.tasks.resolve_pick_outcomes_task",
+        "schedule": crontab(hour=7, minute=38),  # JST 16:38（大引け後）
+    },
+    "update-eval-metrics": {
+        "task": "backend.tasks.update_eval_metrics_task",
+        "schedule": crontab(hour=7, minute=48),  # JST 16:48（決着後）
+    },
+    "sync-trends": {
+        "task": "backend.tasks.sync_trends_task",
+        "schedule": crontab(hour="22,1,4,7", minute=13),  # JST 07:13 / 10:13 / 13:13 / 16:13
+    },
 }
-
-# 現時点では crontab を実利用しないが、スケジュール追加時に import 済みであることを保つ。
-_ = crontab
 
 celery_app.conf.update(
     task_serializer="json",

@@ -13,7 +13,8 @@ extend-exclude = ["backend/alembic/versions", "data"]
 select = ["E", "F", "I", "B", "UP", "ANN401"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Security"]
+# FastAPI の Depends/Security/Query/Path/Body は引数デフォルトでの呼び出しが公式パターン。
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Security", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
 
 [tool.ruff.lint.per-file-ignores]
 # main.py は load_dotenv() を全 import より前に実行する必要があるため import 順を崩す。

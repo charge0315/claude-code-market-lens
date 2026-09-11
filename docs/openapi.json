@@ -361,6 +361,448 @@
         }
       }
     },
+    "/api/ledger": {
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "予測台帳の検索",
+        "description": "条件に合うピックを新しい順で返す（`feature_snapshot` は含めない）.",
+        "operationId": "search_ledger_api_ledger_get",
+        "parameters": [
+          {
+            "name": "horizon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "mid_term",
+                    "short_term"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Horizon"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "issued_at 下限 YYYY-MM-DD",
+              "title": "From"
+            },
+            "description": "issued_at 下限 YYYY-MM-DD"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "確度バケット high/mid/low",
+              "title": "Bucket"
+            },
+            "description": "確度バケット high/mid/low"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PickSummary__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger/{pick_id}/outcomes": {
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "ピックの決着記録",
+        "description": "指定ピックの決着行（複数ホライズン: 短期 1/2/3、中長期 5/20/60）を返す.",
+        "operationId": "pick_outcomes_api_ledger__pick_id__outcomes_get",
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger/resolve": {
+      "post": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "決着記録を手動実行",
+        "description": "未決着のピックを古い順に解決して `pick_outcomes` へ書き込む（通常は beat が夜間に実行）.",
+        "operationId": "resolve_api_ledger_resolve_post",
+        "parameters": [
+          {
+            "name": "max_picks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Max Picks"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval/growth": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "評価指標の成長曲線",
+        "description": "モデルバージョン別 / scope 別の評価指標時系列（折れ線用）を古い順で返す.",
+        "operationId": "growth_api_eval_growth_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "mid_term",
+                    "short_term",
+                    "combined"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "metric",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "win_rate / ic / brier / auc / sharpe など",
+              "title": "Metric"
+            },
+            "description": "win_rate / ic / brier / auc / sharpe など"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval/calibration": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "最新の較正曲線",
+        "description": "予測確度バケット → 実測勝率の点列（Calibration curve）と Brier を返す.",
+        "operationId": "calibration_api_eval_calibration_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mid_term",
+                "short_term",
+                "combined"
+              ],
+              "type": "string",
+              "default": "combined",
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "評価ホライズン（営業日）",
+              "title": "Horizon"
+            },
+            "description": "評価ホライズン（営業日）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_dict__NoneType__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval/equity-curve": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "ピック累積成績（エクイティカーブ）",
+        "description": "決着済みピックの超過リターンを勝敗確定順に累積したエクイティカーブと成績サマリを返す.",
+        "operationId": "equity_curve_api_eval_equity_curve_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mid_term",
+                "short_term",
+                "combined"
+              ],
+              "type": "string",
+              "default": "combined",
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 20,
+              "title": "Horizon"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval/run": {
+      "post": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "評価指標の集計を手動実行",
+        "description": "全 scope × 主要ホライズンの評価指標を算出・永続化する（通常は beat が夜間に実行）.",
+        "operationId": "run_api_eval_run_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -518,6 +960,52 @@
         ],
         "title": "ApiResponse[Union[TrendSnapshot, NoneType]]"
       },
+      "ApiResponse_Union_dict__NoneType__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Union[dict, NoneType]]"
+      },
       "ApiResponse_dict_": {
         "properties": {
           "success": {
@@ -611,6 +1099,55 @@
           "success"
         ],
         "title": "ApiResponse[list[PickSummary]]"
+      },
+      "ApiResponse_list_dict__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[dict]]"
       },
       "HTTPValidationError": {
         "properties": {

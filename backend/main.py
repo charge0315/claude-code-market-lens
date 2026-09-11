@@ -19,7 +19,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from backend.config import settings  # noqa: E402
 from backend.models.health import LivenessResponse  # noqa: E402
+from backend.routers.eval import router as eval_router  # noqa: E402
 from backend.routers.health import router as health_router  # noqa: E402
+from backend.routers.ledger import router as ledger_router  # noqa: E402
 from backend.routers.picks import router as picks_router  # noqa: E402
 from backend.routers.trend import router as trend_router  # noqa: E402
 from backend.services.db.database import dispose_db, init_db  # noqa: E402
@@ -68,6 +70,8 @@ app.include_router(health_router)
 app.include_router(health_router, prefix="/api/system")
 app.include_router(picks_router)
 app.include_router(trend_router)
+app.include_router(ledger_router)
+app.include_router(eval_router)
 
 
 @app.get("/api/health", response_model=LivenessResponse, tags=["health"], summary="Liveness check")

@@ -28,5 +28,8 @@ pandas==3.0.5
 yfinance==1.7.0
 PyYAML==6.0.3
 
+# 評価指標（P4）: Brier / ROC-AUC / isotonic 較正。ML predictor stack（xgboost/torch）は P5。
+scikit-learn==1.7.2
+
 # Web Push（VAPID）
 pywebpush==2.0.3
