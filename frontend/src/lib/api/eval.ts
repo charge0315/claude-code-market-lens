@@ -69,3 +69,17 @@ export function fetchCalibration(scope: EvalScope, horizon?: number): Promise<Ca
 export function fetchWeeklyLearning(windowDays = 7): Promise<WeeklyLearningSummary> {
   return api.get<WeeklyLearningSummary>(`/eval/weekly-learning?window_days=${windowDays}`);
 }
+
+export interface EquityCurveResult {
+  scope: string;
+  horizon_days: number;
+  n: number;
+  equity: number[];
+  max_drawdown: number;
+  sharpe: number | null;
+  win_rate: number | null;
+}
+
+export function fetchEquityCurve(scope: EvalScope = 'combined', horizonDays = 20): Promise<EquityCurveResult> {
+  return api.get<EquityCurveResult>(`/eval/equity-curve?scope=${scope}&horizon=${horizonDays}`);
+}

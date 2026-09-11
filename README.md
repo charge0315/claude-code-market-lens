@@ -24,16 +24,18 @@
 backend/
   main.py            FastAPI アプリ（/health, /api/health）
   config.py          env 一元（起動時 fail-fast）
-  celery_app.py      Celery 設定（beat スケジュールは枠のみ）
+  celery_app.py      Celery 設定（beat スケジュール一元、_BEAT_SCHEDULE 参照）
   alembic/           マイグレーション（0001_baseline に全ドメインテーブル）
   routers/           HTTP / WS エンドポイント
-  services/          ドメインロジック（フェーズごとに Market Lens から移植）
+  services/          ドメインロジック（フェーズごとに Market Lens から移植 / 新規設計）
 frontend/
   src/app/           dashboard / stock-detail / portfolio / model-lab / notifications
-  src/components/ui/  DataTable ほか共通部品
-  src/lib/           API クライアント / SSE・WS クライアント
+  src/components/     ui / layout / pipeline / dashboard / portfolio / notify / model-lab / stock-detail
+  src/lib/           API クライアント / SSE・WS クライアント / push（Web Push）
   src/middleware.ts  nonce ベース CSP
+  e2e/               Playwright E2E テスト
 plans/               PRD / アーキテクチャ / システム設計 / タスクリスト / 決定ログ
+docs/                as-built アーキテクチャ概観・運用 Runbook・OpenAPI
 ```
 
 ## セットアップ（Windows / PowerShell）
@@ -61,11 +63,15 @@ cd frontend; npm ci; cd ..
 # Celery worker（別ターミナル。Windows は --pool=solo）
 .venv/Scripts/celery.exe -A backend.celery_app worker --pool=solo --loglevel=info
 
+# Celery beat（別ターミナル。ピック生成・保有監視・EOD レビュー等の自走スケジュール。
+# Windows は worker への埋め込み起動 -B を拒否するため必ず別プロセス）
+.venv/Scripts/celery.exe -A backend.celery_app beat --loglevel=info
+
 # frontend（ポート 3001）
 cd frontend; npm run dev
 ```
 
-Redis は別途起動が必要です（`docker run -p 6379:6379 redis` 等）。
+Redis は別途起動が必要です（`docker run -p 6379:6379 redis` 等）。自走スケジュールの詳細・障害対応は [`docs/operations.md`](docs/operations.md) を参照。
 
 ## ローカル CI（push 前に全通し）
 
@@ -76,15 +82,20 @@ Redis は別途起動が必要です（`docker run -p 6379:6379 redis` 等）。
 .venv/Scripts/python.exe -m mypy backend
 .venv/Scripts/python.exe -m bandit -r backend --exclude backend/tests,backend/alembic
 .venv/Scripts/python.exe -m pytest backend/tests -q
+.venv/Scripts/python.exe scripts/export_openapi.py
 
 # frontend
 cd frontend
 npx tsc --noEmit
 npx eslint .
-npx jest
+npx jest --coverage
 npx next build
+npx playwright test   # backend を先に起動しておくこと
 ```
 
 ## 開発フェーズ
 
-`plans/04_タスクリスト.md` の P0〜P8。現在は **P1（基盤）** まで完了。
+`plans/04_タスクリスト.md` の P0〜P8。**全フェーズ完了**（AI 銘柄ピック / 継続学習ループ /
+AI 思考の可視化 / ポートフォリオ承認キュー / 通知 / モデルラボ）。詳細な as-built
+アーキテクチャは [`docs/architecture.md`](docs/architecture.md)、運用は
+[`docs/operations.md`](docs/operations.md) を参照。

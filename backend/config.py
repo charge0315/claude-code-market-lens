@@ -50,7 +50,6 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     # LLM 構成は Market Lens 同一構成を踏襲（確定事項）。
     anthropic_model: str = Field(default="claude-sonnet-5", validation_alias="ANTHROPIC_MODEL")
-    ai_portfolio_model: str = Field(default="claude-fable-5", validation_alias="AI_PORTFOLIO_MODEL")
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")

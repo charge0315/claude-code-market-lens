@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { GrowthChart } from '@/components/model-lab/GrowthChart';
+import { EquityCurveChart } from '@/components/model-lab/EquityCurveChart';
 import { CalibrationChart } from '@/components/model-lab/CalibrationChart';
 import { ChampionsPanel } from '@/components/model-lab/ChampionsPanel';
 import { DriftPanel } from '@/components/model-lab/DriftPanel';
@@ -16,6 +17,13 @@ export default function ModelLabPage(): ReactNode {
           成長曲線
         </h2>
         <GrowthChart />
+      </section>
+
+      <section aria-labelledby="equity-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="equity-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          ピック累積成績（エクイティカーブ）
+        </h2>
+        <EquityCurveChart />
       </section>
 
       <section aria-labelledby="calibration-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
