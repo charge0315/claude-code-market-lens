@@ -2,13 +2,20 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPanel';
-import { fetchTrainingStatus, startTrainingBatch } from '@/lib/api/registry';
-import type { TrainingBatchSummary, TrainingRunAck, TrainingStatus } from '@/lib/api/registry';
+import { fetchModelCoverage, fetchTrainingStatus, startTrainingBatch } from '@/lib/api/registry';
+import type {
+  ModelCoverage,
+  TrainingBatchSummary,
+  TrainingModelType,
+  TrainingRunAck,
+  TrainingStatus,
+} from '@/lib/api/registry';
 
 jest.mock('@/lib/api/registry');
 
 const mockStart = startTrainingBatch as jest.MockedFunction<typeof startTrainingBatch>;
 const mockStatus = fetchTrainingStatus as jest.MockedFunction<typeof fetchTrainingStatus>;
+const mockCoverage = fetchModelCoverage as jest.MockedFunction<typeof fetchModelCoverage>;
 
 const SUMMARY: TrainingBatchSummary = {
   model_type: 'xgboost',
@@ -20,84 +27,122 @@ const SUMMARY: TrainingBatchSummary = {
   error: null,
 };
 
-const STARTED_ACK: TrainingRunAck = { model_type: 'xgboost', status: 'started' };
+const IDLE_STATUS: TrainingStatus = {
+  model_type: 'xgboost',
+  running: false,
+  attempted_today: 5,
+  last_result: SUMMARY,
+  progress: null,
+};
+
+const COVERAGE: ModelCoverage[] = (['xgboost', 'random_forest', 'lstm', 'transformer'] as TrainingModelType[]).map(
+  (model_type) => ({
+    model_type,
+    label: model_type,
+    universe_size: 4000,
+    trained_count: 2000,
+    champion_count: 500,
+    yfinance_count: 1800,
+    jquants_count: 200,
+    last_trained_at: '2026-09-12T06:00:00+09:00',
+  }),
+);
+
+function startAllButton(): HTMLElement {
+  return screen.getByRole('button', { name: /学習を開始/ });
+}
 
 describe('TrainingTriggerPanel', () => {
+  beforeEach(() => {
+    mockCoverage.mockResolvedValue(COVERAGE);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
 
-  it('🆕 P14: モデルタイプごとに平易な説明と既定設定を表示する', () => {
+  it('🆕 P14: モデルタイプごとに平易な説明と既定設定を表示する', async () => {
     render(<TrainingTriggerPanel />);
 
     expect(screen.getByText(/表形式データの学習が得意な高速AI/)).toBeInTheDocument();
     expect(screen.getByText('既定設定: 決定木100本・木の深さ5・学習率0.1')).toBeInTheDocument();
+    await waitFor(() => expect(mockCoverage).toHaveBeenCalled());
   });
 
-  it('4モデルタイプの学習ボタンを表示する', () => {
+  it('4モデルタイプ名とタグラインを表示する', () => {
     render(<TrainingTriggerPanel />);
 
     expect(screen.getByText('XGBoost')).toBeInTheDocument();
+    expect(screen.getByText('勾配ブースティング木')).toBeInTheDocument();
     expect(screen.getByText('RandomForest')).toBeInTheDocument();
     expect(screen.getByText('LSTM')).toBeInTheDocument();
     expect(screen.getByText('Transformer')).toBeInTheDocument();
   });
 
-  it('学習実行ボタンでバックグラウンド起動し、完了時に結果サマリを表示する', async () => {
-    mockStart.mockResolvedValue(STARTED_ACK);
-    mockStatus.mockResolvedValue({
-      model_type: 'xgboost',
-      running: false,
-      attempted_today: 5,
-      last_result: SUMMARY,
-    });
+  it('統合ボタンで4モデルタイプすべてをまとめて起動する', async () => {
+    mockStart.mockResolvedValue({ model_type: 'xgboost', status: 'started' } as TrainingRunAck);
+    mockStatus.mockResolvedValue(IDLE_STATUS);
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    const buttons = screen.getAllByRole('button', { name: '今すぐ学習' });
-    await user.click(buttons[0]);
+    await user.click(startAllButton());
 
-    await waitFor(() => expect(mockStart).toHaveBeenCalledWith('xgboost'));
-    expect(await screen.findByText(/今回学習 3/)).toBeInTheDocument();
-    expect(screen.getByText(/champion化 2/)).toBeInTheDocument();
+    await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(4));
+    expect(mockStart).toHaveBeenCalledWith('xgboost');
+    expect(mockStart).toHaveBeenCalledWith('random_forest');
+    expect(mockStart).toHaveBeenCalledWith('lstm');
+    expect(mockStart).toHaveBeenCalledWith('transformer');
   });
 
-  it('実行中は試行済み件数をポーリングして表示し、完了後に結果へ切り替わる', async () => {
-    jest.useFakeTimers({ legacyFakeTimers: false });
-    mockStart.mockResolvedValue(STARTED_ACK);
-    let call = 0;
-    mockStatus.mockImplementation(async (): Promise<TrainingStatus> => {
-      call += 1;
-      if (call === 1) return { model_type: 'xgboost', running: true, attempted_today: 12, last_result: null };
-      return { model_type: 'xgboost', running: false, attempted_today: 40, last_result: SUMMARY };
-    });
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  it('実行中は処理中の銘柄・進捗率・残り推定時間・既存比をライブ表示する', async () => {
+    mockStart.mockResolvedValue({ model_type: 'xgboost', status: 'started' } as TrainingRunAck);
+    mockStatus.mockImplementation(async (modelType) => ({
+      model_type: modelType,
+      running: modelType === 'xgboost',
+      attempted_today: 100,
+      last_result: null,
+      progress:
+        modelType === 'xgboost'
+          ? {
+              current_ticker: '7203',
+              processed: 10,
+              total: 40,
+              failed_this_run: 1,
+              eta_seconds: 5400,
+              promotion_rate_pct: 80,
+            }
+          : null,
+    }));
+    const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(screen.getAllByRole('button', { name: '今すぐ学習' })[0]);
+    await user.click(startAllButton());
 
-    expect(await screen.findByText('試行済み(本日計) 12銘柄')).toBeInTheDocument();
-
-    await jest.advanceTimersByTimeAsync(3000);
-
-    expect(await screen.findByText(/今回学習 3/)).toBeInTheDocument();
+    expect(await screen.findByText('7203')).toBeInTheDocument();
+    expect(screen.getByText('25%')).toBeInTheDocument(); // 10/40
+    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('1時間30分')).toBeInTheDocument();
+    expect(screen.getByText('1件')).toBeInTheDocument();
+    expect(screen.getByText(/実行中 1\/4 モデル/)).toBeInTheDocument();
   });
 
-  it('学習結果がエラーを含む場合はエラー表示にする', async () => {
-    mockStart.mockResolvedValue(STARTED_ACK);
-    mockStatus.mockResolvedValue({
-      model_type: 'xgboost',
+  it('学習結果がエラーを含む場合は実行ログにエラーを表示する', async () => {
+    mockStart.mockResolvedValue({ model_type: 'xgboost', status: 'started' } as TrainingRunAck);
+    mockStatus.mockImplementation(async (modelType) => ({
+      model_type: modelType,
       running: false,
       attempted_today: 0,
-      last_result: { ...SUMMARY, error: 'unexpected failure' },
-    });
+      last_result:
+        modelType === 'xgboost' ? { ...SUMMARY, error: 'unexpected failure' } : { ...SUMMARY, model_type: modelType },
+      progress: null,
+    }));
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(screen.getAllByRole('button', { name: '今すぐ学習' })[0]);
+    await user.click(startAllButton());
 
-    expect(await screen.findByText(/学習の実行に失敗しました: unexpected failure/)).toBeInTheDocument();
+    expect(await screen.findByText(/前回の実行でエラーが発生しました（unexpected failure）/)).toBeInTheDocument();
   });
 
   it('起動リクエスト自体が失敗した場合はエラーメッセージを表示する', async () => {
@@ -105,26 +150,29 @@ describe('TrainingTriggerPanel', () => {
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(screen.getAllByRole('button', { name: '今すぐ学習' })[0]);
+    await user.click(startAllButton());
 
-    expect(await screen.findByText('学習の起動に失敗しました')).toBeInTheDocument();
+    expect(await screen.findAllByText('学習の起動に失敗しました')).toHaveLength(4);
   });
 
-  it('他のモデルタイプは実行中でも操作できる（🔧 P13h、独立実行）', async () => {
-    mockStart.mockResolvedValue(STARTED_ACK);
-    mockStatus.mockReturnValue(new Promise(() => undefined)); // 完了させない＝実行中のまま
-    const user = userEvent.setup();
-
+  it('データソース内訳（yfinance/J-Quants）と最終学習日時を表示する', async () => {
     render(<TrainingTriggerPanel />);
-    const buttons = screen.getAllByRole('button', { name: '今すぐ学習' });
-    await user.click(buttons[0]);
 
-    await waitFor(() => expect(buttons[0]).toBeDisabled());
-    expect(buttons[1]).not.toBeDisabled();
+    await waitFor(() => expect(mockCoverage).toHaveBeenCalled());
+    expect(await screen.findAllByText(/yfinance 45%/)).not.toHaveLength(0); // 1800/4000
+    expect(await screen.findAllByText(/J-Quants補完 5%/)).not.toHaveLength(0); // 200/4000
+  });
+
+  it('実行履歴が無ければ案内文を出す', () => {
+    render(<TrainingTriggerPanel />);
+
+    expect(screen.getByText('まだ実行履歴がありません。上のボタンから学習を開始してください。')).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {
     const { container } = render(<TrainingTriggerPanel />);
+    await waitFor(() => expect(mockCoverage).toHaveBeenCalled());
+
     expect(await axe(container)).toHaveNoViolations();
   });
 });

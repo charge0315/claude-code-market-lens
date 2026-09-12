@@ -8,11 +8,18 @@ jest.mock('@/lib/api/registry');
 
 const mockFetchModelCoverage = fetchModelCoverage as jest.MockedFunction<typeof fetchModelCoverage>;
 
+const BASE_COVERAGE = {
+  universe_size: 4000,
+  yfinance_count: 0,
+  jquants_count: 0,
+  last_trained_at: null,
+} as const;
+
 const COVERAGE: ModelCoverage[] = [
-  { model_type: 'xgboost', label: 'XGBoost', universe_size: 4000, trained_count: 2000, champion_count: 1500 },
-  { model_type: 'random_forest', label: 'RandomForest', universe_size: 4000, trained_count: 0, champion_count: 0 },
-  { model_type: 'lstm', label: 'LSTM', universe_size: 4000, trained_count: 0, champion_count: 0 },
-  { model_type: 'transformer', label: 'Transformer', universe_size: 4000, trained_count: 0, champion_count: 0 },
+  { ...BASE_COVERAGE, model_type: 'xgboost', label: 'XGBoost', trained_count: 2000, champion_count: 1500 },
+  { ...BASE_COVERAGE, model_type: 'random_forest', label: 'RandomForest', trained_count: 0, champion_count: 0 },
+  { ...BASE_COVERAGE, model_type: 'lstm', label: 'LSTM', trained_count: 0, champion_count: 0 },
+  { ...BASE_COVERAGE, model_type: 'transformer', label: 'Transformer', trained_count: 0, champion_count: 0 },
 ];
 
 describe('ModelCoverageChart', () => {

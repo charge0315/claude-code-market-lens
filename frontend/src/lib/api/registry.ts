@@ -76,11 +76,23 @@ export interface TrainingRunAck {
   status: 'started' | 'already_running';
 }
 
+// 実行中バッチのライブ進捗（🆕 P17）。バッチが実行中でない場合は null。
+export interface TrainingProgress {
+  current_ticker: string | null;
+  processed: number;
+  total: number;
+  failed_this_run: number;
+  eta_seconds: number | null;
+  /** 品質ゲート通過率（今回学習が成功した銘柄のうち champion 化した割合、%）。 */
+  promotion_rate_pct: number | null;
+}
+
 export interface TrainingStatus {
   model_type: TrainingModelType;
   running: boolean;
   attempted_today: number;
   last_result: TrainingBatchSummary | null;
+  progress: TrainingProgress | null;
 }
 
 // 銘柄別モデル（P9）の日次学習バッチをバックグラウンドで起動する（🔧 P13h）。
@@ -104,6 +116,11 @@ export interface ModelCoverage {
   universe_size: number;
   trained_count: number;
   champion_count: number;
+  /** 銘柄ごとの最新の学習成功試行が採用したデータソースの内訳（🆕 P17）。 */
+  yfinance_count: number;
+  jquants_count: number;
+  /** そのモデルタイプで最後に学習が成功した日時（🆕 P17）。学習実績が無ければ null。 */
+  last_trained_at: string | null;
 }
 
 export interface QualityDistribution {

@@ -127,7 +127,7 @@
 
 .training-trigger-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-md);
 }
@@ -136,6 +136,13 @@
   font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--color-text-primary);
+}
+
+.training-trigger-tagline {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
 }
 
 .training-trigger-description {
@@ -147,14 +154,7 @@
 .training-trigger-defaults {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  margin: 0;
-}
-
-.training-progress {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-xs);
+  margin: 0 0 var(--spacing-sm);
 }
 
 .training-progress-bar {
@@ -164,24 +164,158 @@
   background: var(--color-bg-tertiary);
   border-radius: var(--radius-full);
   overflow: hidden;
+  margin-bottom: var(--spacing-sm);
 }
 
-.training-progress-bar-fill {
+.training-progress-bar-determinate {
   display: block;
-  width: 40%;
   height: 100%;
   background: var(--color-accent-bright);
   border-radius: var(--radius-full);
-  animation: training-progress-indeterminate 1.4s ease-in-out infinite;
+  transition: width 0.4s ease-out;
 }
 
-@keyframes training-progress-indeterminate {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(250%);
-  }
+/* --- 学習パネルの統合ヘッダー・生きた状態表示（🔧 P17） --- */
+.training-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.training-panel-header button {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-lg);
+}
+
+.training-status-badge {
+  display: inline-block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 2px var(--spacing-sm);
+  white-space: nowrap;
+}
+
+.training-status-badge.is-running {
+  color: var(--color-accent-bright);
+  border-color: var(--color-accent-bright);
+  background: var(--color-accent-dim);
+}
+
+.training-stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-sm);
+}
+
+.training-stat-row .training-stat-value {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-source-bar {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.data-source-bar-yfinance {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+
+.data-source-bar-jquants {
+  display: block;
+  height: 100%;
+  background: var(--color-term-cyan);
+}
+
+.training-source-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: var(--spacing-xs) 0 0;
+}
+
+.training-source-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.training-source-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  font-style: normal;
+}
+
+.training-source-swatch-yfinance {
+  background: var(--color-accent);
+}
+
+.training-source-swatch-jquants {
+  background: var(--color-term-cyan);
+}
+
+.training-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.training-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.training-stat .training-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.training-stat .training-stat-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.training-run-log {
+  margin-top: var(--spacing-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.training-run-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- 「かんたん」タブの導入説明（🆕 P14、BeginnerIntro） --- */
