@@ -32,12 +32,18 @@ describe('ModelCoverageChart', () => {
     ).toBeInTheDocument();
   });
 
-  it('学習カバレッジのグラフを表示する', async () => {
+  it('モデルタイプごとにリングと学習件数を表示する', async () => {
     mockFetchModelCoverage.mockResolvedValue(COVERAGE);
 
     render(<ModelCoverageChart />);
 
-    expect(await screen.findByRole('img', { name: 'モデルタイプ別の学習カバレッジ' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('img', {
+        name: 'XGBoost: 学習済み 2000/4000銘柄（50%）、うち champion採用 1500銘柄（37.5%）',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('学習済み 2000/4000')).toBeInTheDocument();
+    expect(screen.getByText('champion 1500銘柄')).toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {

@@ -208,6 +208,68 @@
   gap: var(--spacing-xs);
 }
 
+/* --- 学習カバレッジ（🆕 P15、コンパクトなリング表示、ModelCoverageChart） --- */
+.coverage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.coverage-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.coverage-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  font-style: normal;
+}
+
+.coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.coverage-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+}
+
+.coverage-ring-text {
+  font-size: 18px;
+  font-weight: 700;
+  fill: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-card-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: var(--spacing-xs) 0 0;
+}
+
+.coverage-card-detail {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- かんたん/詳細タブ（🆕 P14、ModelLabTabs） --- */
 .model-lab-tab-bar {
   display: inline-flex;
