@@ -1,11 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { fetchPickDetail, fetchPicks, runPicks, type HorizonType, type PickDetail, type PickSummary } from '@/lib/api/picks';
 import { fetchStockNote, type StockNote } from '@/lib/api/stock';
 import './dashboard.css';
+
+type SortKey = 'confidence' | 'expected_return' | 'symbol';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  confidence: 'AI信頼度',
+  expected_return: '期待リターン',
+  symbol: '銘柄コード',
+};
+
+function expectedReturnPct(p: PickSummary): number {
+  return p.entry === 0 ? 0 : ((p.target - p.entry) / p.entry) * 100;
+}
+
+function sortPicks(picks: readonly PickSummary[], key: SortKey): PickSummary[] {
+  const sorted = [...picks];
+  if (key === 'confidence') sorted.sort((a, b) => b.confidence - a.confidence);
+  else if (key === 'expected_return') sorted.sort((a, b) => expectedReturnPct(b) - expectedReturnPct(a));
+  else sorted.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  return sorted;
+}
 
 // 本日の AI 銘柄ピック（中長期 / 短期タブ）。確度順（backend が既にソート済み）で表示し、
 // 3 値（買値 / 損切値 / 売値）と根拠プレビューを必ず併記する（CLAUDE.md）。
@@ -135,6 +155,7 @@ export function PicksBoard(): ReactNode {
   const [running, setRunning] = useState(false);
   const [noteModalSymbol, setNoteModalSymbol] = useState<string | null>(null);
   const [detailModalPickId, setDetailModalPickId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('confidence');
 
   const load = useCallback((h: HorizonType) => {
     fetchPicks(h, { limit: 50 })
@@ -160,6 +181,8 @@ export function PicksBoard(): ReactNode {
       .finally(() => setRunning(false));
   };
 
+  const sortedPicks = useMemo(() => sortPicks(picks, sortKey), [picks, sortKey]);
+
   const COLUMNS: ReadonlyArray<Column<PickSummary>> = [
     {
       key: 'symbol',
@@ -172,25 +195,72 @@ export function PicksBoard(): ReactNode {
       ),
     },
     {
+      key: 'current_price',
+      header: '現在値 / 前日比',
+      numeric: true,
+      render: (p) =>
+        p.current_price === null ? (
+          '—'
+        ) : (
+          <span className="pick-current-price-cell">
+            <span>{formatYen(p.current_price)}</span>
+            {p.change_pct !== null && (
+              <span style={{ color: directionColor(p.change_pct > 0 ? 'bullish' : p.change_pct < 0 ? 'bearish' : 'neutral') }}>
+                {p.change_pct > 0 ? '+' : ''}
+                {p.change_pct.toFixed(2)}%
+              </span>
+            )}
+          </span>
+        ),
+    },
+    {
       key: 'direction',
       header: '方向',
       render: (p) => <span style={{ color: directionColor(p.direction) }}>{DIRECTION_LABELS[p.direction]}</span>,
     },
+    { key: 'entry', header: '推奨買値', numeric: true, render: (p) => formatYen(p.entry) },
+    { key: 'stop', header: '推奨損切値', numeric: true, render: (p) => formatYen(p.stop) },
+    {
+      key: 'target',
+      header: '推奨売値',
+      numeric: true,
+      render: (p) => (
+        <span className="pick-target-cell">
+          <span>{formatYen(p.target)}</span>
+          <span className="pick-target-return">想定 {expectedReturnPct(p) >= 0 ? '+' : ''}{expectedReturnPct(p).toFixed(1)}%</span>
+        </span>
+      ),
+    },
     {
       key: 'confidence',
-      header: '確度',
+      header: 'AI信頼度',
       numeric: true,
-      render: (p) => `${p.confidence.toFixed(0)}（${BUCKET_LABELS[p.confidence_bucket]}）`,
+      render: (p) => (
+        <span className="pick-confidence-cell">
+          <span>
+            {p.confidence.toFixed(0)}（{BUCKET_LABELS[p.confidence_bucket]}）
+          </span>
+          <span className="pick-confidence-bar" aria-hidden="true">
+            <span className="pick-confidence-bar-fill" style={{ width: `${Math.min(100, Math.max(0, p.confidence))}%` }} />
+          </span>
+        </span>
+      ),
     },
-    { key: 'entry', header: '買値目安', numeric: true, render: (p) => formatYen(p.entry) },
-    { key: 'stop', header: '損切値', numeric: true, render: (p) => formatYen(p.stop) },
-    { key: 'target', header: '推奨売値', numeric: true, render: (p) => formatYen(p.target) },
     {
       key: 'rationale_text',
       header: '根拠プレビュー',
       render: (p) => (
         <span className="pick-rationale-cell">
           <span title={p.rationale_text}>{truncate(p.rationale_text)}</span>
+          {p.reasoning_tags.length > 0 && (
+            <span className="pick-tag-list">
+              {p.reasoning_tags.map((tag) => (
+                <span key={tag} className="pick-tag-chip">
+                  {tag}
+                </span>
+              ))}
+            </span>
+          )}
           <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
             詳細
           </button>
@@ -220,6 +290,20 @@ export function PicksBoard(): ReactNode {
             短期
           </button>
         </div>
+        <div className="picks-board-sort" role="group" aria-label="並び替え">
+          <span className="picks-board-sort-label">並び替え</span>
+          {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={sortKey === key ? 'is-active' : undefined}
+              aria-pressed={sortKey === key}
+              onClick={() => setSortKey(key)}
+            >
+              {SORT_LABELS[key]}
+            </button>
+          ))}
+        </div>
         <button type="button" onClick={handleRun} disabled={running}>
           {running ? '実行中…' : '手動更新'}
         </button>
@@ -228,9 +312,9 @@ export function PicksBoard(): ReactNode {
       {error && <p className="signal-queue-error">{error}</p>}
 
       <DataTable
-        caption="本日の AI 銘柄ピック（確度順）"
+        caption="本日の AI 銘柄ピック（並び替え可能）"
         columns={COLUMNS}
-        rows={picks}
+        rows={sortedPicks}
         rowKey={(p) => p.pick_id}
         emptyMessage="本日のピックはまだありません"
       />

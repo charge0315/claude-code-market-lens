@@ -87,6 +87,45 @@ describe('PicksBoard', () => {
     expect(screen.getByText('75（高）')).toBeInTheDocument();
   });
 
+  it('🆕 P13: 現在値/前日比・根拠タグ・想定リターンを表示する', async () => {
+    mockFetchPicks.mockResolvedValue([PICK]);
+
+    render(<PicksBoard />);
+    await screen.findByText('7203（トヨタ自動車）');
+
+    expect(screen.getByText('¥3,050')).toBeInTheDocument();
+    expect(screen.getByText('+1.50%')).toBeInTheDocument();
+    expect(screen.getByText('業績上方修正')).toBeInTheDocument();
+    expect(screen.getByText('25日線ゴールデンクロス')).toBeInTheDocument();
+    // (3300-3000)/3000 = +10.0%
+    expect(screen.getByText('想定 +10.0%')).toBeInTheDocument();
+  });
+
+  it('🆕 P13: 現在値が取得できない場合は「—」を表示する', async () => {
+    mockFetchPicks.mockResolvedValue([{ ...PICK, current_price: null, change_pct: null }]);
+
+    render(<PicksBoard />);
+    await screen.findByText('7203（トヨタ自動車）');
+
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('🆕 P13: 並び替えボタンでピック順を切り替える', async () => {
+    const low = { ...PICK, pick_id: 'pick-2', symbol: '6758', company_name: 'ソニー', confidence: 40 };
+    mockFetchPicks.mockResolvedValue([low, PICK]);
+    const user = userEvent.setup();
+
+    render(<PicksBoard />);
+    await screen.findByText('7203（トヨタ自動車）');
+
+    const symbolCells = () => screen.getAllByRole('button', { name: /^\d{4}（/ }).map((el) => el.textContent);
+    // 既定はAI信頼度順（confidence 高い順）→ 7203 が先。
+    expect(symbolCells()[0]).toBe('7203（トヨタ自動車）');
+
+    await user.click(screen.getByRole('button', { name: '銘柄コード' }));
+    expect(symbolCells()[0]).toBe('6758（ソニー）');
+  });
+
   it('タブ切り替えで系統別に再取得する', async () => {
     mockFetchPicks.mockResolvedValue([]);
     const user = userEvent.setup();
