@@ -269,3 +269,95 @@ async def test_run_daily_training_batch_records_failure_without_stopping_others(
     assert summary.failed_this_call == 1
     assert await model_registry_db.get_champion("xgboost:2222") is not None
     assert await model_registry_db.get_champion("xgboost:1111") is None
+
+
+# ---------------------------------------------------------------------------
+# 🆕 P14: 手動トリガー向け override（daily_limit_override / max_duration_override）
+# ---------------------------------------------------------------------------
+
+
+async def test_override_none_preserves_existing_behavior(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """override 未指定（celery-beat の自動定期実行）は既存の _daily_ticker_limit のまま."""
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+    monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)
+
+    summary = await svc.run_daily_training_batch("xgboost")
+
+    assert summary.trained_this_call == 2
+    assert summary.quota_reached is True
+
+
+async def test_daily_limit_override_lets_manual_trigger_exceed_settings_limit(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """手動トリガー（🆕 P14）は override で settings 由来の上限を超えて全銘柄まで学習できる."""
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+    monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)  # 自動定期実行の上限（無視されるはず）
+
+    summary = await svc.run_daily_training_batch("xgboost", daily_limit_override=10)
+
+    assert summary.trained_this_call == 3  # 3銘柄全て学習（settings の 2 件上限を超える）
+    assert summary.quota_reached is False
+
+
+async def test_max_duration_override_stops_batch_early(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+
+    summary = await svc.run_daily_training_batch("xgboost", daily_limit_override=10, max_duration_override=0.0)
+
+    # time budget が 0 秒のため、1銘柄目のループ判定で即座に打ち切られる。
+    assert summary.trained_this_call == 0
+
+
+@pytest.mark.parametrize(
+    ("model_type", "expected_dl"),
+    [("xgboost", False), ("random_forest", False), ("lstm", True), ("transformer", True)],
+)
+def test_manual_full_run_overrides_uses_dl_duration_for_dl_model_types(model_type: str, expected_dl: bool) -> None:
+    daily_limit, duration = svc.manual_full_run_overrides(model_type)
+    assert daily_limit == svc._MANUAL_FULL_RUN_DAILY_LIMIT
+    expected_duration = (
+        svc._MANUAL_FULL_RUN_DL_DURATION_SECONDS if expected_dl else svc._MANUAL_FULL_RUN_DURATION_SECONDS
+    )
+    assert duration == expected_duration
+
+
+# ---------------------------------------------------------------------------
+# 🆕 P14: 再開性（中断→再実行で続きから学習する）
+# ---------------------------------------------------------------------------
+
+
+async def test_interrupted_run_resumes_from_remaining_tickers_on_next_call(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1回目の呼び出しで一部だけ学習→2回目の呼び出しで残りから再開することを固定する.
+
+    サーバ再起動・ブラウザを閉じる等で中断されても、`training_batch_runs`（当日試行済み）+
+    `model_registry.trained_at`（銘柄ごとの最終学習日時）を毎回 DB から読み直す設計により、
+    再度呼び出すだけで自然に続きから再開する（コード変更不要、この事実をテストで固定する）。
+    """
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333", "4444"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+
+    # 1回目: 上限 2 件で「中断」をシミュレート（例: サーバ再起動でプロセスが落ちた想定）。
+    first = await svc.run_daily_training_batch("xgboost", daily_limit_override=2)
+    assert first.trained_this_call == 2
+    assert first.quota_reached is True
+    first_attempted = await training_batch_db.get_attempted_tickers(today_jst(), "xgboost")
+    assert len(first_attempted) == 2
+
+    # 2回目: 同じ当日の呼び出しで、残りの銘柄だけを続きから学習する。
+    second = await svc.run_daily_training_batch("xgboost", daily_limit_override=10)
+    assert second.trained_this_call == 2  # 残り2銘柄のみ（1回目の2銘柄は再試行しない）
+
+    all_attempted = await training_batch_db.get_attempted_tickers(today_jst(), "xgboost")
+    assert all_attempted == {"1111", "2222", "3333", "4444"}
+    for code in all_attempted:
+        assert await model_registry_db.get_champion(f"xgboost:{code}") is not None

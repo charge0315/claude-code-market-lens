@@ -18,7 +18,11 @@ from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
 from backend.services.db.training_batch_db import get_attempted_tickers
 from backend.services.jst_time import today_jst
-from backend.services.learning.per_ticker_training_service import ModelType, run_daily_training_batch
+from backend.services.learning.per_ticker_training_service import (
+    ModelType,
+    manual_full_run_overrides,
+    run_daily_training_batch,
+)
 from backend.services.learning.pool_model import POOL_LANE
 from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
@@ -38,9 +42,17 @@ _last_results: dict[ModelType, dict[str, object]] = {}
 
 
 async def _run_and_record(model_type: ModelType) -> None:
-    """バックグラウンドで学習バッチを実行し、結果を `_last_results` へ記録する."""
+    """バックグラウンドで学習バッチを実行し、結果を `_last_results` へ記録する.
+
+    手動トリガーは「いけるところまでいく」（🆕 P14、ユーザー確認済み）ため
+    `manual_full_run_overrides` の上限を使う。celery-beat の自動定期実行
+    （`tasks.py`）はこれを経由せず既存の上限のまま変更しない。
+    """
+    daily_limit, max_duration = manual_full_run_overrides(model_type)
     try:
-        summary = await run_daily_training_batch(model_type)
+        summary = await run_daily_training_batch(
+            model_type, daily_limit_override=daily_limit, max_duration_override=max_duration
+        )
         _last_results[model_type] = {**summary.to_dict(), "error": None}
     except Exception as e:  # noqa: BLE001 — バックグラウンドタスクの想定外エラーを UI 側へ伝える
         logger.exception("学習バッチが異常終了しました（model_type=%s）", model_type)

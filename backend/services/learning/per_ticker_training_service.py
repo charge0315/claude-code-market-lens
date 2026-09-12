@@ -68,6 +68,18 @@ _BATCH_VERSION_PREFIX: Final[str] = "batch-"
 _TRAINING_PERIOD: Final[str] = "5y"
 FORECAST_HORIZON_DAYS: Final[int] = 5
 
+# 🆕 P14: 手動トリガー（モデルラボの「今すぐ学習」ボタン、P13h でバックグラウンドタスク化
+# 済み）専用の上限。`training_xgboost_daily_limit` 等（200/200/40/40）は celery-beat の
+# 1firing予算に合わせた値であり、東証全銘柄（~4000銘柄）には遠く及ばない人為的な上限
+# だったため、手動トリガーはこの上限を使わず「いけるところまでいく」（ユーザー確認済み）。
+# 件数上限は東証全銘柄に十分な安全マージンを持たせた値、時間予算は「暴走を止める安全網」
+# であり目標ではない（既存の 240:600 という classical:DL の比率を踏襲して倍率を保つ）。
+# celery-beat の自動定期実行（`tasks.py`）はこれらを使わず、既存の
+# _daily_ticker_limit/_max_batch_duration のまま変更しない。
+_MANUAL_FULL_RUN_DAILY_LIMIT: Final[int] = 10_000
+_MANUAL_FULL_RUN_DURATION_SECONDS: Final[float] = 6 * 3600.0  # xgboost / random_forest
+_MANUAL_FULL_RUN_DL_DURATION_SECONDS: Final[float] = 12 * 3600.0  # lstm / transformer
+
 
 def get_predictor(model_type: str) -> PredictorProtocol:
     """モデルタイプ文字列から対応する predictor インスタンスを返す."""
@@ -99,6 +111,18 @@ def _per_ticker_timeout(model_type: str) -> float:
 
 def _max_batch_duration(model_type: str) -> float:
     return _DL_MAX_BATCH_DURATION_SECONDS if model_type in _DL_MODEL_TYPES else _MAX_BATCH_DURATION_SECONDS
+
+
+def manual_full_run_overrides(model_type: str) -> tuple[int, float]:
+    """手動トリガー（「今すぐ学習」ボタン）向けの (daily_limit, max_duration) を返す（🆕 P14）.
+
+    `routers/registry.py` の手動トリガーが `run_daily_training_batch` を呼ぶ際に使う。
+    celery-beat の自動定期実行はこれを使わず、既存の `_daily_ticker_limit`/
+    `_max_batch_duration`（settings 由来の件数上限・240秒/600秒予算）のまま変更しない。
+    """
+    if model_type in _DL_MODEL_TYPES:
+        return _MANUAL_FULL_RUN_DAILY_LIMIT, _MANUAL_FULL_RUN_DL_DURATION_SECONDS
+    return _MANUAL_FULL_RUN_DAILY_LIMIT, _MANUAL_FULL_RUN_DURATION_SECONDS
 
 
 def _lane(model_type: str, ticker: str) -> str:
@@ -138,11 +162,21 @@ class TrainingBatchSummary:
         }
 
 
-async def run_daily_training_batch(model_type: ModelType) -> TrainingBatchSummary:
-    """当日の学習上限に達するまで、未学習/学習が最も古い銘柄から順に当該モデルタイプで学習する."""
+async def run_daily_training_batch(
+    model_type: ModelType,
+    *,
+    daily_limit_override: int | None = None,
+    max_duration_override: float | None = None,
+) -> TrainingBatchSummary:
+    """当日の学習上限に達するまで、未学習/学習が最も古い銘柄から順に当該モデルタイプで学習する.
+
+    `daily_limit_override`/`max_duration_override` は手動トリガー（🆕 P14、
+    `manual_full_run_overrides` 参照）専用。省略時（celery-beat の自動定期実行）は
+    既存の `_daily_ticker_limit`/`_max_batch_duration`（settings 由来）のまま変更しない。
+    """
     run_date = today_jst()
-    limit = _daily_ticker_limit(model_type)
-    budget = _max_batch_duration(model_type)
+    limit = daily_limit_override if daily_limit_override is not None else _daily_ticker_limit(model_type)
+    budget = max_duration_override if max_duration_override is not None else _max_batch_duration(model_type)
     timeout = _per_ticker_timeout(model_type)
 
     attempted_today = await training_batch_db.get_attempted_tickers(run_date, model_type)

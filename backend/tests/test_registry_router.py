@@ -168,11 +168,15 @@ async def test_run_training_starts_in_background_and_status_reports_completion(
     from backend.services.learning.per_ticker_training_service import TrainingBatchSummary
 
     seen_model_type: str | None = None
+    seen_overrides: tuple[int | None, float | None] | None = None
     gate = asyncio.Event()
 
-    async def fake_run_daily_training_batch(model_type: str) -> TrainingBatchSummary:
-        nonlocal seen_model_type
+    async def fake_run_daily_training_batch(
+        model_type: str, *, daily_limit_override: int | None = None, max_duration_override: float | None = None
+    ) -> TrainingBatchSummary:
+        nonlocal seen_model_type, seen_overrides
         seen_model_type = model_type
+        seen_overrides = (daily_limit_override, max_duration_override)
         await gate.wait()  # テストが明示的に解放するまでバックグラウンドタスクを止めておく
         return TrainingBatchSummary(
             model_type=model_type,
@@ -198,6 +202,10 @@ async def test_run_training_starts_in_background_and_status_reports_completion(
             "meta": None,
         }
         assert seen_model_type == "xgboost"
+        # 🆕 P14: 手動トリガーは全銘柄まで学習する override 付きで呼ばれる。
+        from backend.services.learning.per_ticker_training_service import manual_full_run_overrides
+
+        assert seen_overrides == manual_full_run_overrides("xgboost")
 
         # ゲート解放前は実行中のまま（バックグラウンドタスクが gate.wait() で止まっている）。
         running_res = await client.get("/api/registry/training/status?model_type=xgboost")
@@ -230,7 +238,7 @@ async def test_run_training_returns_already_running_when_triggered_twice(
 
     gate = asyncio.Event()
 
-    async def fake_run_daily_training_batch(model_type: str) -> object:
+    async def fake_run_daily_training_batch(model_type: str, **_kwargs: object) -> object:  # noqa: ARG001
         await gate.wait()
         raise AssertionError("test forces this coroutine to never resolve normally")
 
