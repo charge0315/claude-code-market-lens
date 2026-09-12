@@ -25,11 +25,12 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import cast
 
+from backend.models.inference import InferenceOutcome
 from backend.services.anthropic_client import anthropic_client
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
 from backend.services.data.trend.context import render_trend_context
-from backend.services.inference.orchestrator import run_inference
+from backend.services.inference.orchestrator import record_gemini_shadow_judgment, run_inference
 from backend.services.jst_time import JST
 from backend.services.learning.panel_feature_service import get_cached_panel_context
 from backend.services.ledger import prediction_ledger as pl
@@ -178,6 +179,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
 
     picks: list[LedgerEntry] = []
     rejected: list[RejectedPick] = []
+    accepted_outcomes: list[InferenceOutcome] = []
     gate_horizon = 3 if horizon_type == "short_term" else 20
 
     for code, rec, atr, trend_score in shortlist:
@@ -196,6 +198,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         )
         if outcome.pick is not None:
             picks.append(outcome.pick)
+            accepted_outcomes.append(outcome)
             if len(picks) >= cfg["max_picks"]:
                 break
         elif outcome.rejected is not None:
@@ -203,6 +206,10 @@ async def run_picks(horizon_type: str) -> PickRunResult:
 
     if picks:
         await pl.insert_picks(picks)
+        # 🆕 P12: Gemini shadow 判定は `shadow_predictions.pick_id` が `prediction_ledger` への
+        # FK のため、台帳確定（`insert_picks`）の後でのみ呼べる。未設定・失敗時は無視（フェイルソフト）。
+        for accepted in accepted_outcomes:
+            await record_gemini_shadow_judgment(accepted)
 
     summaries = [
         PickSummary(

@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     # LLM 構成は Market Lens 同一構成を踏襲（確定事項）。
     anthropic_model: str = Field(default="claude-sonnet-5", validation_alias="ANTHROPIC_MODEL")
+    # マルチLLM判定（🆕 P12）: Anthropic（公式パイプライン）と並行して Gemini にも同じ
+    # 候補を判定させ、根拠・確度・買値/損切/売値を比較表示する。未設定なら機能自体が
+    # 無効（`gemini_client.is_configured=False`）で、公式パイプラインには一切影響しない。
+    gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL")
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")

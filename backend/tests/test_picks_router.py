@@ -10,6 +10,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from backend.models.pick import LedgerEntry, PickRunResult, SubScores
+from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.ledger import prediction_ledger as pl
 
 
@@ -89,6 +90,43 @@ async def test_get_pick_detail_returns_nested_sub_scores_and_rationale(client: A
     assert data["confidence_raw"] == 70.0
     # company_name は銘柄マスタ（J-Quants 未設定時はフォールバック一覧）から解決できれば入る
     assert "company_name" in data
+
+
+async def test_get_pick_detail_includes_gemini_shadow_predictions(client: AsyncClient) -> None:
+    """🆕 P12: マルチLLM判定 — Gemini 等 challenger の判定が shadow_predictions として同梱される."""
+    await pl.insert_pick(_entry("p1", "mid_term", "7203"))
+    await insert_shadow_prediction(
+        pick_id="p1",
+        run_id="r1",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1005.0,
+        stop=980.0,
+        target=1060.0,
+        confidence_raw=68.0,
+        confidence=68.0,
+        payload={"reasoning": "Gemini 側の根拠", "risk_factors": ["需給悪化"], "holding_period_days": 6},
+    )
+
+    res = await client.get("/api/picks/p1")
+    data = res.json()["data"]
+
+    assert len(data["shadow_predictions"]) == 1
+    shadow = data["shadow_predictions"][0]
+    assert shadow["challenger_version"] == "gemini:gemini-2.5-pro"
+    assert shadow["direction"] == "bullish"
+    assert shadow["entry"] == 1005.0
+    assert shadow["reasoning"] == "Gemini 側の根拠"
+    assert shadow["risk_factors"] == ["需給悪化"]
+    assert shadow["holding_period_days"] == 6
+
+
+async def test_get_pick_detail_shadow_predictions_empty_by_default(client: AsyncClient) -> None:
+    await pl.insert_pick(_entry("p1", "mid_term", "7203"))
+    res = await client.get("/api/picks/p1")
+    assert res.json()["data"]["shadow_predictions"] == []
 
 
 async def test_run_endpoint_invokes_pipeline(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:

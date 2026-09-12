@@ -60,3 +60,9 @@ class InferenceOutcome(BaseModel):
     status: RunStatus
     pick: LedgerEntry | None = None
     rejected: RejectedPick | None = None
+    # 🆕 P12: status="done" のときのみ設定される。Gemini shadow 判定を `pick_id` の
+    # DB 確定後（`pipeline.run_picks` の `pl.insert_picks` 完了後）に呼ぶために必要な、
+    # `run_inference` 内部でのみ計算済みの値（二重計算しない）。
+    llm_prompt: str | None = None
+    current_price: float | None = None
+    atr: float | None = None

@@ -3375,6 +3375,14 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "shadow_predictions": {
+            "items": {
+              "$ref": "#/components/schemas/ShadowPredictionSummary"
+            },
+            "type": "array",
+            "title": "Shadow Predictions",
+            "default": []
           }
         },
         "type": "object",
@@ -4077,6 +4085,90 @@
         ],
         "title": "SectorConcentrationWarning",
         "description": "特定セクターへ評価額が集中している警告."
+      },
+      "ShadowPredictionSummary": {
+        "properties": {
+          "shadow_id": {
+            "type": "string",
+            "title": "Shadow Id"
+          },
+          "challenger_version": {
+            "type": "string",
+            "title": "Challenger Version"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "bullish",
+              "bearish",
+              "neutral"
+            ],
+            "title": "Direction"
+          },
+          "entry": {
+            "type": "number",
+            "title": "Entry"
+          },
+          "stop": {
+            "type": "number",
+            "title": "Stop"
+          },
+          "target": {
+            "type": "number",
+            "title": "Target"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "risk_factors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Risk Factors",
+            "default": []
+          },
+          "holding_period_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holding Period Days"
+          },
+          "issued_at": {
+            "type": "string",
+            "title": "Issued At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shadow_id",
+          "challenger_version",
+          "direction",
+          "entry",
+          "stop",
+          "target",
+          "confidence",
+          "issued_at"
+        ],
+        "title": "ShadowPredictionSummary",
+        "description": "`shadow_predictions` の1行分（🆕 P12: Gemini 等 challenger LLM の比較用判定）.\n\n公式パイプライン（Anthropic）とは独立した表示専用の判定であり、昇格・確度較正には関与しない。"
       },
       "StockNote": {
         "properties": {

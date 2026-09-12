@@ -95,6 +95,35 @@ function DetailModalBody({ pickId }: { pickId: string }): ReactNode {
         </>
       )}
       {typeof holdingDays === 'number' && <p className="model-lab-brier">想定保有期間: 約{holdingDays}営業日</p>}
+      {detail.shadow_predictions.length > 0 && (
+        <>
+          <h3 className="pick-detail-subheading">他の LLM による判定（参考、比較用）</h3>
+          <ul className="pick-detail-shadow-list">
+            {detail.shadow_predictions.map((shadow) => (
+              <li key={shadow.shadow_id} className="pick-detail-shadow-item">
+                <p className="pick-detail-shadow-header">
+                  <span>{shadow.challenger_version}</span>
+                  <span style={{ color: directionColor(shadow.direction) }}>
+                    {DIRECTION_LABELS[shadow.direction]}（確度 {shadow.confidence.toFixed(0)}）
+                  </span>
+                </p>
+                <p className="pick-detail-shadow-bracket">
+                  買値 {formatYen(shadow.entry)} / 損切値 {formatYen(shadow.stop)} / 売値 {formatYen(shadow.target)}
+                </p>
+                {shadow.reasoning && <p>{shadow.reasoning}</p>}
+                {shadow.risk_factors.length > 0 && (
+                  <ul>
+                    {shadow.risk_factors.map((factor, i) => (
+
+                      <li key={i}>{factor}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

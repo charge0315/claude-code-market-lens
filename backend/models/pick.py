@@ -78,6 +78,27 @@ class PickSummary(BaseModel):
     source_contributions: dict[str, object]
 
 
+class ShadowPredictionSummary(BaseModel):
+    """`shadow_predictions` の1行分（🆕 P12: Gemini 等 challenger LLM の比較用判定）.
+
+    公式パイプライン（Anthropic）とは独立した表示専用の判定であり、昇格・確度較正には関与しない。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    shadow_id: str
+    challenger_version: str
+    direction: Direction
+    entry: float
+    stop: float
+    target: float
+    confidence: float
+    reasoning: str | None = None
+    risk_factors: list[str] = []
+    holding_period_days: int | None = None
+    issued_at: str
+
+
 class PickDetailResponse(BaseModel):
     """`GET /api/picks/{pick_id}` の応答（`feature_snapshot` を除いた台帳行 + 表示用銘柄名）.
 
@@ -111,6 +132,7 @@ class PickDetailResponse(BaseModel):
     model_version: str
     source_contributions: dict[str, object]
     created_at: str
+    shadow_predictions: list[ShadowPredictionSummary] = []
 
 
 class RejectedPick(BaseModel):

@@ -83,6 +83,31 @@ class _FakeLLM:
         return await self._state.propose_stock_pick(ticker=ticker, prompt=prompt)
 
 
+_DEFAULT_GEMINI: dict[str, object] = {
+    "should_include": True,
+    "buy_price": 1003.0,
+    "stop_loss_price": 980.0,
+    "take_profit_price": 1060.0,
+    "confidence": 68.0,
+    "reasoning": "Gemini 側の根拠",
+    "risk_factors": ["需給悪化"],
+    "holding_period_days": 6,
+}
+
+
+class _FakeGemini:
+    """`is_configured` を素の属性で持つ GeminiClient スタブ（🆕 P12）."""
+
+    def __init__(self, response: object = None, *, configured: bool = True) -> None:
+        self.is_configured = configured
+        self._response = response if response is not None else dict(_DEFAULT_GEMINI)
+
+    async def propose_stock_pick(self, *, ticker: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
+        if isinstance(self._response, Exception):
+            raise self._response
+        return dict(self._response) if isinstance(self._response, dict) else dict(_DEFAULT_GEMINI)
+
+
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     """パイプラインの外部依存をすべて差し替える（LLM 深掘り以降は orchestrator 側に配線する）."""
@@ -92,6 +117,8 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     # でそれぞれ `anthropic_client` を参照しているため、両モジュールの参照先を差し替える。
     monkeypatch.setattr(pp, "anthropic_client", fake_llm)
     monkeypatch.setattr(orch, "anthropic_client", fake_llm)
+    # 既定では Gemini 未設定として扱う（🆕 P12 の shadow 判定は明示的にテストする箇所でのみ有効化）。
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(configured=False))
 
     async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
         return _FakeRankings(list(state.codes))
@@ -222,3 +249,22 @@ async def test_should_include_false_excluded(wired: WiredState, migrated_db: Pat
     result = await pp.run_picks("mid_term")
     ex = [r for r in result.rejected if r.symbol == "6758"]
     assert ex and ex[0].status == "rejected_hard_excluded"
+
+
+async def test_gemini_shadow_judgment_recorded_after_ledger_insert(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 P12: Gemini 設定済みなら、台帳確定した各ピックについて shadow_predictions が記録される
+    （`shadow_predictions.pick_id` の FK 制約上、`pl.insert_picks` の後でのみ呼べる設計）。"""
+    from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
+
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini())
+
+    result = await pp.run_picks("mid_term")
+    assert result.status == "ok"
+    assert len(result.picks) == 2
+
+    for pick in result.picks:
+        rows = await list_shadow_predictions_for_pick(pick.pick_id)
+        assert len(rows) == 1
+        assert rows[0]["challenger_version"] == "gemini:gemini-2.5-pro"

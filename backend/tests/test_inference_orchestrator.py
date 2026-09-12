@@ -8,10 +8,13 @@ import pytest
 
 from backend.models.inference import STAGE_ORDER, InferenceOutcome
 from backend.services.db import inference_trace_db as trace_db
+from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
+from backend.services.gemini_errors import GeminiRateLimitError
 from backend.services.inference import orchestrator as orch
+from backend.services.ledger import prediction_ledger as pl
 from backend.services.vault import knowledge_search_client as ksc
 from backend.tests.conftest import VaultDirs
-from backend.tests.test_pick_pipeline import _DEFAULT_LLM, WiredState, _FakeLLM, _rec
+from backend.tests.test_pick_pipeline import _DEFAULT_GEMINI, _DEFAULT_LLM, WiredState, _FakeGemini, _FakeLLM, _rec
 
 _ATR = 20.0
 _TREND = 55.0
@@ -21,6 +24,8 @@ _TREND = 55.0
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     state = WiredState()
     monkeypatch.setattr(orch, "anthropic_client", _FakeLLM(state))
+    # 既定では Gemini 未設定として扱う（🆕 P12 の shadow 判定は明示的にテストする箇所でのみ有効化）。
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(configured=False))
 
     async def fake_brand(_code: str) -> None:
         return None
@@ -252,3 +257,100 @@ async def test_list_recent_runs_returns_latest_stage_per_run(wired: WiredState, 
     assert len(matching) == 1
     assert matching[0]["stage"] == "verify"
     assert matching[0]["status"] == "done"
+
+
+# --- 🆕 P12: Gemini shadow 判定（マルチLLM判定）---
+#
+# `record_gemini_shadow_judgment` は `shadow_predictions.pick_id` が `prediction_ledger` への
+# FK のため、`pipeline.run_picks` が `pl.insert_picks` で台帳確定した後にのみ呼べる
+# （`run_inference` 実行時点ではまだ pick_id が DB に存在しない）。テストも同じ順序
+# （`pl.insert_picks` → `record_gemini_shadow_judgment`）で呼ぶ。
+
+
+async def _run_and_persist(state: WiredState) -> InferenceOutcome:
+    outcome = await _run(state)
+    assert outcome.status == "done"
+    assert outcome.pick is not None
+    await pl.insert_picks([outcome.pick])
+    return outcome
+
+
+async def test_run_inference_returns_prompt_and_current_price_for_shadow_judgment(
+    wired: WiredState, migrated_db: Path
+) -> None:
+    """`run_inference` は shadow 判定に必要な `llm_prompt`/`current_price`/`atr` を outcome に載せる."""
+    outcome = await _run(wired)
+    assert outcome.status == "done"
+    assert outcome.llm_prompt is not None and "7203" in outcome.llm_prompt
+    assert outcome.current_price == 1000.0
+    assert outcome.atr == _ATR
+
+
+async def test_gemini_not_configured_records_no_shadow_prediction(wired: WiredState, migrated_db: Path) -> None:
+    """既定（`wired` fixture）は Gemini 未設定 → shadow_predictions へは何も記録されない."""
+    outcome = await _run_and_persist(wired)
+    await orch.record_gemini_shadow_judgment(outcome)
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert rows == []
+
+
+async def test_gemini_configured_records_shadow_prediction(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gemini 設定済み・正常応答 → 公式ピック確定後に shadow_predictions へ 1 行記録される."""
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini())
+
+    outcome = await _run_and_persist(wired)
+    await orch.record_gemini_shadow_judgment(outcome)
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["challenger_version"] == "gemini:gemini-2.5-pro"
+    # direction は quant 由来の pick.direction を再利用する（Gemini からは再導出しない）。
+    assert row["direction"] == outcome.pick.direction  # type: ignore[union-attr]
+    payload = row["payload"]
+    assert isinstance(payload, dict)
+    assert payload["reasoning"] == "Gemini 側の根拠"
+    assert payload["risk_factors"] == ["需給悪化"]
+
+
+async def test_gemini_error_does_not_affect_official_pick(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gemini 呼び出し失敗はフェイルソフト — 公式ピックの生成結果には一切影響しない."""
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(GeminiRateLimitError("stock_pick_gemini")))
+
+    outcome = await _run_and_persist(wired)
+    await orch.record_gemini_shadow_judgment(outcome)  # 例外を外へ伝播させないこと自体が検証対象
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert rows == []
+
+
+async def test_gemini_should_include_false_records_no_shadow_prediction(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini({**_DEFAULT_GEMINI, "should_include": False}))
+
+    outcome = await _run_and_persist(wired)
+    await orch.record_gemini_shadow_judgment(outcome)
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert rows == []
+
+
+async def test_gemini_invalid_bracket_records_no_shadow_prediction(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gemini の3値がサーバ側検証（finalize_bracket）を通らない場合は記録しない（3値必須検証は
+    公式パイプラインと共有する — CLAUDE.md）."""
+    invalid = {**_DEFAULT_GEMINI, "buy_price": 1000.0, "stop_loss_price": 1010.0, "take_profit_price": 1050.0}
+    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(invalid))
+
+    outcome = await _run_and_persist(wired)
+    await orch.record_gemini_shadow_judgment(outcome)
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert rows == []

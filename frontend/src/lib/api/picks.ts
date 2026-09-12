@@ -65,6 +65,22 @@ export interface SubScores {
   sentiment: number;
 }
 
+// 🆕 P12: Gemini 等 challenger LLM の比較用判定（`shadow_predictions`）。表示専用で、
+// 昇格・確度較正には一切関与しない。
+export interface ShadowPrediction {
+  shadow_id: string;
+  challenger_version: string;
+  direction: Direction;
+  entry: number;
+  stop: number;
+  target: number;
+  confidence: number;
+  reasoning: string | null;
+  risk_factors: string[];
+  holding_period_days: number | null;
+  issued_at: string;
+}
+
 export interface PickDetail {
   pick_id: string;
   run_id: string;
@@ -87,6 +103,7 @@ export interface PickDetail {
   model_version: string;
   source_contributions: Record<string, unknown>;
   created_at: string;
+  shadow_predictions: ShadowPrediction[];
 }
 
 export function fetchPickDetail(pickId: string): Promise<PickDetail> {

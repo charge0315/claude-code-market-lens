@@ -89,6 +89,8 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | `ANTHROPIC_API_KEY` | – | 空（AI 機能が `not_configured` を返す） | Claude API キー（ピック生成・ポートフォリオ判定・EOD レビューの LLM 深掘りに使用） |
 | `ANTHROPIC_MODEL` | – | `claude-sonnet-5` | 使用する Claude モデル ID |
 | `LLM_DAILY_COST_LIMIT_USD` | – | `5.0` | LLM コストの安全装置（目標ではない、CLAUDE.md）。超過時の挙動は `services/api_cost` 参照 |
+| `GEMINI_API_KEY` | – | 空（マルチLLM判定が無効） | Gemini API キー（🆕 P12）。設定すると公式パイプライン（Anthropic）と並行して比較用の shadow 判定を `shadow_predictions` へ記録する。未設定でも公式パイプラインには一切影響しない |
+| `GEMINI_MODEL` | – | `gemini-2.5-pro` | 使用する Gemini モデル ID |
 | `DATABASE_URL` | – | `sqlite+aiosqlite:///./data/alpha_forge.db` | DB 接続先（PostgreSQL 移行可能な設計） |
 | `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | – | `redis://127.0.0.1:6379/4` `/5` | Celery（Market Lens と DB 番号分離） |
 | `VAULT_ROOT` | – | `Personal Space/10_Stock` | Obsidian Vault ルート（読み取り専用が原則） |

@@ -22,12 +22,16 @@ import uuid
 from datetime import datetime
 from typing import cast
 
+from backend.config import settings
 from backend.models.inference import InferenceOutcome
 from backend.models.pick import Direction, HorizonType, LedgerEntry, RejectedPick, SubScores
 from backend.services.anthropic_client import anthropic_client
 from backend.services.anthropic_errors import AnthropicError
 from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_event
 from backend.services.db.pick_outcome_db import cohort_winrate
+from backend.services.db.shadow_prediction_db import insert_shadow_prediction
+from backend.services.gemini_client import gemini_client
+from backend.services.gemini_errors import GeminiError
 from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
@@ -112,6 +116,69 @@ class _Recorder:
             finished_at=finished_at,
             pick_id=pick_id,
         )
+
+
+async def record_gemini_shadow_judgment(outcome: InferenceOutcome) -> None:
+    """Gemini に公式パイプラインと同一のプロンプトを判定させ、`shadow_predictions` へ比較用に
+    記録する（🆕 P12、マルチLLM判定）.
+
+    `shadow_predictions.pick_id` は `prediction_ledger.pick_id` への FK（外部キー制約 ON）の
+    ため、呼び出しは **`pl.insert_picks` で台帳へ確定した後**（`pipeline.run_picks`）に限る
+    — `run_inference` 実行時点ではまだ `pick_id` が DB に存在しない。
+
+    表示専用の challenger 判定であり、失敗しても本体のピック生成には一切影響しない
+    （フェイルソフト）。`direction` はこのアーキテクチャでは常に quant 由来（`pick.direction`）
+    のため、Gemini の応答からは再導出しない。3 値は公式パイプラインと同じ
+    `finalize_bracket` を必ず通し、サーバ側検証をバイパスさせない（CLAUDE.md 3 値必須検証）。
+    """
+    pick = outcome.pick
+    if pick is None or outcome.llm_prompt is None or outcome.current_price is None:
+        return
+    if not gemini_client.is_configured:
+        return
+    try:
+        raw = await gemini_client.propose_stock_pick(ticker=pick.symbol, prompt=outcome.llm_prompt)
+    except GeminiError as e:
+        logger.warning("Gemini shadow 判定に失敗しました（%s）: %s", pick.symbol, e)
+        return
+
+    if not raw.get("should_include", True):
+        return
+
+    raw_entry = _num(raw.get("buy_price"))
+    raw_stop = _num(raw.get("stop_loss_price"))
+    raw_target = _num(raw.get("take_profit_price"))
+    confidence_raw = _num(raw.get("confidence"))
+    if raw_entry is None or raw_stop is None or raw_target is None or confidence_raw is None:
+        logger.warning("Gemini shadow 判定のレスポンス形式が不正です（%s）", pick.symbol)
+        return
+
+    bracket, reason = finalize_bracket(outcome.current_price, outcome.atr, raw_entry, raw_stop, raw_target)
+    if bracket is None:
+        logger.warning("Gemini shadow 判定のブラケット検証に失敗しました（%s）: %s", pick.symbol, reason)
+        return
+
+    try:
+        await insert_shadow_prediction(
+            pick_id=pick.pick_id,
+            run_id=outcome.run_id,
+            challenger_version=f"gemini:{settings.gemini_model}",
+            symbol=pick.symbol,
+            horizon_type=pick.horizon_type,
+            direction=pick.direction,
+            entry=round(bracket.entry, 2),
+            stop=round(bracket.stop, 2),
+            target=round(bracket.target, 2),
+            confidence_raw=confidence_raw,
+            confidence=confidence_raw,
+            payload={
+                "reasoning": raw.get("reasoning"),
+                "risk_factors": raw.get("risk_factors") or [],
+                "holding_period_days": standardize_holding_period(raw.get("holding_period_days")),
+            },
+        )
+    except Exception:  # noqa: BLE001 — 表示専用の challenger 記録。失敗しても本体は継続する
+        logger.warning("Gemini shadow 判定の記録に失敗しました（%s）", pick.symbol, exc_info=True)
 
 
 async def run_inference(
@@ -316,4 +383,17 @@ async def run_inference(
     # 確定したピック ID を、この run の全ステージ行へ遡って紐付ける（銘柄詳細画面が
     # pick_id からトレース全体を引けるようにするため。collect〜bracket は当初 None）。
     await attach_pick_id(run_id, pick.pick_id)
-    return InferenceOutcome(run_id=run_id, symbol=symbol, status="done", pick=pick)
+
+    # 🆕 P12: `prompt`/`current_price`/`atr` を outcome に載せて返す。Gemini shadow 判定
+    # （`record_gemini_shadow_judgment`）は `pick_id` が `prediction_ledger` へ確定した後
+    # （`pipeline.run_picks` の `pl.insert_picks` 完了後）に呼ぶ必要があるため、ここでは
+    # 呼ばずに必要な値だけを引き渡す（FK 制約により早すぎる呼び出しは記録が失敗する）。
+    return InferenceOutcome(
+        run_id=run_id,
+        symbol=symbol,
+        status="done",
+        pick=pick,
+        llm_prompt=prompt,
+        current_price=current_price,
+        atr=atr,
+    )

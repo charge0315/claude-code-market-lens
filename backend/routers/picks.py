@@ -13,8 +13,9 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.pick import PickDetailResponse, PickRunResult, PickSummary, SubScores
+from backend.models.pick import PickDetailResponse, PickRunResult, PickSummary, ShadowPredictionSummary, SubScores
 from backend.services.data.data_fetcher import get_company_name
+from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.pipeline import run_picks
 
@@ -39,6 +40,26 @@ def _date_bounds(date: str | None) -> tuple[str | None, str | None]:
 def _f(value: object) -> float:
     """DB 生行（`dict[str, object]`）の数値カラムを float へ変換する."""
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+
+def _shadow_summary(row: dict[str, object]) -> ShadowPredictionSummary:
+    """`shadow_predictions` の生行（🆕 P12）を表示用の `ShadowPredictionSummary` へ変換する."""
+    payload = row["payload"] if isinstance(row["payload"], dict) else {}
+    risk_factors = payload.get("risk_factors")
+    holding_period = payload.get("holding_period_days")
+    return ShadowPredictionSummary(
+        shadow_id=str(row["shadow_id"]),
+        challenger_version=str(row["challenger_version"]),
+        direction=row["direction"],
+        entry=_f(row["entry"]),
+        stop=_f(row["stop"]),
+        target=_f(row["target"]),
+        confidence=_f(row["confidence"]),
+        reasoning=str(payload["reasoning"]) if payload.get("reasoning") else None,
+        risk_factors=[str(r) for r in risk_factors] if isinstance(risk_factors, list) else [],
+        holding_period_days=int(holding_period) if isinstance(holding_period, (int, float)) else None,
+        issued_at=str(row["issued_at"]),
+    )
 
 
 @router.get("/mid-term", response_model=ApiResponse[list[PickSummary]], summary="中長期ピック一覧")
@@ -79,6 +100,7 @@ async def get_pick_detail(pick_id: str) -> ApiResponse[PickDetailResponse | None
     if raw is None:
         return ApiResponse.fail("該当するピックが見つかりません")
     company_name = await get_company_name(str(raw["symbol"]))
+    shadow_rows = await list_shadow_predictions_for_pick(pick_id)
     detail = PickDetailResponse(
         pick_id=str(raw["pick_id"]),
         run_id=str(raw["run_id"]),
@@ -106,5 +128,6 @@ async def get_pick_detail(pick_id: str) -> ApiResponse[PickDetailResponse | None
         model_version=str(raw["model_version"]),
         source_contributions=raw["source_contributions"],
         created_at=str(raw["created_at"]),
+        shadow_predictions=[_shadow_summary(r) for r in shadow_rows],
     )
     return ApiResponse.ok(detail)

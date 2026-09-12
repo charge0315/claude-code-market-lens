@@ -36,6 +36,7 @@ const PICK_DETAIL: PickDetail = {
   model_version: 'v1',
   source_contributions: { technical: { weight_share: 0.6, contribution: 40, score: 70 } },
   created_at: '2026-06-01T08:50:01+09:00',
+  shadow_predictions: [],
 };
 
 const PICK: PickSummary = {
@@ -203,5 +204,47 @@ describe('PicksBoard', () => {
     await user.click(screen.getByRole('button', { name: '閉じる' }));
 
     expect(screen.queryByText('ピック詳細・根拠')).not.toBeInTheDocument();
+  });
+
+  it('🆕 P12: 他の LLM（Gemini 等）の shadow 判定をポップアップに表示する', async () => {
+    mockFetchPicks.mockResolvedValue([PICK]);
+    mockFetchPickDetail.mockResolvedValue({
+      ...PICK_DETAIL,
+      shadow_predictions: [
+        {
+          shadow_id: 'shadow-1',
+          challenger_version: 'gemini:gemini-2.5-pro',
+          direction: 'bullish',
+          entry: 3010,
+          stop: 2790,
+          target: 3320,
+          confidence: 68,
+          reasoning: 'Gemini 側の根拠',
+          risk_factors: ['需給悪化'],
+          holding_period_days: 6,
+          issued_at: '2026-06-01T08:50:02+09:00',
+        },
+      ],
+    });
+    const user = userEvent.setup();
+
+    render(<PicksBoard />);
+    await user.click(await screen.findByRole('button', { name: '詳細' }));
+
+    expect(await screen.findByText('gemini:gemini-2.5-pro')).toBeInTheDocument();
+    expect(screen.getByText('Gemini 側の根拠')).toBeInTheDocument();
+    expect(screen.getByText('需給悪化')).toBeInTheDocument();
+  });
+
+  it('shadow_predictions が空なら他 LLM セクションを表示しない', async () => {
+    mockFetchPicks.mockResolvedValue([PICK]);
+    mockFetchPickDetail.mockResolvedValue(PICK_DETAIL);
+    const user = userEvent.setup();
+
+    render(<PicksBoard />);
+    await user.click(await screen.findByRole('button', { name: '詳細' }));
+    await screen.findByText('テクニカル: 72');
+
+    expect(screen.queryByText('他の LLM による判定（参考、比較用）')).not.toBeInTheDocument();
   });
 });
