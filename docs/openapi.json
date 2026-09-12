@@ -1069,8 +1069,8 @@
         "tags": [
           "registry"
         ],
-        "summary": "銘柄別モデルの学習バッチを手動実行",
-        "description": "指定モデルタイプの日次学習バッチを1回分だけ即時実行する（celery beat と同じ関数、手動トリガー）.\n\n東証全銘柄のうち当日の上限まで（未学習優先→最も学習が古い順）を学習する\n（`per_ticker_training_service.run_daily_training_batch`）。品質ゲート合格分は\n`model_champions` を自動差し替える（P9、人手承認は不要）。モデルタイプにより\n数十秒〜数分かかりうる（xgboost/random_forest は5分、lstm/transformer は60分の\n1firing予算と同じ時間予算で動く）。",
+        "summary": "銘柄別モデルの学習バッチを起動",
+        "description": "指定モデルタイプの日次学習バッチをバックグラウンドで起動し、即座に応答する（🔧 P13h）.\n\n東証全銘柄のうち当日の上限まで（未学習優先→最も学習が古い順）を学習する\n（`per_ticker_training_service.run_daily_training_batch`）。品質ゲート合格分は\n`model_champions` を自動差し替える（P9、人手承認は不要）。モデルタイプにより\n数十秒〜数分かかりうる（xgboost/random_forest は5分、lstm/transformer は60分の\n1firing予算と同じ時間予算で動く）ため、完了を待たず即時に `started` を返す。\n進捗・結果は `GET /training/status` をポーリングして確認する。",
         "operationId": "run_training_api_registry_training_run_post",
         "requestBody": {
           "content": {
@@ -1082,6 +1082,55 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/training/status": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "銘柄別モデル学習バッチの進捗・結果",
+        "description": "指定モデルタイプの学習バッチが実行中かどうか・本日ここまでの試行件数・直近の結果を返す.\n\n`TrainingTriggerPanel`（🔧 P13h）が `POST /training/run` 後にポーリングする想定。",
+        "operationId": "training_status_api_registry_training_status_get",
+        "parameters": [
+          {
+            "name": "model_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "xgboost",
+                "random_forest",
+                "lstm",
+                "transformer"
+              ],
+              "type": "string",
+              "title": "Model Type"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",

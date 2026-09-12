@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -154,18 +155,25 @@ async def test_apply_promotion_unknown_id_returns_failure(migrated_db: Path) -> 
     assert body["success"] is False
 
 
-async def test_run_training_invokes_daily_batch_for_requested_model_type(
+async def test_run_training_starts_in_background_and_status_reports_completion(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """🆕 モデルラボの学習トリガー: 指定モデルタイプの日次学習バッチを即時実行する."""
+    """🔧 P13h: 学習バッチはバックグラウンドで起動し即座に応答する（同期 await で数分待たせない）.
+
+    多分間かかりうる学習バッチをリクエスト内で同期 await すると、経路上のどこか
+    （Next.js の rewrite プロキシ等）のタイムアウトでブラウザには失敗と映る一方、
+    バックエンド側は処理を継続してしまう不整合が実機で発覚したための変更。
+    """
     from backend.routers import registry as registry_router_module
     from backend.services.learning.per_ticker_training_service import TrainingBatchSummary
 
     seen_model_type: str | None = None
+    gate = asyncio.Event()
 
     async def fake_run_daily_training_batch(model_type: str) -> TrainingBatchSummary:
         nonlocal seen_model_type
         seen_model_type = model_type
+        await gate.wait()  # テストが明示的に解放するまでバックグラウンドタスクを止めておく
         return TrainingBatchSummary(
             model_type=model_type,
             attempted_today=5,
@@ -176,23 +184,92 @@ async def test_run_training_invokes_daily_batch_for_requested_model_type(
         )
 
     monkeypatch.setattr(registry_router_module, "run_daily_training_batch", fake_run_daily_training_batch)
+    registry_router_module._running_batches.clear()
+    registry_router_module._last_results.clear()
 
     from backend.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        res = await client.post("/api/registry/training/run", json={"model_type": "xgboost"})
+        run_res = await client.post("/api/registry/training/run", json={"model_type": "xgboost"})
+        assert run_res.json() == {
+            "success": True,
+            "data": {"model_type": "xgboost", "status": "started"},
+            "error": None,
+            "meta": None,
+        }
+        assert seen_model_type == "xgboost"
 
-    assert seen_model_type == "xgboost"
-    body = res.json()
-    assert body["success"] is True
-    assert body["data"] == {
+        # ゲート解放前は実行中のまま（バックグラウンドタスクが gate.wait() で止まっている）。
+        running_res = await client.get("/api/registry/training/status?model_type=xgboost")
+        assert running_res.json()["data"]["running"] is True
+        assert running_res.json()["data"]["last_result"] is None
+
+        task = registry_router_module._running_batches["xgboost"]
+        gate.set()
+        await task
+
+        status_res = await client.get("/api/registry/training/status?model_type=xgboost")
+
+    status_body = status_res.json()["data"]
+    assert status_body["running"] is False
+    assert status_body["last_result"] == {
         "model_type": "xgboost",
         "attempted_today": 5,
         "trained_this_call": 3,
         "failed_this_call": 0,
         "quota_reached": False,
         "activated_this_call": 2,
+        "error": None,
     }
+
+
+async def test_run_training_returns_already_running_when_triggered_twice(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.routers import registry as registry_router_module
+
+    gate = asyncio.Event()
+
+    async def fake_run_daily_training_batch(model_type: str) -> object:
+        await gate.wait()
+        raise AssertionError("test forces this coroutine to never resolve normally")
+
+    monkeypatch.setattr(registry_router_module, "run_daily_training_batch", fake_run_daily_training_batch)
+    registry_router_module._running_batches.clear()
+    registry_router_module._last_results.clear()
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/registry/training/run", json={"model_type": "lstm"})
+        second = await client.post("/api/registry/training/run", json={"model_type": "lstm"})
+
+    assert first.json()["data"]["status"] == "started"
+    assert second.json()["data"]["status"] == "already_running"
+
+    # 後片付け: ぶら下がったタスクをキャンセルする。
+    gate.set()
+    task = registry_router_module._running_batches.pop("lstm", None)
+    if task is not None:
+        task.cancel()
+
+
+async def test_training_status_reflects_attempted_tickers_from_db(migrated_db: Path) -> None:
+    from backend.services.db.training_batch_db import insert_training_batch_run
+    from backend.services.jst_time import today_jst
+
+    await insert_training_batch_run(run_date=today_jst(), ticker="7203", model_type="xgboost", status="completed")
+    await insert_training_batch_run(run_date=today_jst(), ticker="6758", model_type="xgboost", status="failed")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/training/status?model_type=xgboost")
+
+    body = res.json()["data"]
+    assert body["running"] is False
+    assert body["attempted_today"] == 2
+    assert body["last_result"] is None
 
 
 async def test_run_training_rejects_unknown_model_type(migrated_db: Path) -> None:
@@ -200,6 +277,15 @@ async def test_run_training_rejects_unknown_model_type(migrated_db: Path) -> Non
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         res = await client.post("/api/registry/training/run", json={"model_type": "not-a-model"})
+
+    assert res.status_code == 422
+
+
+async def test_training_status_rejects_unknown_model_type(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/training/status?model_type=not-a-model")
 
     assert res.status_code == 422
 

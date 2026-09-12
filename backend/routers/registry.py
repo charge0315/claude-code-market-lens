@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -14,11 +16,37 @@ from pydantic import BaseModel
 from backend.models.common import ApiResponse
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
-from backend.services.learning.per_ticker_training_service import run_daily_training_batch
+from backend.services.db.training_batch_db import get_attempted_tickers
+from backend.services.jst_time import today_jst
+from backend.services.learning.per_ticker_training_service import ModelType, run_daily_training_batch
 from backend.services.learning.pool_model import POOL_LANE
 from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/registry", tags=["registry"])
+
+# 銘柄別モデルの日次学習バッチ（🔧 P13h）: モデルタイプごとに数十秒〜10分かかりうるため、
+# HTTP リクエスト内で同期 await すると（Next.js の rewrite プロキシ等、経路上のどこかの
+# タイムアウトに引っかかり）ブラウザ側には失敗と映る一方、バックエンド側はそのまま処理を
+# 続行してしまう（実際に学習・champion 化は成立するのに UI が「失敗」と表示する不整合が
+# 発生した）。バックグラウンドタスクとして起動し即座に応答を返す方式へ変更し、進捗・結果は
+# `GET /training/status` でポーリングする。`model_promotions` を介さない自動承認ガバナンス
+# （P9）という位置づけ自体は変えない。
+_running_batches: dict[ModelType, asyncio.Task[None]] = {}
+_last_results: dict[ModelType, dict[str, object]] = {}
+
+
+async def _run_and_record(model_type: ModelType) -> None:
+    """バックグラウンドで学習バッチを実行し、結果を `_last_results` へ記録する."""
+    try:
+        summary = await run_daily_training_batch(model_type)
+        _last_results[model_type] = {**summary.to_dict(), "error": None}
+    except Exception as e:  # noqa: BLE001 — バックグラウンドタスクの想定外エラーを UI 側へ伝える
+        logger.exception("学習バッチが異常終了しました（model_type=%s）", model_type)
+        _last_results[model_type] = {"model_type": model_type, "error": str(e)}
+    finally:
+        _running_batches.pop(model_type, None)
 
 
 class EvaluatePromotionRequest(BaseModel):
@@ -94,18 +122,44 @@ async def apply(promotion_id: str) -> ApiResponse[dict]:
     return ApiResponse.ok({"promotion_id": promotion_id, "applied": True})
 
 
-@router.post("/training/run", response_model=ApiResponse[dict], summary="銘柄別モデルの学習バッチを手動実行")
+@router.post("/training/run", response_model=ApiResponse[dict], summary="銘柄別モデルの学習バッチを起動")
 async def run_training(req: TrainingRunRequest) -> ApiResponse[dict]:
-    """指定モデルタイプの日次学習バッチを1回分だけ即時実行する（celery beat と同じ関数、手動トリガー）.
+    """指定モデルタイプの日次学習バッチをバックグラウンドで起動し、即座に応答する（🔧 P13h）.
 
     東証全銘柄のうち当日の上限まで（未学習優先→最も学習が古い順）を学習する
     （`per_ticker_training_service.run_daily_training_batch`）。品質ゲート合格分は
     `model_champions` を自動差し替える（P9、人手承認は不要）。モデルタイプにより
     数十秒〜数分かかりうる（xgboost/random_forest は5分、lstm/transformer は60分の
-    1firing予算と同じ時間予算で動く）。
+    1firing予算と同じ時間予算で動く）ため、完了を待たず即時に `started` を返す。
+    進捗・結果は `GET /training/status` をポーリングして確認する。
     """
-    summary = await run_daily_training_batch(req.model_type)
-    return ApiResponse.ok(summary.to_dict())
+    model_type = req.model_type
+    if model_type in _running_batches:
+        return ApiResponse.ok({"model_type": model_type, "status": "already_running"})
+    _last_results.pop(model_type, None)
+    task = asyncio.create_task(_run_and_record(model_type))
+    _running_batches[model_type] = task
+    return ApiResponse.ok({"model_type": model_type, "status": "started"})
+
+
+@router.get("/training/status", response_model=ApiResponse[dict], summary="銘柄別モデル学習バッチの進捗・結果")
+async def training_status(
+    model_type: Literal["xgboost", "random_forest", "lstm", "transformer"] = Query(...),
+) -> ApiResponse[dict]:
+    """指定モデルタイプの学習バッチが実行中かどうか・本日ここまでの試行件数・直近の結果を返す.
+
+    `TrainingTriggerPanel`（🔧 P13h）が `POST /training/run` 後にポーリングする想定。
+    """
+    running = model_type in _running_batches
+    attempted_today = len(await get_attempted_tickers(today_jst(), model_type))
+    return ApiResponse.ok(
+        {
+            "model_type": model_type,
+            "running": running,
+            "attempted_today": attempted_today,
+            "last_result": _last_results.get(model_type),
+        }
+    )
 
 
 @router.get("/drift", response_model=ApiResponse[list[dict]], summary="PSI ドリフト履歴")

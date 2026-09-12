@@ -68,10 +68,30 @@ export interface TrainingBatchSummary {
   failed_this_call: number;
   quota_reached: boolean;
   activated_this_call: number;
+  error: string | null;
 }
 
-// 銘柄別モデル（P9）の日次学習バッチを手動実行する。モデルタイプにより数十秒〜数分かかる
-// （celery beat の1firing予算と同じ時間予算で動く、`per_ticker_training_service.py` 参照）。
-export function runTrainingBatch(modelType: TrainingModelType): Promise<TrainingBatchSummary> {
-  return api.post<TrainingBatchSummary>('/registry/training/run', { model_type: modelType });
+export interface TrainingRunAck {
+  model_type: TrainingModelType;
+  status: 'started' | 'already_running';
+}
+
+export interface TrainingStatus {
+  model_type: TrainingModelType;
+  running: boolean;
+  attempted_today: number;
+  last_result: TrainingBatchSummary | null;
+}
+
+// 銘柄別モデル（P9）の日次学習バッチをバックグラウンドで起動する（🔧 P13h）。
+// モデルタイプにより数十秒〜数分かかりうる（celery beat の1firing予算と同じ時間予算で動く、
+// `per_ticker_training_service.py` 参照）ため、リクエストは即座に返り、完了は
+// `fetchTrainingStatus` をポーリングして確認する（同期 await だと経路上のタイムアウトで
+// ブラウザ側に失敗と誤表示されるため、この方式へ変更した）。
+export function startTrainingBatch(modelType: TrainingModelType): Promise<TrainingRunAck> {
+  return api.post<TrainingRunAck>('/registry/training/run', { model_type: modelType });
+}
+
+export function fetchTrainingStatus(modelType: TrainingModelType): Promise<TrainingStatus> {
+  return api.get<TrainingStatus>(`/registry/training/status?model_type=${modelType}`);
 }
