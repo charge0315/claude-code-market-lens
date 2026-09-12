@@ -65,10 +65,10 @@ _BATCH_VERSION_PREFIX: Final[str] = "batch-"
 
 # 学習データの取得期間・予測ホライズン（Market Lens のデフォルトを踏襲）。
 _TRAINING_PERIOD: Final[str] = "5y"
-_FORECAST_HORIZON_DAYS: Final[int] = 5
+FORECAST_HORIZON_DAYS: Final[int] = 5
 
 
-def _get_predictor(model_type: str) -> PredictorProtocol:
+def get_predictor(model_type: str) -> PredictorProtocol:
     """モデルタイプ文字列から対応する predictor インスタンスを返す."""
     if model_type == "xgboost":
         return XGBoostPredictor()
@@ -220,8 +220,8 @@ async def _train_and_register(
     if df.empty:
         raise ValueError(f"株価データが取得できません: {ticker}")
 
-    predictor = _get_predictor(model_type)
-    metrics = await asyncio.to_thread(predictor.train, df, {}, forecast_horizon=_FORECAST_HORIZON_DAYS)
+    predictor = get_predictor(model_type)
+    metrics = await asyncio.to_thread(predictor.train, df, {}, forecast_horizon=FORECAST_HORIZON_DAYS)
     artifact_path = await asyncio.to_thread(predictor.save, version)
 
     await model_registry_db.upsert_model(
@@ -271,7 +271,7 @@ async def _reevaluate_existing_on_window(
         return None
 
     try:
-        predictor = _get_predictor(model_type)
+        predictor = get_predictor(model_type)
         await asyncio.to_thread(predictor.load, str(artifact_path))
         rewindow_metrics = await asyncio.to_thread(predictor.evaluate_on, df, eval_start, eval_end)
         return rewindow_metrics.get("rmse")

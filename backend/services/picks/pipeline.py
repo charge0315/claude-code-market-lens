@@ -37,7 +37,10 @@ from backend.services.registry.model_registry import bootstrap_champion_if_missi
 from backend.services.scoring.fundamental_analyzer import get_fundamental_with_vault_fallback
 from backend.services.scoring.ml_score_provider import (
     MlScoreProvider,
+    combine_ml_score_providers,
+    fetch_per_ticker_champion_rows,
     load_champion_pool_classifier,
+    make_per_ticker_ensemble_provider,
     make_pool_ml_score_provider,
 )
 from backend.services.scoring.recommender import compute_recommendation, null_ml_score
@@ -153,16 +156,21 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     # 最新トレンドスナップショット（読み取りのみ。同期は beat が別途行う）。
     trend_block = await render_trend_context()
 
-    # 断面プールモデル（N1 lane="ml_pool"）の ML ファクター。champion 未登録ならフォールバック
-    # せず (None, None) を返す provider になる（recommender が残り3ファクターで再正規化）。
+    # 断面プールモデル（N1 lane="ml_pool"）+ 銘柄別アンサンブル（P9）の ML ファクターを並列合成する。
+    # どちらも champion 未登録・推論失敗なら (None, None) を返し、recommender が残り3ファクター
+    # で再正規化する（フォールバック不要）。銘柄別アンサンブルの champion 行は同期関数
+    # （`ensemble_predictor.predict_ensemble_sync`）から非同期 DB I/O を呼べないため、
+    # 各銘柄をスコアリングするスレッドへ渡す前にここで事前取得する。
     panel_ctx = await get_cached_panel_context(issued_at[:10])
     pool_clf = await load_champion_pool_classifier()
-    ml_score_provider = make_pool_ml_score_provider(panel_ctx, pool_clf)
+    pool_provider = make_pool_ml_score_provider(panel_ctx, pool_clf)
 
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []
     for code in codes:
         fundamental = await get_fundamental_with_vault_fallback(code)
+        ticker_rows = await fetch_per_ticker_champion_rows(code)
+        ml_score_provider = combine_ml_score_providers(pool_provider, make_per_ticker_ensemble_provider(ticker_rows))
         rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
         scored.append((code, rec, atr, trend_score))
     scored.sort(key=lambda s: _num(s[1].get("composite_score")) or 0.0, reverse=True)

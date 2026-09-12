@@ -45,6 +45,25 @@ async def test_champions_endpoint_returns_bootstrapped_lane(migrated_db: Path) -
     assert any(c["lane"] == "mid_term" and c["champion_version"] == "v1" for c in body["data"])
 
 
+async def test_champions_endpoint_excludes_per_ticker_lanes(migrated_db: Path) -> None:
+    """銘柄別モデル（P9、`lane=f"{model_type}:{ticker}"`）は一覧から除外される."""
+    from backend.services.db import model_registry_db
+
+    await mr.ensure_registered("v1", lane="mid_term")
+    await mr.bootstrap_champion_if_missing("mid_term", "v1")
+    await model_registry_db.upsert_model(version="pt-1", model_type="xgboost", ticker="7203", objective="regression")
+    await model_registry_db.set_champion("xgboost:7203", "pt-1", promoted_by="quality_gate")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/champions")
+    lanes = [c["lane"] for c in res.json()["data"]]
+
+    assert "mid_term" in lanes
+    assert "xgboost:7203" not in lanes
+
+
 async def _seed_model(version: str, *, n: int, win_rate: float) -> None:
     n_wins = round(n * win_rate)
     for i in range(n):

@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     )
     training_lstm_daily_limit: int = Field(default=40, validation_alias="TRAINING_LSTM_DAILY_LIMIT", ge=1)
     training_transformer_daily_limit: int = Field(default=40, validation_alias="TRAINING_TRANSFORMER_DAILY_LIMIT", ge=1)
+    # 銘柄別アンサンブル（`ml_score_provider.make_per_ticker_ensemble_provider`）に
+    # LSTM/Transformer を含めるか。既定 False（xgboost/random_forest のみ）: torch 同期推論は
+    # 銘柄あたり数百msかかり、ピック生成のバッチ処理（候補プール全体を都度スコアリング）では
+    # 所要時間が成立しないため（Market Lens `recommender._ensemble_model_types` と同じ理由）。
+    recommender_ensemble_include_dl: bool = Field(default=False, validation_alias="RECOMMENDER_ENSEMBLE_INCLUDE_DL")
 
     # --- 確度較正 ---
     calibration_method: Literal["auto", "isotonic", "platt", "identity"] = Field(
