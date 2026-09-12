@@ -19,4 +19,15 @@ describe('PageShell', () => {
     const { container } = render(<PageShell title="ダッシュボード" phase="P8" />);
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('🆕 P13: phase 省略時はフェーズ案内文を表示しない', () => {
+    render(
+      <PageShell title="ダッシュボード">
+        <p>子要素</p>
+      </PageShell>,
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: 'ダッシュボード' })).toBeInTheDocument();
+    expect(screen.queryByText(/で実装予定/)).not.toBeInTheDocument();
+  });
 });
