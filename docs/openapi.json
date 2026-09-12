@@ -3510,6 +3510,28 @@
             "type": "array",
             "title": "Shadow Predictions",
             "default": []
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
           }
         },
         "type": "object",
@@ -3691,6 +3713,36 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Source Contributions"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "reasoning_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasoning Tags",
+            "default": []
           }
         },
         "type": "object",

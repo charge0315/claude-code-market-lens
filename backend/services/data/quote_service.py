@@ -35,3 +35,10 @@ async def fetch_quote(symbol: str) -> tuple[float | None, float | None]:
     current = float(closes.iloc[-1]) if len(closes) >= 1 else None
     prev = float(closes.iloc[-2]) if len(closes) >= 2 else None
     return current, prev
+
+
+def compute_change_pct(current: float | None, prev: float | None) -> float | None:
+    """前日終値比の変化率（%）を計算する。片方でも欠けていれば None."""
+    if current is None or prev is None or prev == 0:
+        return None
+    return (current - prev) / prev * 100.0

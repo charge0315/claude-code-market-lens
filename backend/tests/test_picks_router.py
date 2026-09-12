@@ -10,8 +10,20 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from backend.models.pick import LedgerEntry, PickRunResult, SubScores
+from backend.routers import picks as picks_router_module
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.ledger import prediction_ledger as pl
+
+
+@pytest.fixture(autouse=True)
+def _no_live_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🆕 P13: 現在値取得（ライブ、yfinance）をテストでは決定的にする（既定は取得失敗扱い）."""
+
+    async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None]:
+        return None, None
+
+    monkeypatch.setattr(pl, "fetch_quote", fake_fetch_quote)
+    monkeypatch.setattr(picks_router_module, "fetch_quote", fake_fetch_quote)
 
 
 @pytest_asyncio.fixture
@@ -73,6 +85,30 @@ async def test_get_pick_detail_omits_feature_snapshot(client: AsyncClient) -> No
 
     missing = await client.get("/api/picks/nope")
     assert missing.json()["success"] is False
+
+
+async def test_get_pick_detail_includes_live_quote(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """🆕 P13: current_price/change_pct はライブ値（取得できれば非 None、失敗すれば None）."""
+
+    async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None]:
+        return 1020.0, 1000.0
+
+    monkeypatch.setattr(picks_router_module, "fetch_quote", fake_fetch_quote)
+    await pl.insert_pick(_entry("p1", "mid_term", "7203"))
+
+    res = await client.get("/api/picks/p1")
+    data = res.json()["data"]
+
+    assert data["current_price"] == 1020.0
+    assert data["change_pct"] == pytest.approx(2.0)
+
+
+async def test_get_pick_detail_live_quote_defaults_to_none_on_failure(client: AsyncClient) -> None:
+    await pl.insert_pick(_entry("p1", "mid_term", "7203"))
+    res = await client.get("/api/picks/p1")
+    data = res.json()["data"]
+    assert data["current_price"] is None
+    assert data["change_pct"] is None
 
 
 async def test_get_pick_detail_returns_nested_sub_scores_and_rationale(client: AsyncClient) -> None:

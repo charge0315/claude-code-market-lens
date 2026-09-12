@@ -76,6 +76,12 @@ class PickSummary(BaseModel):
     rationale_text: str
     model_version: str
     source_contributions: dict[str, object]
+    # 🆕 P13: 表示専用のライブ値（DB へは永続化しない、CL-1 の台帳凍結方針とは無関係）。
+    # 取得できない場合は None（フェイルソフト、ダッシュボード全体は壊さない）。
+    current_price: float | None = None
+    change_pct: float | None = None
+    # rationale_struct.recommender_reasoning の先頭2件（一覧行のタグ表示用）。
+    reasoning_tags: list[str] = []
 
 
 class ShadowPredictionSummary(BaseModel):
@@ -133,6 +139,9 @@ class PickDetailResponse(BaseModel):
     source_contributions: dict[str, object]
     created_at: str
     shadow_predictions: list[ShadowPredictionSummary] = []
+    # 🆕 P13: 表示専用のライブ値（DB へは永続化しない）。取得できない場合は None。
+    current_price: float | None = None
+    change_pct: float | None = None
 
 
 class RejectedPick(BaseModel):

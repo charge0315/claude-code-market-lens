@@ -9,6 +9,7 @@ Alpha Forge の DB は SQLAlchemy async（`services/db/database.py`）。
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -16,6 +17,7 @@ from sqlalchemy import text
 
 from backend.models.pick import ConfidenceBucket, LedgerEntry, PickSummary
 from backend.services.data.data_fetcher import _get_ticker_master
+from backend.services.data.quote_service import compute_change_pct, fetch_quote
 from backend.services.db.database import get_db
 
 # 確度バケットの境界（較正後 confidence 0〜100）。
@@ -106,7 +108,22 @@ def _f(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-def _row_to_summary(row: dict[str, object], *, company_name: str | None = None) -> PickSummary:
+def _reasoning_tags(row: dict[str, object]) -> list[str]:
+    """一覧行のタグ表示用: `rationale_struct.recommender_reasoning` の先頭2件（🆕 P13）."""
+    rationale_struct = json.loads(str(row.get("rationale_struct") or "{}"))
+    reasoning = rationale_struct.get("recommender_reasoning")
+    if isinstance(reasoning, list):
+        return [str(r) for r in reasoning[:2]]
+    return []
+
+
+def _row_to_summary(
+    row: dict[str, object],
+    *,
+    company_name: str | None = None,
+    current_price: float | None = None,
+    change_pct: float | None = None,
+) -> PickSummary:
     return PickSummary(
         pick_id=str(row["pick_id"]),
         issued_at=str(row["issued_at"]),
@@ -124,6 +141,9 @@ def _row_to_summary(row: dict[str, object], *, company_name: str | None = None) 
         rationale_text=str(row["rationale_text"]),
         model_version=str(row["model_version"]),
         source_contributions=json.loads(str(row["source_contributions"] or "{}")),
+        current_price=current_price,
+        change_pct=change_pct,
+        reasoning_tags=_reasoning_tags(row),
     )
 
 
@@ -166,7 +186,23 @@ async def list_picks(
     # 表示専用の付加情報として銘柄マスタ（24h キャッシュ）から都度引く。銘柄マスタ未設定
     # （J-Quants 未設定）でもピック一覧の表示自体は失敗させない（None のまま返す）。
     name_by_code = {t.code: t.name for t in await _get_ticker_master()}
-    return [_row_to_summary(row, company_name=name_by_code.get(str(row["symbol"]))) for row in rows]
+
+    # 🆕 P13: 現在値/前日比はライブ値（DB非永続）。銘柄ごとに重複取得しないよう de-dup する。
+    symbols = {str(row["symbol"]) for row in rows}
+    quotes = dict(zip(symbols, await asyncio.gather(*[fetch_quote(s) for s in symbols]), strict=True))
+
+    summaries: list[PickSummary] = []
+    for row in rows:
+        current, prev = quotes[str(row["symbol"])]
+        summaries.append(
+            _row_to_summary(
+                row,
+                company_name=name_by_code.get(str(row["symbol"])),
+                current_price=current,
+                change_pct=compute_change_pct(current, prev),
+            )
+        )
+    return summaries
 
 
 def _dig(payload: object, dotted_path: str) -> object:

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from backend.models.common import ApiResponse
 from backend.models.pick import PickDetailResponse, PickRunResult, PickSummary, ShadowPredictionSummary, SubScores
 from backend.services.data.data_fetcher import get_company_name
+from backend.services.data.quote_service import compute_change_pct, fetch_quote
 from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.pipeline import run_picks
@@ -101,6 +102,7 @@ async def get_pick_detail(pick_id: str) -> ApiResponse[PickDetailResponse | None
         return ApiResponse.fail("該当するピックが見つかりません")
     company_name = await get_company_name(str(raw["symbol"]))
     shadow_rows = await list_shadow_predictions_for_pick(pick_id)
+    current_price, prev_close = await fetch_quote(str(raw["symbol"]))
     detail = PickDetailResponse(
         pick_id=str(raw["pick_id"]),
         run_id=str(raw["run_id"]),
@@ -129,5 +131,7 @@ async def get_pick_detail(pick_id: str) -> ApiResponse[PickDetailResponse | None
         source_contributions=raw["source_contributions"],
         created_at=str(raw["created_at"]),
         shadow_predictions=[_shadow_summary(r) for r in shadow_rows],
+        current_price=current_price,
+        change_pct=compute_change_pct(current_price, prev_close),
     )
     return ApiResponse.ok(detail)
