@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     # 特徴量分布ドリフト（PSI）の警告閾値。0.2 超で drift_flag。
     drift_psi_threshold: float = Field(default=0.2, validation_alias="DRIFT_PSI_THRESHOLD", ge=0.0)
 
+    # --- 銘柄別モデル日次学習バッチ（P9）。既定値は Market Lens の運用値を踏襲。
+    # ml_pool/mid_term/short_term レーンと異なり、これらは品質ゲート合格で自動 champion 化
+    # される（`per_ticker_training_service._apply_quality_gate`、ユーザー確認済みの例外運用）。
+    training_xgboost_daily_limit: int = Field(default=200, validation_alias="TRAINING_XGBOOST_DAILY_LIMIT", ge=1)
+    training_random_forest_daily_limit: int = Field(
+        default=200, validation_alias="TRAINING_RANDOM_FOREST_DAILY_LIMIT", ge=1
+    )
+    training_lstm_daily_limit: int = Field(default=40, validation_alias="TRAINING_LSTM_DAILY_LIMIT", ge=1)
+    training_transformer_daily_limit: int = Field(default=40, validation_alias="TRAINING_TRANSFORMER_DAILY_LIMIT", ge=1)
+
     # --- 確度較正 ---
     calibration_method: Literal["auto", "isotonic", "platt", "identity"] = Field(
         default="auto", validation_alias="CALIBRATION_METHOD"

@@ -54,6 +54,21 @@ def _isolated_calibrator_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(calibration, "_CALIBRATOR_DIR", tmp_path / "calibrators")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_per_ticker_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """銘柄別モデル（P9）の既定保存先を毎テスト一時ディレクトリへ差し替える.
+
+    `per_ticker_training_service._get_predictor` は `model_dir` を明示指定せずに
+    predictor を生成するため、モジュールレベルの `_DEFAULT_MODEL_DIR`（実リポジトリの
+    `data/models/`）へ無条件に書き込む。`_isolated_calibrator_dir` と同じ理由で隔離する。
+    """
+    from backend.services.learning import per_ticker_predictor
+    from backend.services.learning.dl import base as dl_base
+
+    monkeypatch.setattr(per_ticker_predictor, "_DEFAULT_MODEL_DIR", tmp_path / "models")
+    monkeypatch.setattr(dl_base, "_DEFAULT_MODEL_DIR", tmp_path / "models")
+
+
 @pytest.fixture
 def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """このテスト関数専用の SQLite ファイルへ `settings.database_url` を差し替える."""

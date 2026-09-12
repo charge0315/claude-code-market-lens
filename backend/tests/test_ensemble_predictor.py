@@ -49,6 +49,9 @@ class _FakePredictor:
     def load(self, file_path: str) -> None:
         return None
 
+    def evaluate_on(self, df: pd.DataFrame, start: str, end: str, forecast_horizon: int = 5) -> dict[str, float]:
+        raise NotImplementedError
+
 
 def _row(rmse: float | None) -> dict[str, object]:
     metrics: dict[str, object] = {} if rmse is None else {"rmse": rmse}

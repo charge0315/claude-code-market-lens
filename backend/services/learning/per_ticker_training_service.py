@@ -1,0 +1,361 @@
+"""銘柄別モデル（P9）の日次学習バッチのコアロジック（モデルタイプ別）.
+
+Market Lens `backend/services/training_batch_service.py` から移植、変更点:
+- `database.activate_model`（per-ticker `is_active` フラグ）は Alpha Forge に存在しないため、
+  品質ゲート合格時は `model_registry_db.set_champion(lane=f"{model_type}:{ticker}", version,
+  promoted_by="quality_gate")` で `model_champions` の該当行を差し替える。既存の
+  `model_champions`/`model_promotions`（ml_pool/mid_term/short_term レーンの人手承認ゲート、
+  `services/registry/promotion.py`）とは別格の**自動承認ガバナンス**として意図的に区別する
+  （`plans/04_タスクリスト.md` P9。CLAUDE.md の「モデル昇格は人手承認のみ」原則に対する、
+  ユーザー確認済みの明示的なスコープ限定の例外 — 銘柄別モデルは1系統あたり数千件に上り、
+  1件ずつの人手承認は運用不可能なため）。`model_promotions`（人手承認履歴）には書き込まない。
+- 「最新モデルが手動学習/チューニングで作られた銘柄は保護対象として除外する」ロジックは
+  Alpha Forge に手動学習 UI が無いため移植しない（全銘柄が常にバッチ対象）。
+- 分類器（objective="classification"）の出荷ゲートは無い。銘柄別4モデルは回帰専用
+  （`per_ticker_predictor.py`/`dl/base.py` 参照）。
+- ユニバースは東証全銘柄（`data_fetcher._get_ticker_master()`、ユーザー確認済み仕様。
+  Market Lens 同様）。
+
+「1呼び出し（Celery beat の1firing）あたりの時間予算・1銘柄あたりタイムアウトを守りつつ、
+未学習優先→最も学習が古い順に候補を選び、当日上限まで学習する」という Market Lens の設計を
+そのまま踏襲する。新規の進捗カーソルは持たず、毎回以下を DB から読み直すことで
+「続きから再開」する:
+- 今日そのモデルタイプで試行済み（成功/失敗いずれも）の銘柄集合（`training_batch_runs`）
+- 銘柄ごとの最新学習日時（`model_registry`）
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+import uuid
+from typing import Final, Literal
+
+from backend.config import settings
+from backend.services.data.data_fetcher import _get_ticker_master, get_stock_data
+from backend.services.db import model_registry_db, training_batch_db
+from backend.services.jst_time import today_jst
+from backend.services.learning.dl.lstm import LSTMPredictor
+from backend.services.learning.dl.transformer import TransformerPredictor
+from backend.services.learning.per_ticker_predictor import RandomForestPredictor, XGBoostPredictor
+from backend.services.learning.predictor_protocol import PredictorProtocol
+
+logger = logging.getLogger(__name__)
+
+ModelType = Literal["xgboost", "random_forest", "lstm", "transformer"]
+PER_TICKER_MODEL_TYPES: Final[tuple[ModelType, ...]] = ("xgboost", "random_forest", "lstm", "transformer")
+
+# torch ベースで学習が重く、立会時間ゲート・別予算を使うモデルタイプ。
+_DL_MODEL_TYPES: Final[frozenset[str]] = frozenset({"lstm", "transformer"})
+
+# 1回の呼び出し（Celery beatの1firing分）で学習に費やしてよい上限時間。
+# beatは次のfiringが来る前に余裕を持って制御を返せるよう、発火間隔よりやや短い値にする。
+_MAX_BATCH_DURATION_SECONDS: Final[float] = 240.0  # xgboost / random_forest（5分間隔）
+_DL_MAX_BATCH_DURATION_SECONDS: Final[float] = 600.0  # lstm / transformer（60分間隔なので長く取れる）
+
+# 1銘柄あたりの学習タイムアウト。_max_batch_duration のチェックはループの各イテレーション
+# 「間」でしか行われないため、1銘柄の学習/取得がハングするとソフトな時間予算を大きく超過する。
+_PER_TICKER_TIMEOUT_SECONDS: Final[float] = 60.0  # xgboost / random_forest
+_DL_PER_TICKER_TIMEOUT_SECONDS: Final[float] = 300.0  # lstm / transformer（torch 学習 + early stopping）
+
+# バッチが学習したモデルのversion接頭辞。
+_BATCH_VERSION_PREFIX: Final[str] = "batch-"
+
+# 学習データの取得期間・予測ホライズン（Market Lens のデフォルトを踏襲）。
+_TRAINING_PERIOD: Final[str] = "5y"
+_FORECAST_HORIZON_DAYS: Final[int] = 5
+
+
+def _get_predictor(model_type: str) -> PredictorProtocol:
+    """モデルタイプ文字列から対応する predictor インスタンスを返す."""
+    if model_type == "xgboost":
+        return XGBoostPredictor()
+    if model_type == "random_forest":
+        return RandomForestPredictor()
+    if model_type == "lstm":
+        return LSTMPredictor()
+    if model_type == "transformer":
+        return TransformerPredictor()
+    raise ValueError(f"Unsupported model type: {model_type}")
+
+
+def _daily_ticker_limit(model_type: str) -> int:
+    """モデルタイプ別の当日学習上限銘柄数（モジュール import 時ではなく実行時に settings を読む）."""
+    if model_type == "random_forest":
+        return settings.training_random_forest_daily_limit
+    if model_type == "lstm":
+        return settings.training_lstm_daily_limit
+    if model_type == "transformer":
+        return settings.training_transformer_daily_limit
+    return settings.training_xgboost_daily_limit
+
+
+def _per_ticker_timeout(model_type: str) -> float:
+    return _DL_PER_TICKER_TIMEOUT_SECONDS if model_type in _DL_MODEL_TYPES else _PER_TICKER_TIMEOUT_SECONDS
+
+
+def _max_batch_duration(model_type: str) -> float:
+    return _DL_MAX_BATCH_DURATION_SECONDS if model_type in _DL_MODEL_TYPES else _MAX_BATCH_DURATION_SECONDS
+
+
+def _lane(model_type: str, ticker: str) -> str:
+    """銘柄別モデルの champion レーン名（`model_champions.lane`、String(32) に収まる）."""
+    return f"{model_type}:{ticker}"
+
+
+class TrainingBatchSummary:
+    """1回の呼び出し分の実行結果サマリ（Celery タスクの戻り値用）."""
+
+    def __init__(
+        self,
+        *,
+        model_type: str,
+        attempted_today: int,
+        trained_this_call: int,
+        failed_this_call: int,
+        quota_reached: bool,
+        activated_this_call: int = 0,
+    ) -> None:
+        self.model_type = model_type
+        self.attempted_today = attempted_today
+        self.trained_this_call = trained_this_call
+        self.failed_this_call = failed_this_call
+        self.quota_reached = quota_reached
+        # 学習に成功した件数のうち、品質ゲートを通過して実際に champion 化された件数。
+        self.activated_this_call = activated_this_call
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_type": self.model_type,
+            "attempted_today": self.attempted_today,
+            "trained_this_call": self.trained_this_call,
+            "failed_this_call": self.failed_this_call,
+            "quota_reached": self.quota_reached,
+            "activated_this_call": self.activated_this_call,
+        }
+
+
+async def run_daily_training_batch(model_type: ModelType) -> TrainingBatchSummary:
+    """当日の学習上限に達するまで、未学習/学習が最も古い銘柄から順に当該モデルタイプで学習する."""
+    run_date = today_jst()
+    limit = _daily_ticker_limit(model_type)
+    budget = _max_batch_duration(model_type)
+    timeout = _per_ticker_timeout(model_type)
+
+    attempted_today = await training_batch_db.get_attempted_tickers(run_date, model_type)
+    if len(attempted_today) >= limit:
+        return TrainingBatchSummary(
+            model_type=model_type,
+            attempted_today=len(attempted_today),
+            trained_this_call=0,
+            failed_this_call=0,
+            quota_reached=True,
+        )
+
+    candidates = await _select_candidates(attempted_today, model_type)
+
+    trained = 0
+    failed = 0
+    activated = 0
+    start = time.monotonic()
+
+    for ticker in candidates:
+        if len(attempted_today) + trained + failed >= limit:
+            break
+        if time.monotonic() - start >= budget:
+            break
+
+        version = f"{_BATCH_VERSION_PREFIX}{uuid.uuid4()}"
+        try:
+            new_metrics, df = await asyncio.wait_for(_train_and_register(ticker, model_type, version), timeout=timeout)
+        except TimeoutError:
+            logger.warning("日次学習バッチ[%s]: %s の学習が%.0f秒でタイムアウトしました", model_type, ticker, timeout)
+            await training_batch_db.insert_training_batch_run(
+                run_date=run_date,
+                ticker=ticker,
+                model_type=model_type,
+                status="failed",
+                error=f"タイムアウト（{timeout:.0f}秒）",
+            )
+            failed += 1
+            continue
+        except Exception as exc:  # noqa: BLE001 - 1銘柄の失敗で全体を止めない
+            logger.warning("日次学習バッチ[%s]: %s の学習に失敗しました: %s", model_type, ticker, exc, exc_info=True)
+            await training_batch_db.insert_training_batch_run(
+                run_date=run_date, ticker=ticker, model_type=model_type, status="failed", error=str(exc)
+            )
+            failed += 1
+            continue
+
+        await training_batch_db.insert_training_batch_run(
+            run_date=run_date, ticker=ticker, model_type=model_type, status="completed", error=None
+        )
+        trained += 1
+        if await _apply_quality_gate(ticker, model_type, version, new_metrics, df):
+            activated += 1
+
+    total_attempted_today = len(attempted_today) + trained + failed
+    return TrainingBatchSummary(
+        model_type=model_type,
+        attempted_today=total_attempted_today,
+        trained_this_call=trained,
+        failed_this_call=failed,
+        quota_reached=total_attempted_today >= limit,
+        activated_this_call=activated,
+    )
+
+
+async def _train_and_register(
+    ticker: str, model_type: str, version: str
+) -> tuple[dict[str, float | str | int | bool], object]:
+    """1銘柄を学習し、`model_registry` へ登録する（champion 化は品質ゲートに委ねる）.
+
+    戻り値の第2要素（学習に使った OHLCV データフレーム）は、品質ゲートが既存 champion を
+    同じ検証窓で再評価する際、追加のネットワーク取得なしに再利用するために返す
+    （`get_stock_data` は TTL キャッシュ済みのため実害はほぼ無いが、素朴に再利用する）。
+    """
+    df = await asyncio.to_thread(get_stock_data, ticker, period=_TRAINING_PERIOD)
+    if df.empty:
+        raise ValueError(f"株価データが取得できません: {ticker}")
+
+    predictor = _get_predictor(model_type)
+    metrics = await asyncio.to_thread(predictor.train, df, {}, forecast_horizon=_FORECAST_HORIZON_DAYS)
+    artifact_path = await asyncio.to_thread(predictor.save, version)
+
+    await model_registry_db.upsert_model(
+        version=version,
+        model_type=model_type,
+        ticker=ticker,
+        objective="regression",
+        artifact_path=artifact_path,
+        val_metrics=metrics,
+        feature_list=[],
+        trained_at=None,
+    )
+    return metrics, df
+
+
+def _rmse_from_val_metrics(row: dict[str, object]) -> float | None:
+    """`model_registry.val_metrics`（JSON文字列）からrmseを取り出す。取得できなければNone."""
+    raw = row.get("val_metrics")
+    try:
+        metrics = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(metrics, dict):
+        return None
+    rmse = metrics.get("rmse")
+    return float(rmse) if isinstance(rmse, int | float) and not isinstance(rmse, bool) and rmse >= 0 else None
+
+
+async def _reevaluate_existing_on_window(
+    model_type: str, existing_row: dict[str, object], new_metrics: dict[str, float | str | int | bool], df: object
+) -> float | None:
+    """既存 champion を新モデルと同じ eval 窓（eval_start〜eval_end）で再評価する.
+
+    日次バッチは実行日が1日ずれるだけで学習・検証ウィンドウ全体もずれるため、
+    「記録済みの既存RMSE」と「新モデルのRMSE」を単純比較すると、たまたま静かな検証窓を
+    引いた側が有利になる。既存 champion を新モデルの評価窓に合わせて再評価し、
+    フェアな比較にする。再評価できない場合は None を返し、呼び出し元は記録済み値へ
+    フォールバックする（安全側 — 再評価できないことは品質ゲートを無効化する理由にしない）。
+    """
+    eval_start = new_metrics.get("eval_start")
+    eval_end = new_metrics.get("eval_end")
+    if not isinstance(eval_start, str) or not isinstance(eval_end, str):
+        return None
+
+    artifact_path = existing_row.get("artifact_path")
+    if not artifact_path:
+        return None
+
+    try:
+        predictor = _get_predictor(model_type)
+        await asyncio.to_thread(predictor.load, str(artifact_path))
+        rewindow_metrics = await asyncio.to_thread(predictor.evaluate_on, df, eval_start, eval_end)
+        return rewindow_metrics.get("rmse")
+    except Exception:
+        logger.debug("既存 champion の再評価に失敗しました。記録済みRMSEにフォールバックします。", exc_info=True)
+        return None
+
+
+async def _apply_quality_gate(
+    ticker: str, model_type: str, version: str, new_metrics: dict[str, float | str | int | bool], df: object
+) -> bool:
+    """新モデルが既存 champion より悪化していないか検証し、悪化していなければ champion にする.
+
+    - ナイーブ予測（変化率0）より悪いモデル（skill<=0）は既存 champion の有無に関わらず
+      無条件で却下する（Market Lens のオフライン検証で active XGBoost の74%がナイーブ予測
+      以下と判明したことを受けた対策、`per_ticker_predictor._calculate_metrics` docstring 参照）。
+    - この銘柄・モデルタイプで champion が未設定（初めての学習）なら、比較のしようがないため
+      無条件で champion にする。
+    - champion が既にある場合、新モデルの RMSE が（同じ窓で再評価した）既存以下なら champion
+      を差し替える。
+
+    Returns
+    -------
+    bool
+        実際に `model_champions` を差し替えた場合 True。
+    """
+    new_skill = new_metrics.get("skill")
+    if isinstance(new_skill, int | float) and not isinstance(new_skill, bool) and new_skill <= 0.0:
+        logger.info(
+            "日次学習バッチ[%s]: %s は品質ゲートで却下されました（skill=%.3f <= 0、"
+            "ナイーブ予測（変化率0）以下のため不採用）。",
+            model_type,
+            ticker,
+            new_skill,
+        )
+        return False
+
+    lane = _lane(model_type, ticker)
+    existing_version = await model_registry_db.get_champion(lane)
+    if existing_version is None:
+        await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
+        return True
+
+    new_rmse = new_metrics.get("rmse")
+    if not (isinstance(new_rmse, int | float) and not isinstance(new_rmse, bool) and new_rmse >= 0):
+        logger.info("日次学習バッチ[%s]: %s は新モデルのRMSEが取得できず却下されました。", model_type, ticker)
+        return False
+
+    existing_row = await model_registry_db.get_model(existing_version)
+    if existing_row is None:
+        # 既存 champion のレジストリ行が見つからない（データ不整合）場合は安全側で採用する
+        await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
+        return True
+
+    comparison_rmse = await _reevaluate_existing_on_window(model_type, existing_row, new_metrics, df)
+    if comparison_rmse is None:
+        comparison_rmse = _rmse_from_val_metrics(existing_row)
+
+    if comparison_rmse is None or new_rmse <= comparison_rmse:
+        await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
+        return True
+
+    logger.info(
+        "日次学習バッチ[%s]: %s は品質ゲートで却下されました（新RMSE=%.4f, 比較対象RMSE=%.4f）。"
+        "既存 champion を維持します。",
+        model_type,
+        ticker,
+        new_rmse,
+        comparison_rmse,
+    )
+    return False
+
+
+async def _select_candidates(attempted_today: set[str], model_type: str) -> list[str]:
+    """学習候補銘柄を優先順位（未学習 → 学習が最も古い順）でソートして返す.
+
+    当日そのモデルタイプで試行済み（成功/失敗問わず）の銘柄は除外する
+    （失敗銘柄を同日中に繰り返し試行してループしないため。翌日、改めて最優先候補として再挑戦される）。
+    """
+    universe = await _get_ticker_master()
+    latest_trained = await training_batch_db.get_latest_trained_at_by_ticker(model_type)
+
+    remaining = [t.code for t in universe if t.code not in attempted_today]
+    # 未学習（latest_trainedに無い）銘柄を最優先（Falseはtrue未満なので先頭に来る）、
+    # 学習済み銘柄同士は trained_at 昇順（最も古い＝最も長く再学習されていない銘柄を優先）。
+    remaining.sort(key=lambda code: (code in latest_trained, latest_trained.get(code, "")))
+    return remaining

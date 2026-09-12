@@ -29,6 +29,7 @@ _EXPECTED_TABLES = {
     "eod_reviews",
     "api_costs",
     "trend_snapshots",
+    "training_batch_runs",
 }
 
 

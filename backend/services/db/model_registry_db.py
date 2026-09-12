@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from sqlalchemy import text
@@ -21,8 +22,8 @@ async def upsert_model(
     ticker: str = "__pool__",
     objective: str = "classification",
     artifact_path: str = "",
-    val_metrics: dict[str, object] | None = None,
-    feature_list: list[str] | None = None,
+    val_metrics: Mapping[str, object] | None = None,
+    feature_list: Sequence[str] | None = None,
     trained_at: str | None = None,
 ) -> None:
     """モデル（ここでは recommender+LLM の構成スナップショット）を登録 / 更新する."""

@@ -65,3 +65,7 @@ class PredictorProtocol(Protocol):
     def load(self, file_path: str) -> None:
         """ディスクからモデルを読み込む."""
         ...
+
+    def evaluate_on(self, df: pd.DataFrame, start: str, end: str, forecast_horizon: int = 5) -> dict[str, float]:
+        """学習済み/ロード済みモデルを指定した日付区間で再評価する（品質ゲートの窓合わせ用）."""
+        ...
