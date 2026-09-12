@@ -146,6 +146,47 @@ def run_portfolio_monitor_task() -> dict[str, object] | None:
     return {"signal_ids": signal_ids, "count": len(signal_ids)}
 
 
+@celery_app.task(name="backend.tasks.run_xgboost_training_batch_task")
+def run_xgboost_training_batch_task() -> dict[str, object]:
+    """銘柄別 XGBoost モデルの日次学習バッチを1回分だけ進める（P9、5 分間隔）.
+
+    品質ゲート合格時は `model_champions`（`lane=f"xgboost:{ticker}"`）を自動差し替える
+    （`promoted_by="quality_gate"`）。ml_pool/mid_term/short_term レーンとは別格の
+    自動承認ガバナンス（ユーザー確認済み、`per_ticker_training_service.py` docstring 参照）。
+    """
+    from backend.services.learning.per_ticker_training_service import run_daily_training_batch
+
+    summary = asyncio.run(run_daily_training_batch("xgboost"))
+    return summary.to_dict()
+
+
+@celery_app.task(name="backend.tasks.run_random_forest_training_batch_task")
+def run_random_forest_training_batch_task() -> dict[str, object]:
+    """銘柄別 RandomForest モデルの日次学習バッチを1回分だけ進める（P9、5 分間隔）."""
+    from backend.services.learning.per_ticker_training_service import run_daily_training_batch
+
+    summary = asyncio.run(run_daily_training_batch("random_forest"))
+    return summary.to_dict()
+
+
+@celery_app.task(name="backend.tasks.run_lstm_training_batch_task")
+def run_lstm_training_batch_task() -> dict[str, object]:
+    """銘柄別 LSTM モデルの日次学習バッチを1回分だけ進める（P9、1 時間間隔、torch 学習のため重い）."""
+    from backend.services.learning.per_ticker_training_service import run_daily_training_batch
+
+    summary = asyncio.run(run_daily_training_batch("lstm"))
+    return summary.to_dict()
+
+
+@celery_app.task(name="backend.tasks.run_transformer_training_batch_task")
+def run_transformer_training_batch_task() -> dict[str, object]:
+    """銘柄別 Transformer モデルの日次学習バッチを1回分だけ進める（P9、1 時間間隔、torch 学習のため重い）."""
+    from backend.services.learning.per_ticker_training_service import run_daily_training_batch
+
+    summary = asyncio.run(run_daily_training_batch("transformer"))
+    return summary.to_dict()
+
+
 @celery_app.task(name="backend.tasks.run_eod_review_task")
 def run_eod_review_task() -> dict[str, object]:
     """本日の `portfolio_signals` を集計し大引け後レビューを生成する（🆕 P7d、JST 16:31）.

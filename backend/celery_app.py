@@ -83,6 +83,26 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "backend.tasks.run_eod_review_task",
         "schedule": crontab(hour=7, minute=31),  # JST 16:31（大引け後）
     },
+    # 銘柄別モデル日次学習バッチ（P9）。xgboost/random_forest は5分おき常時発火
+    # （run-portfolio-monitor と同じ間隔、`per_ticker_training_service` 内部の当日上限・
+    # 時間予算で1firingあたりの負荷を抑える）。lstm/transformer は torch 学習で重いため
+    # 1時間おきとし、xgboost/random_forest 系や互いの firing とずれるよう分単位でずらす。
+    "run-xgboost-training-batch": {
+        "task": "backend.tasks.run_xgboost_training_batch_task",
+        "schedule": crontab(minute="1-59/5"),
+    },
+    "run-random-forest-training-batch": {
+        "task": "backend.tasks.run_random_forest_training_batch_task",
+        "schedule": crontab(minute="3-59/5"),
+    },
+    "run-lstm-training-batch": {
+        "task": "backend.tasks.run_lstm_training_batch_task",
+        "schedule": crontab(minute=20),
+    },
+    "run-transformer-training-batch": {
+        "task": "backend.tasks.run_transformer_training_batch_task",
+        "schedule": crontab(minute=50),
+    },
 }
 
 celery_app.conf.update(

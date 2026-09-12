@@ -55,8 +55,18 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | 日曜 03:30 | `run_drift_check_task` | 特徴量分布ドリフト（PSI）週次計測 |
 | 日曜 03:45 | `run_promotion_evaluation_task` | challenger 昇格判定（週次、提案のみ・自動昇格なし） |
 | 毎月1日 04:00 | `run_pool_training_task` | 断面プール分類器（`lane="ml_pool"`）の月次再学習 |
+| 毎時 xx:01-xx:56 の5分おき | `run_xgboost_training_batch_task` | 銘柄別 XGBoost モデルの日次学習バッチ（東証全銘柄を当日上限まで巡回） |
+| 毎時 xx:03-xx:58 の5分おき | `run_random_forest_training_batch_task` | 銘柄別 RandomForest モデルの日次学習バッチ（xgboost と2分ずらして直列ワーカーの二重占有回避） |
+| 毎時 xx:20 | `run_lstm_training_batch_task` | 銘柄別 LSTM モデルの日次学習バッチ（torch 学習のため1時間間隔） |
+| 毎時 xx:50 | `run_transformer_training_batch_task` | 銘柄別 Transformer モデルの日次学習バッチ（torch 学習のため1時間間隔） |
 
 祝日は非対応（`plans/01_PRD` で確認済みの既定スコープ）。休場日にも保有監視タスクは5分おきに起動されるが、内部で無害な早期 return をする。
+
+**銘柄別モデル（P9）の champion 差し替えは人手承認を経ない**: 上記4タスクは品質ゲート
+（held-out skill・既存 champion との再窓合わせ RMSE 比較）合格時に `model_champions`
+（`lane=f"{model_type}:{ticker}"`）を自動差し替える（`promoted_by="quality_gate"`）。
+`ml_pool`/`mid_term`/`short_term` レーン（`run_promotion_evaluation_task` が扱う人手承認ゲート）
+とは意図的に別格の運用（ユーザー確認済み、`per_ticker_training_service.py` docstring 参照）。
 
 **手で `.delay()` タスクを投入しない**（CLAUDE.md）。手動実行が必要な場合は対応する API（`POST /api/picks/run`、`POST /api/portfolio/signals/run`、`POST /api/portfolio/eod-review/run`、`POST /api/eval/run`、`POST /api/registry/promotions/evaluate` 等）を使う。
 
@@ -87,6 +97,8 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | `MODEL_AUTO_PROMOTE` | – | `false` | **常に false 運用**。昇格は `POST /api/registry/promotions/{id}/apply` の人手承認でのみ行う |
 | `PAPER_MIN_DAYS` | – | `20` | champion 昇格ゲートの最小ペーパー成績日数 |
 | `DRIFT_PSI_THRESHOLD` | – | `0.2` | PSI ドリフト警告閾値 |
+| `TRAINING_XGBOOST_DAILY_LIMIT` / `TRAINING_RANDOM_FOREST_DAILY_LIMIT` | – | `200` / `200` | 銘柄別モデル日次学習バッチ（P9）の当日学習上限銘柄数 |
+| `TRAINING_LSTM_DAILY_LIMIT` / `TRAINING_TRANSFORMER_DAILY_LIMIT` | – | `40` / `40` | 同上（torch 学習のため低め） |
 | `CALIBRATION_METHOD` | – | `auto` | 確度較正方式（`auto`/`isotonic`/`platt`/`identity`） |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | – | 空（Push 配信は無効、アプリ内通知のみ） | Web Push 用 VAPID 鍵。`npx web-push generate-vapid-keys` で生成 |
 
