@@ -64,6 +64,7 @@ class PickSummary(BaseModel):
     issued_at: str
     horizon_type: HorizonType
     symbol: str
+    company_name: str | None = None
     direction: Direction
     entry: float
     stop: float
@@ -75,6 +76,41 @@ class PickSummary(BaseModel):
     rationale_text: str
     model_version: str
     source_contributions: dict[str, object]
+
+
+class PickDetailResponse(BaseModel):
+    """`GET /api/picks/{pick_id}` の応答（`feature_snapshot` を除いた台帳行 + 表示用銘柄名）.
+
+    以前は `ApiResponse[dict]` で台帳の生 dict をそのまま返しており、`rationale_struct`
+    （LLM リスク要因・保有期間）・`source_contributions`（情報源別寄与度）・銘柄名は
+    フロント側で未使用のまま埋もれていた。ピック詳細ポップアップ（🆕）でこれらを表示する
+    ため、`sub_score_*` を `SubScores` へまとめ、`company_name` を追加した明示的な型へ
+    整理した。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    pick_id: str
+    run_id: str
+    issued_at: str
+    horizon_type: HorizonType
+    symbol: str
+    company_name: str | None = None
+    direction: Direction
+    entry: float
+    stop: float
+    target: float
+    sub_scores: SubScores
+    composite_score: float
+    concordance: float
+    confidence_raw: float
+    confidence: float
+    confidence_bucket: ConfidenceBucket
+    rationale_struct: dict[str, object]
+    rationale_text: str
+    model_version: str
+    source_contributions: dict[str, object]
+    created_at: str
 
 
 class RejectedPick(BaseModel):

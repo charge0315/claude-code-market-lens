@@ -13,14 +13,24 @@ import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
 from backend.models.stock import OhlcBar
 from backend.services.data.data_fetcher import fetch_stock_data
+from backend.services.vault.brand_notes_service import get_raw_note_content
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
 
 _Period = Literal["1mo", "3mo", "6mo", "1y", "2y"]
+
+
+class StockNote(BaseModel):
+    """`GET /api/stock/{symbol}/note` のレスポンス（UI 表示専用、本文込み）."""
+
+    code: str
+    note_title: str
+    content: str
 
 
 @router.get("/{symbol}/ohlc", response_model=ApiResponse[list[OhlcBar]], summary="日足 OHLC 取得")
@@ -41,3 +51,21 @@ async def get_ohlc(symbol: str, period: _Period = Query(default="6mo")) -> ApiRe
         for idx, row in df.iterrows()
     ]
     return ApiResponse.ok(bars)
+
+
+@router.get(
+    "/{symbol}/note",
+    response_model=ApiResponse[StockNote | None],
+    summary="銘柄ナレッジノート（本文込み、UI 表示専用）",
+)
+async def get_note(symbol: str) -> ApiResponse[StockNote | None]:
+    """指定銘柄の Vault ノートを本文込みで返す（ユーザー本人への画面表示専用。LLM へは渡さない）.
+
+    ノート未整備・読み込み失敗時は `data=null` を返す（エラー扱いにしない — 多くの銘柄は
+    ノートが未作成のため正常系として扱う）。
+    """
+    result = await get_raw_note_content(symbol)
+    if result is None:
+        return ApiResponse.ok(None)
+    note_title, content = result
+    return ApiResponse.ok(StockNote(code=symbol, note_title=note_title, content=content))

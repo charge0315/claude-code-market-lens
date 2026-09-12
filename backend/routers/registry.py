@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from backend.models.common import ApiResponse
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
+from backend.services.learning.per_ticker_training_service import run_daily_training_batch
 from backend.services.learning.pool_model import POOL_LANE
 from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
@@ -30,6 +31,12 @@ class EvaluatePromotionRequest(BaseModel):
     lane: Literal["mid_term", "short_term", "ml_pool"]
     challenger_version: str
     horizon_days: int = 20
+
+
+class TrainingRunRequest(BaseModel):
+    """`POST /api/registry/training/run` のリクエストボディ."""
+
+    model_type: Literal["xgboost", "random_forest", "lstm", "transformer"]
 
 
 def _is_per_ticker_lane(lane: object) -> bool:
@@ -85,6 +92,20 @@ async def apply(promotion_id: str) -> ApiResponse[dict]:
     if not applied:
         return ApiResponse.fail("適用できません（判定が propose_promote でないか、既に適用済みです）")
     return ApiResponse.ok({"promotion_id": promotion_id, "applied": True})
+
+
+@router.post("/training/run", response_model=ApiResponse[dict], summary="銘柄別モデルの学習バッチを手動実行")
+async def run_training(req: TrainingRunRequest) -> ApiResponse[dict]:
+    """指定モデルタイプの日次学習バッチを1回分だけ即時実行する（celery beat と同じ関数、手動トリガー）.
+
+    東証全銘柄のうち当日の上限まで（未学習優先→最も学習が古い順）を学習する
+    （`per_ticker_training_service.run_daily_training_batch`）。品質ゲート合格分は
+    `model_champions` を自動差し替える（P9、人手承認は不要）。モデルタイプにより
+    数十秒〜数分かかりうる（xgboost/random_forest は5分、lstm/transformer は60分の
+    1firing予算と同じ時間予算で動く）。
+    """
+    summary = await run_daily_training_batch(req.model_type)
+    return ApiResponse.ok(summary.to_dict())
 
 
 @router.get("/drift", response_model=ApiResponse[list[dict]], summary="PSI ドリフト履歴")

@@ -74,6 +74,23 @@ async def test_get_pick_detail_omits_feature_snapshot(client: AsyncClient) -> No
     assert missing.json()["success"] is False
 
 
+async def test_get_pick_detail_returns_nested_sub_scores_and_rationale(client: AsyncClient) -> None:
+    """🆕 ピック詳細ポップアップ用: sub_scores（ネスト）・rationale_struct・source_contributions・
+    company_name が揃うこと（`PickDetailResponse` の契約を固定する）."""
+    await pl.insert_pick(_entry("p1", "mid_term", "7203"))
+
+    res = await client.get("/api/picks/p1")
+    data = res.json()["data"]
+
+    assert data["sub_scores"] == {"technical": 60.0, "trend": 55.0, "fundamental": 52.0, "sentiment": 50.0}
+    assert data["rationale_struct"] == {}
+    assert data["source_contributions"] == {"technical": {"weight_share": 0.6}}
+    assert data["run_id"] == "r1"
+    assert data["confidence_raw"] == 70.0
+    # company_name は銘柄マスタ（J-Quants 未設定時はフォールバック一覧）から解決できれば入る
+    assert "company_name" in data
+
+
 async def test_run_endpoint_invokes_pipeline(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_run(horizon_type: str) -> PickRunResult:
         return PickRunResult(

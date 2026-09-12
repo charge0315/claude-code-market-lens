@@ -58,3 +58,20 @@ export function fetchDrift(params?: { feature?: string; limit?: number }): Promi
   const qs = q.toString();
   return api.get<DriftSnapshot[]>(`/registry/drift${qs ? `?${qs}` : ''}`);
 }
+
+export type TrainingModelType = 'xgboost' | 'random_forest' | 'lstm' | 'transformer';
+
+export interface TrainingBatchSummary {
+  model_type: TrainingModelType;
+  attempted_today: number;
+  trained_this_call: number;
+  failed_this_call: number;
+  quota_reached: boolean;
+  activated_this_call: number;
+}
+
+// 銘柄別モデル（P9）の日次学習バッチを手動実行する。モデルタイプにより数十秒〜数分かかる
+// （celery beat の1firing予算と同じ時間予算で動く、`per_ticker_training_service.py` 参照）。
+export function runTrainingBatch(modelType: TrainingModelType): Promise<TrainingBatchSummary> {
+  return api.post<TrainingBatchSummary>('/registry/training/run', { model_type: modelType });
+}

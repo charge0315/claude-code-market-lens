@@ -27,17 +27,26 @@ const RUN: RunSummary = {
 
 const PICK: PickDetail = {
   pick_id: 'pick-1',
+  run_id: 'run-1',
+  issued_at: '2026-06-01T08:50:00+09:00',
+  horizon_type: 'mid_term',
   symbol: '7203',
+  company_name: 'トヨタ自動車',
   direction: 'bullish',
-  sub_score_technical: 72,
-  sub_score_trend: 65,
-  sub_score_fundamental: 50,
-  sub_score_sentiment: 40,
+  entry: 1000,
+  stop: 950,
+  target: 1100,
+  sub_scores: { technical: 72, trend: 65, fundamental: 50, sentiment: 40 },
   composite_score: 60,
   concordance: 0.8,
+  confidence_raw: 75,
   confidence: 75,
   confidence_bucket: 'high',
+  rationale_struct: {},
   rationale_text: 'テクニカルとトレンドが良好',
+  model_version: 'test-model',
+  source_contributions: {},
+  created_at: '2026-06-01T08:50:01+09:00',
 };
 
 describe('StockOverview', () => {

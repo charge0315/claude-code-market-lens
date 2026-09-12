@@ -11,6 +11,7 @@ export interface PickSummary {
   issued_at: string;
   horizon_type: HorizonType;
   symbol: string;
+  company_name: string | null;
   direction: Direction;
   entry: number;
   stop: number;
@@ -57,19 +58,35 @@ export function runPicks(horizonType: HorizonType): Promise<PickRunResult> {
   return api.post<PickRunResult>('/picks/run', { horizon_type: horizonType });
 }
 
+export interface SubScores {
+  technical: number;
+  trend: number;
+  fundamental: number;
+  sentiment: number;
+}
+
 export interface PickDetail {
   pick_id: string;
+  run_id: string;
+  issued_at: string;
+  horizon_type: HorizonType;
   symbol: string;
+  company_name: string | null;
   direction: Direction;
-  sub_score_technical: number;
-  sub_score_trend: number;
-  sub_score_fundamental: number;
-  sub_score_sentiment: number;
+  entry: number;
+  stop: number;
+  target: number;
+  sub_scores: SubScores;
   composite_score: number;
   concordance: number;
+  confidence_raw: number;
   confidence: number;
   confidence_bucket: ConfidenceBucket;
+  rationale_struct: Record<string, unknown>;
   rationale_text: string;
+  model_version: string;
+  source_contributions: Record<string, unknown>;
+  created_at: string;
 }
 
 export function fetchPickDetail(pickId: string): Promise<PickDetail> {

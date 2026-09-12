@@ -134,6 +134,33 @@ async def get_brand_note(code: str) -> BrandNote | None:
     return note
 
 
+async def get_raw_note_content(code: str) -> tuple[str, str] | None:
+    """指定コードの銘柄ナレッジノートを **本文込みで** 生テキストのまま返す（UI 表示専用）.
+
+    ⚠️ この関数の戻り値は絶対に LLM プロンプトへ渡さないこと。本モジュールの他の関数
+    （`get_brand_note`）が frontmatter のみを抽出するのは CLAUDE.md のプロンプトインジェクション
+    防御原則のためであり、その原則は「LLM への入力」を対象にしたものであって「ユーザー本人への
+    画面表示」には適用されない（ユーザーは自分自身の Vault ノートを読む権利がある）。
+    呼び出し先は必ず UI 表示（銘柄詳細のポップアップ等）に限定すること。
+
+    戻り値は `(note_title, full_markdown_text)`。ノート未整備・読み込み失敗時は `None`。
+    """
+    normalized = code.strip()
+    if not normalized:
+        return None
+
+    def _load() -> tuple[str, str] | None:
+        path = _find_note_path(normalized)
+        if path is None:
+            return None
+        try:
+            return path.stem, path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    return await asyncio.to_thread(_load)
+
+
 def _load_brand_note(code: str) -> BrandNote | None:
     """同期でノートファイルを探索・パースする（``asyncio.to_thread`` から呼ばれる）."""
     try:

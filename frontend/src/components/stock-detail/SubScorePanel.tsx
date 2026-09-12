@@ -1,21 +1,21 @@
 import type { ReactNode } from 'react';
-import type { PickDetail } from '@/lib/api/picks';
+import type { PickDetail, SubScores } from '@/lib/api/picks';
 import './stock-detail.css';
 
 // 4 分析（テクニカル/トレンド/ファンダメンタル/センチメント）内訳バー。
 
-const LABELS = {
-  sub_score_technical: 'テクニカル',
-  sub_score_trend: 'トレンド',
-  sub_score_fundamental: 'ファンダメンタル',
-  sub_score_sentiment: 'センチメント',
-} as const;
+const LABELS: Record<keyof SubScores, string> = {
+  technical: 'テクニカル',
+  trend: 'トレンド',
+  fundamental: 'ファンダメンタル',
+  sentiment: 'センチメント',
+};
 
 export function SubScorePanel({ pick }: { pick: PickDetail }): ReactNode {
-  const rows = (Object.keys(LABELS) as Array<keyof typeof LABELS>).map((key) => ({
+  const rows = (Object.keys(LABELS) as Array<keyof SubScores>).map((key) => ({
     key,
     label: LABELS[key],
-    value: pick[key],
+    value: pick.sub_scores[key],
   }));
 
   return (

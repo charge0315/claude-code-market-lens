@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.services.vault.brand_notes_service import get_brand_note
+from backend.services.vault.brand_notes_service import get_brand_note, get_raw_note_content
 from backend.tests.conftest import VaultDirs
 
 _NOTE_7203 = """---
@@ -69,3 +69,26 @@ async def test_missing_directory_returns_none_without_raising(vault_dirs: VaultD
         child.unlink()
     vault_dirs.tickers.rmdir()
     assert await get_brand_note("7203") is None
+
+
+async def test_get_raw_note_content_returns_full_body_for_ui_display(vault_dirs: VaultDirs) -> None:
+    """🆕 UI 表示専用の生ノート取得は本文込みで返す（LLM プロンプトへは使わない前提）."""
+    (vault_dirs.tickers / "7203_トヨタ自動車.md").write_text(_NOTE_7203, encoding="utf-8")
+
+    result = await get_raw_note_content("7203")
+
+    assert result is not None
+    title, content = result
+    assert title == "7203_トヨタ自動車"
+    # get_brand_note（frontmatter のみ）と異なり、この関数は UI 表示専用として
+    # 本文も含めて丸ごと返す（呼び出し側が LLM プロンプトへ使わない前提）。
+    assert "特色" in content
+    assert "PWNED" in content
+
+
+async def test_get_raw_note_content_returns_none_when_missing(vault_dirs: VaultDirs) -> None:
+    assert await get_raw_note_content("9999") is None
+
+
+async def test_get_raw_note_content_returns_none_for_blank_code(vault_dirs: VaultDirs) -> None:
+    assert await get_raw_note_content("  ") is None

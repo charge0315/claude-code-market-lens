@@ -13,7 +13,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.pick import PickRunResult, PickSummary
+from backend.models.pick import PickDetailResponse, PickRunResult, PickSummary, SubScores
+from backend.services.data.data_fetcher import get_company_name
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks.pipeline import run_picks
 
@@ -33,6 +34,11 @@ def _date_bounds(date: str | None) -> tuple[str | None, str | None]:
     if date is None:
         return None, None
     return f"{date}T00:00:00", f"{date}T23:59:59+09:00"
+
+
+def _f(value: object) -> float:
+    """DB 生行（`dict[str, object]`）の数値カラムを float へ変換する."""
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
 @router.get("/mid-term", response_model=ApiResponse[list[PickSummary]], summary="中長期ピック一覧")
@@ -66,11 +72,39 @@ async def run(req: RunRequest) -> ApiResponse[PickRunResult]:
     return ApiResponse.ok(result)
 
 
-@router.get("/{pick_id}", response_model=ApiResponse[dict], summary="単一ピック詳細")
-async def get_pick_detail(pick_id: str) -> ApiResponse[dict]:
-    """単一ピックの詳細（`feature_snapshot` を除いた台帳行）を返す."""
+@router.get("/{pick_id}", response_model=ApiResponse[PickDetailResponse | None], summary="単一ピック詳細")
+async def get_pick_detail(pick_id: str) -> ApiResponse[PickDetailResponse | None]:
+    """単一ピックの詳細（`feature_snapshot` を除いた台帳行 + 表示用銘柄名）を返す."""
     raw = await pl.get_pick(pick_id)
     if raw is None:
         return ApiResponse.fail("該当するピックが見つかりません")
-    raw.pop("feature_snapshot", None)
-    return ApiResponse.ok(raw)
+    company_name = await get_company_name(str(raw["symbol"]))
+    detail = PickDetailResponse(
+        pick_id=str(raw["pick_id"]),
+        run_id=str(raw["run_id"]),
+        issued_at=str(raw["issued_at"]),
+        horizon_type=raw["horizon_type"],
+        symbol=str(raw["symbol"]),
+        company_name=company_name,
+        direction=raw["direction"],
+        entry=_f(raw["entry"]),
+        stop=_f(raw["stop"]),
+        target=_f(raw["target"]),
+        sub_scores=SubScores(
+            technical=_f(raw["sub_score_technical"]),
+            trend=_f(raw["sub_score_trend"]),
+            fundamental=_f(raw["sub_score_fundamental"]),
+            sentiment=_f(raw["sub_score_sentiment"]),
+        ),
+        composite_score=_f(raw["composite_score"]),
+        concordance=_f(raw["concordance"]),
+        confidence_raw=_f(raw["confidence_raw"]),
+        confidence=_f(raw["confidence"]),
+        confidence_bucket=raw["confidence_bucket"],
+        rationale_struct=raw["rationale_struct"],
+        rationale_text=str(raw["rationale_text"]),
+        model_version=str(raw["model_version"]),
+        source_contributions=raw["source_contributions"],
+        created_at=str(raw["created_at"]),
+    )
+    return ApiResponse.ok(detail)

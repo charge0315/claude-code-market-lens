@@ -12,6 +12,7 @@ from backend.services.data import data_fetcher as df_mod
 from backend.services.data.data_fetcher import (
     MAJOR_JP_STOCKS,
     ensure_ticker_suffix,
+    get_company_name,
     parse_csv_data,
     search_tickers,
 )
@@ -70,6 +71,16 @@ async def test_search_tickers_matches_by_code(monkeypatch: pytest.MonkeyPatch) -
     results = await search_tickers("6758")
     assert [t.code for t in results] == ["6758"]
     assert MAJOR_JP_STOCKS["6758"].name == "ソニーグループ"
+
+
+async def test_get_company_name_resolves_from_ticker_master(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(df_mod, "jquants", _UnconfiguredJQuants())
+    assert await get_company_name("7203") == "トヨタ自動車"
+
+
+async def test_get_company_name_returns_none_for_unknown_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(df_mod, "jquants", _UnconfiguredJQuants())
+    assert await get_company_name("0000") is None
 
 
 def test_fetch_stock_data_uses_cache_then_yfinance(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,6 +5,7 @@ import { EquityCurveChart } from '@/components/model-lab/EquityCurveChart';
 import { CalibrationChart } from '@/components/model-lab/CalibrationChart';
 import { ChampionsPanel } from '@/components/model-lab/ChampionsPanel';
 import { DriftPanel } from '@/components/model-lab/DriftPanel';
+import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPanel';
 import { WeeklyLearningPanel } from '@/components/model-lab/WeeklyLearningPanel';
 
 export default function ModelLabPage(): ReactNode {
@@ -31,6 +32,13 @@ export default function ModelLabPage(): ReactNode {
           較正曲線
         </h2>
         <CalibrationChart />
+      </section>
+
+      <section aria-labelledby="training-trigger-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="training-trigger-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          銘柄別モデルの学習トリガー
+        </h2>
+        <TrainingTriggerPanel />
       </section>
 
       <section aria-labelledby="champions-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>

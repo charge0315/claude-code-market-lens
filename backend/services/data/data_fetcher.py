@@ -265,3 +265,13 @@ async def search_tickers(query: str) -> list[TickerInfo]:
         if len(result) >= _SEARCH_RESULT_LIMIT:
             break
     return result
+
+
+async def get_company_name(code: str) -> str | None:
+    """指定コードの銘柄名を銘柄マスタ（24h キャッシュ）から引く（表示専用の付加情報）.
+
+    ピック一覧・ピック詳細 API は台帳（`prediction_ledger`）に銘柄名を保存していない
+    （予測時点の確定情報のみを永続化する方針、CL-1）ため、表示時にここから都度引く。
+    """
+    master = await _get_ticker_master()
+    return next((t.name for t in master if t.code == code), None)

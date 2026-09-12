@@ -15,6 +15,7 @@ import uuid
 from sqlalchemy import text
 
 from backend.models.pick import ConfidenceBucket, LedgerEntry, PickSummary
+from backend.services.data.data_fetcher import _get_ticker_master
 from backend.services.db.database import get_db
 
 # 確度バケットの境界（較正後 confidence 0〜100）。
@@ -105,12 +106,13 @@ def _f(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-def _row_to_summary(row: dict[str, object]) -> PickSummary:
+def _row_to_summary(row: dict[str, object], *, company_name: str | None = None) -> PickSummary:
     return PickSummary(
         pick_id=str(row["pick_id"]),
         issued_at=str(row["issued_at"]),
         horizon_type=str(row["horizon_type"]),
         symbol=str(row["symbol"]),
+        company_name=company_name,
         direction=str(row["direction"]),
         entry=_f(row["entry"]),
         stop=_f(row["stop"]),
@@ -158,7 +160,13 @@ async def list_picks(
     sql = text(query)
     async with get_db() as db:
         result = await db.execute(sql, params)
-        return [_row_to_summary(dict(r._mapping)) for r in result]
+        rows = [dict(r._mapping) for r in result]
+
+    # 銘柄名は台帳に保存していない（予測時点の確定情報のみを永続化する方針、CL-1）ため、
+    # 表示専用の付加情報として銘柄マスタ（24h キャッシュ）から都度引く。銘柄マスタ未設定
+    # （J-Quants 未設定）でもピック一覧の表示自体は失敗させない（None のまま返す）。
+    name_by_code = {t.code: t.name for t in await _get_ticker_master()}
+    return [_row_to_summary(row, company_name=name_by_code.get(str(row["symbol"]))) for row in rows]
 
 
 def _dig(payload: object, dotted_path: str) -> object:

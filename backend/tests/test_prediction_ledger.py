@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from backend.models.pick import LedgerEntry, SubScores
+from backend.models.stocks import TickerInfo
 from backend.services.ledger import prediction_ledger as pl
 
 
@@ -69,3 +70,20 @@ async def test_horizon_filter(migrated_db: Path) -> None:
     await pl.insert_pick(_entry("m1", horizon="mid_term"))
     await pl.insert_pick(_entry("s1", horizon="short_term"))
     assert [p.pick_id for p in await pl.list_picks(horizon_type="short_term")] == ["s1"]
+
+
+async def test_list_picks_enriches_company_name_from_ticker_master(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 銘柄名は台帳に保存せず、表示時に銘柄マスタから引く（CL-1、予測時点確定情報のみ永続化）."""
+
+    async def fake_master() -> list[TickerInfo]:
+        return [TickerInfo(code="7203", name="トヨタ自動車", sector="輸送用機器")]
+
+    monkeypatch.setattr(pl, "_get_ticker_master", fake_master)
+    await pl.insert_picks([_entry("p1", symbol="7203"), _entry("p2", symbol="9999")])
+
+    picks = {p.symbol: p for p in await pl.list_picks()}
+
+    assert picks["7203"].company_name == "トヨタ自動車"
+    assert picks["9999"].company_name is None

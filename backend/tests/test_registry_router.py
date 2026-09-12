@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.models.pick import LedgerEntry, SubScores
@@ -151,6 +152,56 @@ async def test_apply_promotion_unknown_id_returns_failure(migrated_db: Path) -> 
         res = await client.post("/api/registry/promotions/does-not-exist/apply")
     body = res.json()
     assert body["success"] is False
+
+
+async def test_run_training_invokes_daily_batch_for_requested_model_type(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 モデルラボの学習トリガー: 指定モデルタイプの日次学習バッチを即時実行する."""
+    from backend.routers import registry as registry_router_module
+    from backend.services.learning.per_ticker_training_service import TrainingBatchSummary
+
+    seen_model_type: str | None = None
+
+    async def fake_run_daily_training_batch(model_type: str) -> TrainingBatchSummary:
+        nonlocal seen_model_type
+        seen_model_type = model_type
+        return TrainingBatchSummary(
+            model_type=model_type,
+            attempted_today=5,
+            trained_this_call=3,
+            failed_this_call=0,
+            quota_reached=False,
+            activated_this_call=2,
+        )
+
+    monkeypatch.setattr(registry_router_module, "run_daily_training_batch", fake_run_daily_training_batch)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/registry/training/run", json={"model_type": "xgboost"})
+
+    assert seen_model_type == "xgboost"
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] == {
+        "model_type": "xgboost",
+        "attempted_today": 5,
+        "trained_this_call": 3,
+        "failed_this_call": 0,
+        "quota_reached": False,
+        "activated_this_call": 2,
+    }
+
+
+async def test_run_training_rejects_unknown_model_type(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/registry/training/run", json={"model_type": "not-a-model"})
+
+    assert res.status_code == 422
 
 
 async def test_evaluate_promotion_routes_ml_pool_lane_to_holdout_gate(migrated_db: Path) -> None:

@@ -87,3 +87,36 @@ async def test_get_ohlc_rejects_invalid_period(monkeypatch: pytest.MonkeyPatch) 
         res = await client.get("/api/stock/7203/ohlc?period=5min")
 
     assert res.status_code == 422
+
+
+async def test_get_note_returns_content_when_note_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get_raw_note_content(code: str) -> tuple[str, str] | None:
+        assert code == "7203"
+        return "7203_トヨタ自動車", "本文テキスト"
+
+    monkeypatch.setattr(stock_router_module, "get_raw_note_content", fake_get_raw_note_content)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/note")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] == {"code": "7203", "note_title": "7203_トヨタ自動車", "content": "本文テキスト"}
+
+
+async def test_get_note_returns_null_data_when_note_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get_raw_note_content(_code: str) -> None:
+        return None
+
+    monkeypatch.setattr(stock_router_module, "get_raw_note_content", fake_get_raw_note_content)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/9999/note")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] is None

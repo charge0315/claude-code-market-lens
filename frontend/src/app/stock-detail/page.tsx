@@ -1,25 +1,40 @@
 import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { PipelineTraceViewer } from '@/components/pipeline/PipelineTraceViewer';
+import { PickedTickersList } from '@/components/stock-detail/PickedTickersList';
 import { StockOverview } from '@/components/stock-detail/StockOverview';
 
-export default function StockDetailPage(): ReactNode {
+export default async function StockDetailPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ symbol?: string }>;
+}): Promise<ReactNode> {
+  const { symbol } = await searchParams;
+  const selectedSymbol = symbol ?? null;
+
   return (
     <PageShell title="銘柄詳細" phase="P8">
-      <p>チャート（期間切替）+ 4 分析内訳 + AI 思考トレース（ライブ / リプレイ）。</p>
+      <p>ピック銘柄一覧 + チャート（期間切替）+ 4 分析内訳 + AI 思考トレース（ライブ / リプレイ）。</p>
+
+      <section aria-labelledby="tickers-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="tickers-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          ピックされた銘柄
+        </h2>
+        <PickedTickersList selectedSymbol={selectedSymbol} />
+      </section>
 
       <section aria-labelledby="overview-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
         <h2 id="overview-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
           チャート・4 分析内訳
         </h2>
-        <StockOverview />
+        <StockOverview key={selectedSymbol} symbol={selectedSymbol} />
       </section>
 
       <section aria-labelledby="pipeline-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
         <h2 id="pipeline-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
           AI 推論トレース
         </h2>
-        <PipelineTraceViewer />
+        <PipelineTraceViewer key={selectedSymbol} symbol={selectedSymbol} />
       </section>
     </PageShell>
   );

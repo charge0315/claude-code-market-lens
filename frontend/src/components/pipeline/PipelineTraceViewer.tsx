@@ -26,7 +26,7 @@ function extractSourceContributions(
   return raw && typeof raw === 'object' ? (raw as Record<string, SourceContribution>) : {};
 }
 
-export function PipelineTraceViewer(): ReactNode {
+export function PipelineTraceViewer({ symbol }: { symbol?: string | null } = {}): ReactNode {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [mode, setMode] = useState<PipelineMode>('live');
@@ -34,11 +34,13 @@ export function PipelineTraceViewer(): ReactNode {
 
   useEffect(() => {
     let cancelled = false;
-    fetchRecentRuns({ limit: 10 })
+    // symbol 指定時はその銘柄の実行を優先的に見つけられるよう取得件数を広げる。
+    fetchRecentRuns({ limit: symbol ? 100 : 10 })
       .then((data) => {
         if (cancelled) return;
         setRuns(data);
-        if (data.length > 0) setRunId((prev) => prev ?? data[0].run_id);
+        const preferred = symbol ? data.find((r) => r.symbol === symbol) : undefined;
+        setRunId((preferred ?? data[0])?.run_id ?? null);
       })
       .catch(() => {
         if (!cancelled) setLoadError('実行一覧の取得に失敗しました');
@@ -46,7 +48,7 @@ export function PipelineTraceViewer(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [symbol]);
 
   const { events, error, isActive } = usePipelineTrace(runId, mode);
   const snapshot = runId ? deriveSnapshot(runId, events) : null;
