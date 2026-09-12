@@ -37,6 +37,8 @@ const PICK_DETAIL: PickDetail = {
   source_contributions: { technical: { weight_share: 0.6, contribution: 40, score: 70 } },
   created_at: '2026-06-01T08:50:01+09:00',
   shadow_predictions: [],
+  current_price: null,
+  change_pct: null,
 };
 
 const PICK: PickSummary = {
@@ -56,6 +58,9 @@ const PICK: PickSummary = {
   rationale_text: 'テクニカル・トレンドともに良好で強気の判断根拠が揃っている',
   model_version: 'v1',
   source_contributions: {},
+  current_price: 3050,
+  change_pct: 1.5,
+  reasoning_tags: ['業績上方修正', '25日線ゴールデンクロス'],
 };
 
 describe('PicksBoard', () => {

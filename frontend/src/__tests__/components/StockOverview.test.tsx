@@ -48,6 +48,8 @@ const PICK: PickDetail = {
   source_contributions: {},
   created_at: '2026-06-01T08:50:01+09:00',
   shadow_predictions: [],
+  current_price: null,
+  change_pct: null,
 };
 
 describe('StockOverview', () => {

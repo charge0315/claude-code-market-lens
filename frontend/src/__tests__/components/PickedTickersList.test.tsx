@@ -26,6 +26,9 @@ function pick(overrides: Partial<PickSummary>): PickSummary {
     rationale_text: 'x',
     model_version: 'v1',
     source_contributions: {},
+    current_price: null,
+    change_pct: null,
+    reasoning_tags: [],
     ...overrides,
   };
 }

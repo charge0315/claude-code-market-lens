@@ -59,3 +59,39 @@
   white-space: pre-wrap;
   line-height: 1.6;
 }
+
+/* --- panel variant（🆕 P13、右からスライドインする詳細パネル） --- */
+.modal-backdrop.is-panel {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+
+.modal-content.is-panel {
+  width: 640px;
+  max-width: 768px;
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+  animation: modal-panel-slide-in var(--transition-slow) ease-out;
+}
+
+@keyframes modal-panel-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .modal-content.is-panel {
+    width: 100%;
+  }
+}

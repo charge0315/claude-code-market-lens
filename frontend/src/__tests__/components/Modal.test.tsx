@@ -65,4 +65,25 @@ describe('Modal', () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('🆕 P13: variant="panel" では is-panel クラスが付与される', () => {
+    const { container } = render(
+      <Modal title="詳細" onClose={jest.fn()} variant="panel">
+        本文
+      </Modal>,
+    );
+
+    expect(container.querySelector('.modal-backdrop.is-panel')).toBeInTheDocument();
+    expect(container.querySelector('.modal-content.is-panel')).toBeInTheDocument();
+  });
+
+  it('既定（center）では is-panel クラスが付与されない', () => {
+    const { container } = render(
+      <Modal title="詳細" onClose={jest.fn()}>
+        本文
+      </Modal>,
+    );
+
+    expect(container.querySelector('.is-panel')).not.toBeInTheDocument();
+  });
 });

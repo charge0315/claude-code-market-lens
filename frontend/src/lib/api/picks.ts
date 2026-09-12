@@ -23,6 +23,10 @@ export interface PickSummary {
   rationale_text: string;
   model_version: string;
   source_contributions: Record<string, unknown>;
+  // 🆕 P13: 表示専用のライブ値（取得できなければ null）。
+  current_price: number | null;
+  change_pct: number | null;
+  reasoning_tags: string[];
 }
 
 export interface RejectedPick {
@@ -104,6 +108,9 @@ export interface PickDetail {
   source_contributions: Record<string, unknown>;
   created_at: string;
   shadow_predictions: ShadowPrediction[];
+  // 🆕 P13: 表示専用のライブ値（取得できなければ null）。
+  current_price: number | null;
+  change_pct: number | null;
 }
 
 export function fetchPickDetail(pickId: string): Promise<PickDetail> {
