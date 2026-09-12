@@ -1,12 +1,12 @@
-"""断面プール型モデル（P5d）向けの per-ticker 特徴量エンジニアリング.
+"""断面プールモデル（P5d）・銘柄別モデル（P9）向けの特徴量エンジニアリング.
 
 Market Lens `backend/services/feature_engineering.py` から移植、変更点:
-`build_feature_matrix` の回帰パスのみを移植した。Market Lens には `objective="classification"`
-（トリプルバリア2値ラベル、LSTM 用）と `feature_version` の 1/2 バイト互換フラグがあるが、
-Alpha Forge にはまだ学習済みモデルが存在せず後方互換を保つ理由がないため削除し、Market Lens の
-v2 相当（macd 系を Close で無次元化、day_of_week/month を周期エンコーディング）を既定かつ唯一の
-挙動にした。`build_sequence_matrix`（LSTM 用）は per-ticker ローテーションと共に対象外（P5d は
-断面プールモデルのみを移植する方針、`plans/04_タスクリスト.md` P5d 参照）。
+`build_feature_matrix`（断面プール用、行 = 1 銘柄 1 営業日）・`build_sequence_matrix`
+（銘柄別 LSTM/Transformer 用、行 = 1 銘柄の時系列ウィンドウ）ともに回帰パスのみを移植した。
+Market Lens には `objective="classification"`（トリプルバリア2値ラベル）と `feature_version`
+の 1/2 バイト互換フラグ、`macro_df`（マクロ指標 opt-in）があるが、Alpha Forge にはまだ
+学習済みモデルが存在せず後方互換を保つ理由がないため削除し、Market Lens の v2 相当（macd 系を
+Close で無次元化、day_of_week/month を周期エンコーディング）を既定かつ唯一の挙動にした。
 """
 
 from __future__ import annotations
@@ -128,3 +128,112 @@ def build_feature_matrix(
     Y = combined["_target"]
 
     return X, Y
+
+
+def build_sequence_matrix(
+    df: pd.DataFrame,
+    seq_len: int = 30,
+    forecast_horizon: int = 5,
+    predict_mode: bool = False,
+) -> tuple[np.ndarray, np.ndarray | None, pd.Index]:
+    """OHLCV データから LSTM/Transformer 用の3Dシーケンスデータを生成する（銘柄別モデル、P9）.
+
+    `build_feature_matrix` とは特徴量の作り方（1 銘柄の時系列ウィンドウ vs 銘柄横断の1行）が
+    異なるため独立した関数として持つ。列構成もこちらは close_return/volume_return 等の
+    無次元量のみ（sin/cos の日付特徴量は持たない — シーケンス内の相対位置で十分なため）。
+
+    `predict_mode=True` は `build_feature_matrix` と同じ理由でターゲットを一切計算せず
+    特徴量列のみで dropna する（🔧 Market Lens はターゲット計算後に dropna していたため、
+    直近 forecast_horizon 日分が「ターゲットが未来を参照できない」という理由だけで失われ、
+    本番当日の推論に使うべき最新シーケンスが欠落し得た）。
+
+    Args:
+        df: 日付をインデックスに持つ OHLCV データフレーム（1 銘柄分）
+        seq_len: 1 サンプルあたりの入力タイムステップ数
+        forecast_horizon: 何日先の変化率を予測するか
+        predict_mode: True の場合は最新シーケンスのみ返し、y は None を返す
+
+    Returns:
+        X: shape (n_samples, seq_len, n_features) の ndarray
+        y: shape (n_samples,) の ndarray（predict_mode=True なら None）
+        dates: 各サンプルのターゲット日付（y[i] が対象とする日）を持つ Index。
+            predict_mode=True の場合は「推論に使った最新1行の日付」を長さ1で返す。
+            品質ゲートで新旧モデルの検証窓を揃えるために使う。
+    """
+    if len(df) < seq_len + forecast_horizon + 1:
+        raise ValueError(f"データが少なすぎます（最低{seq_len + forecast_horizon + 1}日分必要）")
+
+    data = df.copy()
+    feats = pd.DataFrame(index=data.index)
+
+    feats["close_return"] = data["Close"].pct_change()
+    feats["volume_return"] = data["Volume"].pct_change().clip(-5, 5)
+
+    delta = data["Close"].diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    rsi.loc[avg_loss == 0] = 100.0
+    feats["rsi"] = rsi / 100.0
+
+    ema_12 = data["Close"].ewm(span=12, adjust=False).mean()
+    ema_26 = data["Close"].ewm(span=26, adjust=False).mean()
+    macd = ema_12 - ema_26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    feats["macd_hist"] = (macd - signal) / data["Close"]
+
+    sma_20 = data["Close"].rolling(20).mean()
+    std_20 = data["Close"].rolling(20).std()
+    bb_upper = sma_20 + std_20 * 2
+    bb_lower = sma_20 - std_20 * 2
+    bb_range = (bb_upper - bb_lower).replace(0, np.nan)
+    feats["bb_position"] = ((data["Close"] - bb_lower) / bb_range).clip(0, 1)
+
+    feats["sma5_diff"] = (data["Close"] / data["Close"].rolling(5).mean() - 1).clip(-0.2, 0.2)
+    feats["sma20_diff"] = (data["Close"] / sma_20 - 1).clip(-0.2, 0.2)
+    feats["high_low_range"] = ((data["High"] - data["Low"]) / data["Close"]).clip(0, 0.2)
+
+    feats = feats.replace([np.inf, -np.inf], np.nan)
+
+    if predict_mode:
+        # 🔧 build_feature_matrix と同じ修正（本関数側にも Market Lens 由来のバグがあった）:
+        # ターゲット（未来 forecast_horizon 日先リターン）を計算してから dropna すると、
+        # 直近 forecast_horizon 日分が「ターゲットが NaN」という理由だけで失われ、本番当日の
+        # 推論に使うべき最新シーケンスが欠落し得る。predict_mode ではターゲットを一切
+        # 計算せず特徴量列のみで dropna することで、最新日を含む窓を確実に返す。
+        feats_only = feats.dropna()
+        if len(feats_only) < seq_len:
+            raise ValueError("NaN 除去後のデータが不足しています")
+        x = feats_only.to_numpy()[-seq_len:][np.newaxis, :]
+        return x, None, feats_only.index[-1:]
+
+    target = data["Close"].pct_change(periods=forecast_horizon).shift(-forecast_horizon)
+
+    combined = feats.copy()
+    combined["_target"] = target
+    combined = combined.dropna()
+
+    if len(combined) < seq_len + 1:
+        raise ValueError("NaN 除去後のデータが不足しています")
+
+    feature_cols = [c for c in combined.columns if c != "_target"]
+    feat_arr = combined[feature_cols].to_numpy()
+    target_arr = combined["_target"].to_numpy()
+
+    n_samples = len(feat_arr) - seq_len - forecast_horizon + 1
+    if n_samples <= 0:
+        raise ValueError("シーケンス生成後にサンプルが0件になりました")
+
+    x_list = [feat_arr[i : i + seq_len] for i in range(n_samples)]
+    y_list = [target_arr[i + seq_len - 1] for i in range(n_samples)]
+
+    x = np.array(x_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
+    # 各サンプルのターゲット日付。y_list[i] は target_arr[i + seq_len - 1] に対応するため、
+    # combined.index を同じ添字でスライスする。
+    dates = combined.index[seq_len - 1 : seq_len - 1 + n_samples]
+
+    return x, y, dates

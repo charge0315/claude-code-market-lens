@@ -36,5 +36,12 @@ joblib==1.6.0
 # （Market Lens requirements.txt と同じ理由）。
 xgboost>=3.2.0,<3.3.0
 
+# 深層学習（P9、銘柄別 LSTM/Transformer）。CPU版インストール:
+# pip install torch --index-url https://download.pytorch.org/whl/cpu
+# CI（requirements-ci.txt）には含めない。重く、torch 依存テストは import できない環境でも
+# 収集エラーにならないよう `TORCH_AVAILABLE` ガード + `pytest.importorskip("torch")` で
+# スキップする（Market Lens と同じ方針）。
+torch>=2.13.0
+
 # Web Push（VAPID）
 pywebpush==2.0.3

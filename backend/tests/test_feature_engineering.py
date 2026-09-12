@@ -1,8 +1,9 @@
-"""feature_engineering（断面プールモデル向け特徴量生成）のテスト.
+"""feature_engineering（断面プール・銘柄別モデル向け特徴量生成）のテスト.
 
 Market Lens 版の v2（唯一の挙動として移植）に対応するテストのみを移植し、
-v1 バイト互換・objective="classification"・build_sequence_matrix（LSTM 用、対象外）
-関連のテストは落とした。`predict_mode` の直近日欠落バグ修正（🔧）を固定するテストを追加した。
+v1 バイト互換・objective="classification" 関連のテストは落とした。`predict_mode` の
+直近日欠落バグ修正（🔧）を固定するテストを追加した。`build_sequence_matrix`（P9、
+銘柄別 LSTM/Transformer 用）のテストも本ファイルに追加する。
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend.services.learning.feature_engineering import build_feature_matrix
+from backend.services.learning.feature_engineering import build_feature_matrix, build_sequence_matrix
 
 _N_ROWS = 120
 
@@ -103,3 +104,30 @@ def test_build_feature_matrix_predict_mode_keeps_most_recent_row() -> None:
 def test_build_feature_matrix_raises_on_insufficient_history() -> None:
     with pytest.raises(ValueError, match="データが少なすぎます"):
         build_feature_matrix(_make_ohlcv(n=30))
+
+
+# ---------------------------------------------------------------------------
+# build_sequence_matrix（P9、銘柄別 LSTM/Transformer 用）
+# ---------------------------------------------------------------------------
+
+
+def test_build_sequence_matrix_shapes() -> None:
+    df = _make_ohlcv(n=200)
+    x, y, dates = build_sequence_matrix(df, seq_len=20, forecast_horizon=5)
+    assert y is not None
+    assert x.ndim == 3
+    assert x.shape[0] == len(y) == len(dates)
+    assert x.shape[1] == 20
+
+
+def test_build_sequence_matrix_predict_mode_returns_single_latest_window() -> None:
+    df = _make_ohlcv(n=200)
+    x, y, dates = build_sequence_matrix(df, seq_len=20, forecast_horizon=5, predict_mode=True)
+    assert y is None
+    assert x.shape == (1, 20, x.shape[2])
+    assert dates[-1] == df.index[-1]
+
+
+def test_build_sequence_matrix_raises_on_insufficient_history() -> None:
+    with pytest.raises(ValueError, match="データが少なすぎます"):
+        build_sequence_matrix(_make_ohlcv(n=10), seq_len=20, forecast_horizon=5)
