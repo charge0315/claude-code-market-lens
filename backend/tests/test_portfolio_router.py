@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from backend.services.data import quote_service
 from backend.services.db.portfolio_signal_db import insert_signal
 from backend.services.portfolio import portfolio_service as psvc
 
@@ -21,7 +22,8 @@ def _stub_fetchers(monkeypatch: pytest.MonkeyPatch) -> None:
         return pd.DataFrame({"Close": [1000.0, 1010.0]})
 
     monkeypatch.setattr(psvc, "get_company_info", fake_get_company_info)
-    monkeypatch.setattr(psvc, "fetch_stock_data", fake_fetch_stock_data)
+    # 🔧 P13: 価格取得は `quote_service.fetch_quote` へ委譲されたため、そちらをパッチする。
+    monkeypatch.setattr(quote_service, "fetch_stock_data", fake_fetch_stock_data)
 
 
 async def test_portfolio_crud_and_get_flow(migrated_db: Path) -> None:

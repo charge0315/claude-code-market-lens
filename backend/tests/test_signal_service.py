@@ -175,10 +175,12 @@ async def test_run_portfolio_monitor_evaluates_all_holdings(migrated_db: Path, m
     def fake_fetch_stock_data(_symbol: str, period: str, interval: str) -> pd.DataFrame:  # noqa: ARG001
         return pd.DataFrame({"Close": [1000.0, 1050.0]})
 
+    from backend.services.data import quote_service
     from backend.services.portfolio import portfolio_service as psvc
 
     monkeypatch.setattr(psvc, "get_company_info", fake_get_company_info)
-    monkeypatch.setattr(psvc, "fetch_stock_data", fake_fetch_stock_data)
+    # 🔧 P13: 価格取得は `quote_service.fetch_quote` へ委譲されたため、そちらをパッチする。
+    monkeypatch.setattr(quote_service, "fetch_stock_data", fake_fetch_stock_data)
 
     await insert_holding(symbol="7203", quantity=100, avg_cost=1000.0, acquired_at="2026-01-15")
     await insert_holding(symbol="6758", quantity=50, avg_cost=2000.0, acquired_at="2026-01-16")

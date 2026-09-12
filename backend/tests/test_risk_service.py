@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from backend.services.data import quote_service
 from backend.services.db.portfolio_db import insert_holding
 from backend.services.portfolio import portfolio_service as psvc
 from backend.services.portfolio import risk_service as svc
@@ -35,7 +36,8 @@ def _stub_fetchers(monkeypatch: pytest.MonkeyPatch) -> _FetcherTable:
         return table[symbol][1]
 
     monkeypatch.setattr(psvc, "get_company_info", fake_get_company_info)
-    monkeypatch.setattr(psvc, "fetch_stock_data", fake_fetch_stock_data)
+    # 🔧 P13: 価格取得は `quote_service.fetch_quote` へ委譲されたため、そちらをパッチする。
+    monkeypatch.setattr(quote_service, "fetch_stock_data", fake_fetch_stock_data)
     monkeypatch.setattr(svc.data_fetcher, "get_company_info", fake_get_company_info)
     monkeypatch.setattr(svc.data_fetcher, "get_stock_data", fake_get_stock_data)
     return table

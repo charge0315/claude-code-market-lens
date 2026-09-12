@@ -11,8 +11,20 @@ Note: `pandas.tseries.offsets.BDay` は土日のみを非営業日として扱�
 
 from __future__ import annotations
 
+from datetime import datetime, time
+from typing import Literal
+
 import pandas as pd
 from pandas.tseries.offsets import BDay
+
+from backend.services.jst_time import JST
+
+# 東証の立会時間（大引け 15:00、監視は 15:30 まで。祝日は非対応 — `plans/01_PRD` PF-2）。
+# `tasks._is_market_hours_jst` と同じ定数・判定ロジック（🆕 P13、市況ステータス表示用に
+# 公開関数として追加。`tasks.py` 側は既存テストが `tasks.datetime` の凍結に依存しているため
+# 独立実装のまま残し、こちらは新規のマーケットスナップショット機能専用に使う）。
+_MARKET_OPEN_JST = time(9, 0)
+_MARKET_CLOSE_JST = time(15, 30)
 
 
 def calc_target_date(last_date: pd.Timestamp, horizon: int) -> str:
@@ -28,3 +40,27 @@ def calc_target_date(last_date: pd.Timestamp, horizon: int) -> str:
     if horizon < 1:
         raise ValueError(f"horizon は 1 以上である必要があります（horizon={horizon}）")
     return (last_date + BDay(horizon)).strftime("%Y-%m-%d")
+
+
+def is_weekday_jst() -> bool:
+    """現在の曜日が JST 基準で平日かを判定する（祝日は非対応）."""
+    return datetime.now(JST).weekday() < 5  # 5=土, 6=日
+
+
+def is_market_hours_jst() -> bool:
+    """現在時刻が JST 基準の平日・東証立会時間内かを判定する（祝日は非対応）."""
+    if not is_weekday_jst():
+        return False
+    return _MARKET_OPEN_JST <= datetime.now(JST).time() <= _MARKET_CLOSE_JST
+
+
+def market_status_label() -> Literal["寄り前", "ザラ場中", "引け後"]:
+    """現在時刻から市況ステータスの表示ラベルを返す（🆕 P13、ダッシュボードの市況バッジ用）."""
+    if not is_weekday_jst():
+        return "引け後"
+    now = datetime.now(JST).time()
+    if now < _MARKET_OPEN_JST:
+        return "寄り前"
+    if now > _MARKET_CLOSE_JST:
+        return "引け後"
+    return "ザラ場中"

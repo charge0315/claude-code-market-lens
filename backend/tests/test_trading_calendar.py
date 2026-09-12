@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime as real_datetime
+
 import pandas as pd
 import pytest
 
-from backend.services.trading_calendar import calc_target_date
+from backend.services import trading_calendar as tc
+from backend.services.trading_calendar import calc_target_date, is_market_hours_jst, is_weekday_jst, market_status_label
 
 
 def test_calc_target_date_skips_weekend() -> None:
@@ -21,3 +24,50 @@ def test_calc_target_date_multiple_business_days() -> None:
 def test_calc_target_date_rejects_non_positive_horizon(horizon: int) -> None:
     with pytest.raises(ValueError, match="horizon"):
         calc_target_date(pd.Timestamp("2026-09-10"), horizon)
+
+
+class _FrozenDatetime(real_datetime):
+    _frozen: real_datetime
+
+    @classmethod
+    def now(cls, tz: object = None) -> real_datetime:  # type: ignore[override]  # noqa: ARG003
+        return cls._frozen
+
+
+def _freeze(monkeypatch: pytest.MonkeyPatch, iso: str) -> None:
+    frozen = real_datetime.fromisoformat(iso)
+    fake = type("_Frozen", (_FrozenDatetime,), {"_frozen": frozen})
+    monkeypatch.setattr(tc, "datetime", fake)
+
+
+def test_weekday_during_market_hours(monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze(monkeypatch, "2026-06-02T10:00:00+09:00")  # 火曜
+    assert is_weekday_jst() is True
+    assert is_market_hours_jst() is True
+    assert market_status_label() == "ザラ場中"
+
+
+def test_weekend_is_not_weekday(monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze(monkeypatch, "2026-06-06T10:00:00+09:00")  # 土曜
+    assert is_weekday_jst() is False
+    assert is_market_hours_jst() is False
+    assert market_status_label() == "引け後"
+
+
+def test_before_market_open_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze(monkeypatch, "2026-06-02T08:59:00+09:00")
+    assert is_market_hours_jst() is False
+    assert market_status_label() == "寄り前"
+
+
+def test_after_market_close_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze(monkeypatch, "2026-06-02T15:31:00+09:00")
+    assert is_market_hours_jst() is False
+    assert market_status_label() == "引け後"
+
+
+def test_market_open_and_close_boundaries_are_inclusive(monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze(monkeypatch, "2026-06-02T09:00:00+09:00")
+    assert is_market_hours_jst() is True
+    _freeze(monkeypatch, "2026-06-02T15:30:00+09:00")
+    assert is_market_hours_jst() is True

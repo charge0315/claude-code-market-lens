@@ -2134,6 +2134,28 @@
         }
       }
     },
+    "/api/market/snapshot": {
+      "get": {
+        "tags": [
+          "market"
+        ],
+        "summary": "指数ティッカー行のスナップショット",
+        "description": "主要指数の現在値・前日比と市況ステータスを返す（取得できない指数はフェイルソフトで除外）.",
+        "operationId": "get_snapshot_api_market_snapshot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketSnapshot_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2230,6 +2252,50 @@
           "success"
         ],
         "title": "ApiResponse[EodReview]"
+      },
+      "ApiResponse_MarketSnapshot_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[MarketSnapshot]"
       },
       "ApiResponse_Notification_": {
         "properties": {
@@ -3126,6 +3192,35 @@
         "title": "HeuristicItem",
         "description": "学習した教訓 1 件."
       },
+      "IndexQuote": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "change": {
+            "type": "number",
+            "title": "Change"
+          },
+          "change_pct": {
+            "type": "number",
+            "title": "Change Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "value",
+          "change",
+          "change_pct"
+        ],
+        "title": "IndexQuote",
+        "description": "1 指数分の現在値・前日比."
+      },
       "LivenessResponse": {
         "properties": {
           "status": {
@@ -3144,6 +3239,38 @@
         ],
         "title": "LivenessResponse",
         "description": "API プロセス自体の生存確認（依存先は見ない軽量応答）."
+      },
+      "MarketSnapshot": {
+        "properties": {
+          "indices": {
+            "items": {
+              "$ref": "#/components/schemas/IndexQuote"
+            },
+            "type": "array",
+            "title": "Indices"
+          },
+          "market_status": {
+            "type": "string",
+            "enum": [
+              "寄り前",
+              "ザラ場中",
+              "引け後"
+            ],
+            "title": "Market Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "indices",
+          "market_status",
+          "updated_at"
+        ],
+        "title": "MarketSnapshot",
+        "description": "`GET /api/market/snapshot` の応答."
       },
       "Notification": {
         "properties": {

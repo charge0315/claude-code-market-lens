@@ -13,7 +13,8 @@ import logging
 from datetime import datetime
 
 from backend.models.portfolio import PortfolioHolding, PortfolioSummary, SectorAllocation
-from backend.services.data.data_fetcher import fetch_stock_data, get_company_info
+from backend.services.data.data_fetcher import get_company_info
+from backend.services.data.quote_service import fetch_quote
 from backend.services.db.portfolio_db import list_holdings
 from backend.services.jst_time import JST
 
@@ -33,17 +34,18 @@ def _as_float(value: object) -> float:
 async def _fetch_current_price(symbol: str) -> tuple[float | None, float | None, str | None, str | None]:
     """直近の終値・前日終値・企業名・セクターを取得する.
 
-    `fetch_stock_data`/`get_company_info`（いずれも TTL キャッシュ付き）を `asyncio.to_thread`
-    経由で並列取得し、event loop をブロックしない。
+    価格取得は `services/data/quote_service.fetch_quote`（🔧 P13 で共有化、ピック一覧の
+    現在値表示とロジックを共有）へ委譲し、企業名/セクターは `get_company_info`
+    （TTL キャッシュ付き）を並列取得する。
 
     Returns
     -------
     tuple of (current_price, prev_close, company_name, sector)
     """
     try:
-        company_info, hist = await asyncio.gather(
+        company_info, (current, prev) = await asyncio.gather(
             asyncio.to_thread(get_company_info, symbol),
-            asyncio.to_thread(fetch_stock_data, symbol, period="5d", interval="1d"),
+            fetch_quote(symbol),
         )
     except Exception:
         logger.exception("現在価格の取得に失敗: %s", symbol)
@@ -51,16 +53,6 @@ async def _fetch_current_price(symbol: str) -> tuple[float | None, float | None,
 
     name = company_info.get("name") if company_info else None
     sector = company_info.get("sector") if company_info else None
-
-    current: float | None = None
-    prev: float | None = None
-    if not hist.empty and "Close" in hist.columns:
-        closes = hist["Close"].dropna()
-        if len(closes) >= 1:
-            current = float(closes.iloc[-1])
-        if len(closes) >= 2:
-            prev = float(closes.iloc[-2])
-
     return current, prev, name, sector
 
 

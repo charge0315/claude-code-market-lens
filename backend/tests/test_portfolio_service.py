@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from backend.services.data import quote_service
 from backend.services.db.portfolio_db import insert_holding
 from backend.services.portfolio import portfolio_service as svc
 
@@ -30,7 +31,9 @@ def _stub_fetchers(monkeypatch: pytest.MonkeyPatch) -> _FetcherTable:
         return table[symbol][1]
 
     monkeypatch.setattr(svc, "get_company_info", fake_get_company_info)
-    monkeypatch.setattr(svc, "fetch_stock_data", fake_fetch_stock_data)
+    # 🔧 P13: 価格取得は `quote_service.fetch_quote` へ委譲されたため、そちらの
+    # `fetch_stock_data` 参照をパッチする（`portfolio_service` はもう直接 import しない）。
+    monkeypatch.setattr(quote_service, "fetch_stock_data", fake_fetch_stock_data)
     return table
 
 
