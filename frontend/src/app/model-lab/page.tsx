@@ -9,6 +9,9 @@ import { ChampionsPanel } from '@/components/model-lab/ChampionsPanel';
 import { DriftPanel } from '@/components/model-lab/DriftPanel';
 import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPanel';
 import { WeeklyLearningPanel } from '@/components/model-lab/WeeklyLearningPanel';
+import { ModelCoverageChart } from '@/components/model-lab/ModelCoverageChart';
+import { ModelQualityChart } from '@/components/model-lab/ModelQualityChart';
+import { TrainingTrendChart } from '@/components/model-lab/TrainingTrendChart';
 
 // 🆕 P14: 初心者は「かんたん」タブ（学習トリガー中心）だけで完結できるようにし、
 // champion/challenger 比較・PSI ドリフト・成長曲線等の既存の上級者向けセクションは
@@ -71,6 +74,33 @@ function AdvancedTab(): ReactNode {
           週次学習差分
         </h2>
         <WeeklyLearningPanel />
+      </section>
+
+      <section aria-labelledby="model-coverage-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2
+          id="model-coverage-heading"
+          style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}
+        >
+          銘柄別モデルの学習カバレッジ
+        </h2>
+        <ModelCoverageChart />
+      </section>
+
+      <section aria-labelledby="model-quality-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="model-quality-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          銘柄別モデルの品質分布
+        </h2>
+        <ModelQualityChart />
+      </section>
+
+      <section aria-labelledby="training-trend-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2
+          id="training-trend-heading"
+          style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}
+        >
+          銘柄別モデルの学習件数の推移
+        </h2>
+        <TrainingTrendChart />
       </section>
     </>
   );

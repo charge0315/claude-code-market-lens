@@ -95,3 +95,40 @@ export function startTrainingBatch(modelType: TrainingModelType): Promise<Traini
 export function fetchTrainingStatus(modelType: TrainingModelType): Promise<TrainingStatus> {
   return api.get<TrainingStatus>(`/registry/training/status?model_type=${modelType}`);
 }
+
+// 学習モデルの状態可視化（🆕 P15）: 学習カバレッジ・品質分布・学習推移。
+
+export interface ModelCoverage {
+  model_type: TrainingModelType;
+  label: string;
+  universe_size: number;
+  trained_count: number;
+  champion_count: number;
+}
+
+export interface QualityDistribution {
+  model_type: TrainingModelType;
+  label: string;
+  skill_scores: number[];
+  rmse_scores: number[];
+}
+
+export interface TrainingTrendPoint {
+  date: string;
+  model_type: TrainingModelType;
+  trained_count: number;
+  failed_count: number;
+}
+
+export function fetchModelCoverage(): Promise<ModelCoverage[]> {
+  return api.get<ModelCoverage[]>('/registry/model-stats/coverage');
+}
+
+export function fetchQualityDistribution(): Promise<QualityDistribution[]> {
+  return api.get<QualityDistribution[]>('/registry/model-stats/quality');
+}
+
+export function fetchTrainingTrend(days?: number): Promise<TrainingTrendPoint[]> {
+  const qs = days ? `?days=${days}` : '';
+  return api.get<TrainingTrendPoint[]>(`/registry/model-stats/training-trend${qs}`);
+}
