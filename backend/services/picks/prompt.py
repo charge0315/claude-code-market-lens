@@ -3,13 +3,16 @@
 **プロンプトインジェクション防御**（CLAUDE.md / `plans/02` §7）: 外部由来テキストは
 frontmatter / 構造化フィールドのみを載せる。Vault 本文・ニュース本文・四季報本文は入れない。
 `recommender.compute_recommendation` の結果（自分の定量分析）と、`brand_notes_service` /
-`news_digest_service` の frontmatter 抽出物だけを材料にする。
+`news_digest_service` の frontmatter 抽出物だけを材料にする。`related_daily_frontmatter`
+（🆕、`knowledge_search_client` によるベクトル検索で発見した関連日次ノート）も同様に
+frontmatter のみ — 検索結果の本文（`text`）はクライアント境界で既に破棄済みで、
+ここには一切渡ってこない。
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from backend.services.picks.bracket import suggested_bracket
 
@@ -25,6 +28,7 @@ def build_pick_prompt(
     brand_frontmatter: Mapping[str, object] | None,
     news_digest_block: str | None,
     trend_context_block: str | None = None,
+    related_daily_frontmatter: Sequence[Mapping[str, object]] | None = None,
 ) -> str:
     """1 銘柄分の深掘りプロンプトを組み立てる（forced tool-use `propose_stock_pick` 前提）."""
     symbol = str(recommendation.get("ticker", ""))
@@ -46,6 +50,12 @@ def build_pick_prompt(
     if brand_frontmatter:
         lines.append(
             f"- 銘柄ナレッジ（frontmatter のみ・外部由来）: {json.dumps(brand_frontmatter, ensure_ascii=False)}"
+        )
+
+    if related_daily_frontmatter:
+        lines.append(
+            "- 関連する過去の日次ノート（frontmatter のみ・外部由来、"
+            f"ナレッジベース検索で発見）: {json.dumps(related_daily_frontmatter, ensure_ascii=False)}"
         )
 
     if atr is not None and atr > 0:

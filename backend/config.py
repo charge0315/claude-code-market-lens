@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # --- 四季報（当面スタブ） ---
     shikiho_enabled: bool = Field(default=False, validation_alias="SHIKIHO_ENABLED")
 
+    # --- ナレッジベース ベクトル検索（kb_creator、既存の外部サービス。任意） ---
+    # 空文字（既定）なら無効（`knowledge_search_client.search_ticker_notes` が常に空リストを返す）。
+    # ユーザーの Obsidian Vault を Qdrant でインデックス済みの別プロセスへの読み取り専用クライアント。
+    kb_search_url: str = Field(default="", validation_alias="KB_SEARCH_URL")
+    kb_search_timeout_seconds: float = Field(default=5.0, validation_alias="KB_SEARCH_TIMEOUT_SECONDS", ge=0.1)
+
     # --- 継続学習 / モデルレジストリ ---
     # 自動昇格は既定 OFF。昇格は API 承認でのみ champion を差し替える。
     model_auto_promote: bool = Field(default=False, validation_alias="MODEL_AUTO_PROMOTE")

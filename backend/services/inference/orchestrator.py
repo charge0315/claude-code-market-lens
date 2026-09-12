@@ -34,6 +34,8 @@ from backend.services.picks.bracket import finalize_bracket, standardize_holding
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
 from backend.services.vault.brand_notes_service import get_brand_note
+from backend.services.vault.daily_note_service import read_daily_frontmatter
+from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +168,12 @@ async def run_inference(
 
     # --- stage 4: llm_overlay ---
     brand = await get_brand_note(symbol)
+    # ナレッジベース・ベクトル検索（🆕）で、当該銘柄コードにスコープした関連ノートを発見する
+    # （`settings.kb_search_url` 未設定・検索失敗時は空リスト、フェイルソフト）。本文は
+    # `knowledge_search_client` の境界で既に破棄済みで、Daily ノートの日付だけを受け取り、
+    # 既存の frontmatter 専用関数で改めて読み直す（プロンプトインジェクション防御を維持）。
+    kb_hits = await search_ticker_notes(str(brand.name) if brand and brand.name else symbol, code=symbol)
+    related_daily = [fm for d in extract_related_daily_dates(kb_hits) if (fm := read_daily_frontmatter(d)) is not None]
     prompt = build_pick_prompt(
         horizon_type=horizon_type,
         recommendation=rec,
@@ -174,6 +182,7 @@ async def run_inference(
         brand_frontmatter=brand.to_prompt_dict() if brand else None,
         news_digest_block=news_block,
         trend_context_block=trend_block,
+        related_daily_frontmatter=related_daily or None,
     )
     try:
         raw = await anthropic_client.propose_stock_pick(ticker=symbol, prompt=prompt)

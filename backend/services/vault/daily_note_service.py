@@ -7,6 +7,10 @@ Market Lens `backend/services/daily_note_service.py` から移植。変更点（
   そのため書き込み関数は用意せず、P7（EOD レビュー → learned heuristics）で必要になった時点で
   専用マーカー付きで追加する。
 - 読み取りは frontmatter のみ（本文の morning/evening/review ブロックは自己参照ループ防止で読まない）。
+- 🔧 P9（ナレッジベース検索）で発見: `date: 2026-06-01` のようにクォート無しの日付は
+  `yaml.safe_load` が `datetime.date` にパースするため、そのまま `json.dumps`（LLM プロンプト
+  組み立て）へ渡すと `TypeError` になる。frontmatter を返す直前に日付/日時値を ISO 文字列へ
+  正規化する（`_normalize_frontmatter_values`）。
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from backend.config import settings
 from backend.services.jst_time import today_jst
 
 _FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n", re.DOTALL)
+
+
+def _normalize_frontmatter_values(frontmatter: dict[str, object]) -> dict[str, object]:
+    """`date`/`datetime` 値を ISO 文字列へ正規化する（`datetime` は `date` のサブクラスのため
+    `isinstance(value, date)` で両方カバーする。JSON シリアライズ可能にするため）.
+    """
+    return {key: value.isoformat() if isinstance(value, date) else value for key, value in frontmatter.items()}
 
 
 def daily_note_path(target: date | str | None = None) -> Path:
@@ -50,4 +61,4 @@ def read_daily_frontmatter(target: date | str | None = None) -> dict[str, object
         loaded = yaml.safe_load(match.group(1))
     except yaml.YAMLError:
         return None
-    return loaded if isinstance(loaded, dict) else None
+    return _normalize_frontmatter_values(loaded) if isinstance(loaded, dict) else None
