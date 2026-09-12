@@ -95,7 +95,7 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | `BRAND_NOTES_DIR` / `DAILY_NOTES_DIR` | – | 空（`VAULT_ROOT` から導出） | 銘柄ナレッジ / 日次マーケットノートのディレクトリ |
 | `SHIKIHO_ENABLED` | – | `false` | 四季報連携（当面スタブ） |
 | `KB_SEARCH_URL` | – | 空（機能無効） | ナレッジベース・ベクトル検索（kb_creator、既存の外部サービス）への接続先。未設定なら関連ノート無しにフォールバック |
-| `KB_SEARCH_TIMEOUT_SECONDS` | – | `5.0` | 上記のタイムアウト秒 |
+| `KB_SEARCH_TIMEOUT_SECONDS` | – | `30.0` | 上記のタイムアウト秒（kb_creator は実測 約21秒/クエリかかるため余裕を持たせている） |
 | `MODEL_AUTO_PROMOTE` | – | `false` | **常に false 運用**。昇格は `POST /api/registry/promotions/{id}/apply` の人手承認でのみ行う |
 | `PAPER_MIN_DAYS` | – | `20` | champion 昇格ゲートの最小ペーパー成績日数 |
 | `DRIFT_PSI_THRESHOLD` | – | `0.2` | PSI ドリフト警告閾値 |

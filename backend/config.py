@@ -71,7 +71,9 @@ class Settings(BaseSettings):
     # 空文字（既定）なら無効（`knowledge_search_client.search_ticker_notes` が常に空リストを返す）。
     # ユーザーの Obsidian Vault を Qdrant でインデックス済みの別プロセスへの読み取り専用クライアント。
     kb_search_url: str = Field(default="", validation_alias="KB_SEARCH_URL")
-    kb_search_timeout_seconds: float = Field(default=5.0, validation_alias="KB_SEARCH_TIMEOUT_SECONDS", ge=0.1)
+    # 実測で約21秒/クエリ（kb_creator側のベクトル検索計算コスト）かかることが判明したため、
+    # 十分な余裕を持たせた既定値にする（`plans/04_タスクリスト.md` P10）。
+    kb_search_timeout_seconds: float = Field(default=30.0, validation_alias="KB_SEARCH_TIMEOUT_SECONDS", ge=0.1)
 
     # --- 継続学習 / モデルレジストリ ---
     # 自動昇格は既定 OFF。昇格は API 承認でのみ champion を差し替える。

@@ -2,15 +2,17 @@
 
 Market Lens に対応物はない（`ai_portfolio_*` は別機能、P7a 判断ログ参照）。
 プロンプトへ注入するのは自システムが算出した定量値のみ（`portfolio_service` の評価結果・
-ATR 目安レンジ）と、`related_daily_frontmatter`（🆕、`knowledge_search_client` によるベクトル
-検索で発見した関連日次ノートの frontmatter）のみで、Vault 本文・ニュース本文は使わない
-（CLAUDE.md プロンプトインジェクション防御）。
+ATR 目安レンジ）で、Vault 本文・ニュース本文は使わない（CLAUDE.md プロンプトインジェクション防御）。
+
+ナレッジベース・ベクトル検索（`knowledge_search_client`、P10）はピック生成側
+（`services/picks/prompt.py`）にのみ導入済み。ポートフォリオ判定は5分おき常時発火かつ
+保有銘柄数ぶん直列評価するため、kb_creator の実測レイテンシ（約21秒/クエリ）がサイクルを
+圧迫するリスクが高く、当面見送っている（ユーザー確認済み、`plans/04_タスクリスト.md` P10）。
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
 
 from backend.services.picks.bracket import suggested_bracket
 
@@ -25,7 +27,6 @@ def build_portfolio_signal_prompt(
     atr: float | None,
     company_name: str | None,
     sector: str | None,
-    related_daily_frontmatter: Sequence[Mapping[str, object]] | None = None,
 ) -> str:
     """1 保有ロット分の判定プロンプトを組み立てる（forced tool-use `propose_portfolio_signal` 前提）."""
     lines: list[str] = [
@@ -45,12 +46,6 @@ def build_portfolio_signal_prompt(
         lines.append(
             f"- 目安ブラケット（ATR ベース、新規建てなら）: "
             f"{json.dumps(suggested_bracket(current_price, atr), ensure_ascii=False)}"
-        )
-
-    if related_daily_frontmatter:
-        lines.append(
-            "- 関連する過去の日次ノート（frontmatter のみ・外部由来、"
-            f"ナレッジベース検索で発見）: {json.dumps(related_daily_frontmatter, ensure_ascii=False)}"
         )
 
     lines += [

@@ -23,8 +23,6 @@ from backend.services.picks.bracket import Bracket, finalize_bracket
 from backend.services.portfolio.portfolio_service import build_portfolio
 from backend.services.portfolio.prompt import build_portfolio_signal_prompt
 from backend.services.scoring.technical_analysis import compute_atr
-from backend.services.vault.daily_note_service import read_daily_frontmatter
-from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +65,6 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
     df = get_stock_data(holding.symbol, period=_ATR_LOOKBACK)
     atr = compute_atr(df, _ATR_PERIOD)
 
-    # ナレッジベース・ベクトル検索（🆕）。orchestrator.run_inference と同じフェイルソフト・
-    # frontmatter 専用の再取得（本文はクライアント境界で破棄済み）。
-    kb_hits = await search_ticker_notes(
-        holding.company_name if holding.company_name else holding.symbol, code=holding.symbol
-    )
-    related_daily = [fm for d in extract_related_daily_dates(kb_hits) if (fm := read_daily_frontmatter(d)) is not None]
-
     prompt = build_portfolio_signal_prompt(
         symbol=holding.symbol,
         quantity=holding.quantity,
@@ -83,7 +74,6 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
         atr=atr,
         company_name=holding.company_name,
         sector=holding.sector,
-        related_daily_frontmatter=related_daily or None,
     )
     try:
         raw = await anthropic_client.propose_portfolio_signal(symbol=holding.symbol, prompt=prompt)
