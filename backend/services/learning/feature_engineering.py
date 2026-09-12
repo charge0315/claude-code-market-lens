@@ -14,7 +14,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-_MIN_HISTORY_DAYS = 50
+# 🔧 P14: 学習データの十分性判定に他モジュール（training_data_source.py の J-Quants
+# フォールバック判定）から再利用するため公開する。
+MIN_HISTORY_DAYS = 50
 
 
 def build_feature_matrix(
@@ -41,8 +43,8 @@ def build_feature_matrix(
         X (pd.DataFrame): 特徴量行列
         y (pd.Series | None): ターゲット変数（predict_mode=True の時は None）
     """
-    if len(df) < _MIN_HISTORY_DAYS:
-        raise ValueError(f"データが少なすぎます（最低{_MIN_HISTORY_DAYS}日分必要）")
+    if len(df) < MIN_HISTORY_DAYS:
+        raise ValueError(f"データが少なすぎます（最低{MIN_HISTORY_DAYS}日分必要）")
 
     data = df.copy()
     features = pd.DataFrame(index=data.index)

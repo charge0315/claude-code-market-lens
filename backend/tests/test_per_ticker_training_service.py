@@ -31,6 +31,11 @@ def _async_return(value: _T) -> Callable[..., Awaitable[_T]]:
     return _fn
 
 
+async def _fake_fetch_training_ohlcv(ticker: str, period: str = "5y") -> pd.DataFrame:  # noqa: ARG001
+    """`fetch_training_ohlcv`（🆕 P14）のフェイク: 銘柄ごとに再現可能な OHLCV を返す."""
+    return _make_ohlcv(seed=abs(hash(ticker)) % 1000)
+
+
 def _make_ohlcv(n: int = 300, seed: int = 42) -> pd.DataFrame:
     """再現可能・学習可能な（＝ナイーブ予測を上回れる）OHLCV データフレームを生成する.
 
@@ -191,7 +196,7 @@ async def test_run_daily_training_batch_trains_and_activates_untrained_tickers(
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
     monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
-    monkeypatch.setattr(svc, "get_stock_data", lambda ticker, period="5y": _make_ohlcv(seed=abs(hash(ticker)) % 1000))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
     summary = await svc.run_daily_training_batch("xgboost")
@@ -211,7 +216,7 @@ async def test_run_daily_training_batch_stops_at_daily_limit(
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
     monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
-    monkeypatch.setattr(svc, "get_stock_data", lambda ticker, period="5y": _make_ohlcv(seed=abs(hash(ticker)) % 1000))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)
 
     summary = await svc.run_daily_training_batch("xgboost")
@@ -251,12 +256,12 @@ async def test_run_daily_training_batch_records_failure_without_stopping_others(
     monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
-    def _stock_data(ticker: str, period: str = "5y") -> pd.DataFrame:
+    async def _stock_data(ticker: str, period: str = "5y") -> pd.DataFrame:  # noqa: ARG001
         if ticker == "1111":
             return pd.DataFrame()  # 空データ → ValueError → failed 扱い
         return _make_ohlcv(seed=abs(hash(ticker)) % 1000)
 
-    monkeypatch.setattr(svc, "get_stock_data", _stock_data)
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _stock_data)
 
     summary = await svc.run_daily_training_batch("xgboost")
 

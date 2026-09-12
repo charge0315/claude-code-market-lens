@@ -34,13 +34,14 @@ import uuid
 from typing import Final, Literal
 
 from backend.config import settings
-from backend.services.data.data_fetcher import _get_ticker_master, get_stock_data
+from backend.services.data.data_fetcher import _get_ticker_master
 from backend.services.db import model_registry_db, training_batch_db
 from backend.services.jst_time import today_jst
 from backend.services.learning.dl.lstm import LSTMPredictor
 from backend.services.learning.dl.transformer import TransformerPredictor
 from backend.services.learning.per_ticker_predictor import RandomForestPredictor, XGBoostPredictor
 from backend.services.learning.predictor_protocol import PredictorProtocol
+from backend.services.learning.training_data_source import fetch_training_ohlcv
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +216,11 @@ async def _train_and_register(
     戻り値の第2要素（学習に使った OHLCV データフレーム）は、品質ゲートが既存 champion を
     同じ検証窓で再評価する際、追加のネットワーク取得なしに再利用するために返す
     （`get_stock_data` は TTL キャッシュ済みのため実害はほぼ無いが、素朴に再利用する）。
+
+    データ取得は yfinance を優先し、履歴が不十分な場合は J-Quants にフォールバックする
+    （🆕 P14、`training_data_source.fetch_training_ohlcv` 参照）。
     """
-    df = await asyncio.to_thread(get_stock_data, ticker, period=_TRAINING_PERIOD)
+    df = await fetch_training_ohlcv(ticker, period=_TRAINING_PERIOD)
     if df.empty:
         raise ValueError(f"株価データが取得できません: {ticker}")
 
