@@ -70,6 +70,18 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 
 **手で `.delay()` タスクを投入しない**（CLAUDE.md）。手動実行が必要な場合は対応する API（`POST /api/picks/run`、`POST /api/portfolio/signals/run`、`POST /api/portfolio/eod-review/run`、`POST /api/eval/run`、`POST /api/registry/promotions/evaluate` 等）を使う。
 
+**銘柄別モデルの手動学習トリガー（`POST /api/registry/training/run`、モデルラボ「今すぐ学習」）
+は上記の `TRAINING_*_DAILY_LIMIT` を使わない**（🆕 P14、ユーザー確認済み）:
+celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める人為的な低い上限が必要だが、
+手動トリガーは P13h でバックグラウンドタスク化済みのため HTTP タイムアウトに縛られず、
+「未学習優先→最も学習が古い順」で東証全銘柄を対象にいけるところまで学習する
+（`per_ticker_training_service.manual_full_run_overrides`）。暴走を止める安全網としての
+時間予算のみを設ける: xgboost/random_forest は6時間、lstm/transformer は12時間
+（`_MANUAL_FULL_RUN_DURATION_SECONDS`/`_MANUAL_FULL_RUN_DL_DURATION_SECONDS`、
+設定不可の固定値）。中断された場合も `training_batch_runs`（当日試行済み）+
+`model_registry.trained_at`（銘柄ごとの最終学習日時）を毎回読み直す既存設計により、
+再度ボタンを押すだけで続きから再開する。
+
 ---
 
 ## 2. 環境変数
@@ -101,7 +113,7 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | `MODEL_AUTO_PROMOTE` | – | `false` | **常に false 運用**。昇格は `POST /api/registry/promotions/{id}/apply` の人手承認でのみ行う |
 | `PAPER_MIN_DAYS` | – | `20` | champion 昇格ゲートの最小ペーパー成績日数 |
 | `DRIFT_PSI_THRESHOLD` | – | `0.2` | PSI ドリフト警告閾値 |
-| `TRAINING_XGBOOST_DAILY_LIMIT` / `TRAINING_RANDOM_FOREST_DAILY_LIMIT` | – | `200` / `200` | 銘柄別モデル日次学習バッチ（P9）の当日学習上限銘柄数 |
+| `TRAINING_XGBOOST_DAILY_LIMIT` / `TRAINING_RANDOM_FOREST_DAILY_LIMIT` | – | `200` / `200` | 銘柄別モデル日次学習バッチ（P9）の当日学習上限銘柄数。**celery-beat の自動定期実行のみに適用**（🔧 P14、下記参照） |
 | `TRAINING_LSTM_DAILY_LIMIT` / `TRAINING_TRANSFORMER_DAILY_LIMIT` | – | `40` / `40` | 同上（torch 学習のため低め） |
 | `CALIBRATION_METHOD` | – | `auto` | 確度較正方式（`auto`/`isotonic`/`platt`/`identity`） |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | – | 空（Push 配信は無効、アプリ内通知のみ） | Web Push 用 VAPID 鍵。`npx web-push generate-vapid-keys` で生成 |
