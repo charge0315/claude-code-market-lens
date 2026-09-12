@@ -298,6 +298,79 @@ async def test_training_status_rejects_unknown_model_type(migrated_db: Path) -> 
     assert res.status_code == 422
 
 
+async def test_model_stats_coverage_endpoint_returns_all_model_types(migrated_db: Path) -> None:
+    from backend.services.db import model_registry_db
+
+    await model_registry_db.upsert_model(version="v1", model_type="xgboost", ticker="7203", objective="regression")
+    await model_registry_db.set_champion("xgboost:7203", "v1", promoted_by="quality_gate")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/model-stats/coverage")
+
+    body = res.json()
+    assert body["success"] is True
+    by_type = {row["model_type"]: row for row in body["data"]}
+    assert set(by_type) == {"xgboost", "random_forest", "lstm", "transformer"}
+    assert by_type["xgboost"]["trained_count"] == 1
+    assert by_type["xgboost"]["champion_count"] == 1
+    assert by_type["lstm"]["trained_count"] == 0
+
+
+async def test_model_stats_quality_endpoint_returns_champion_metrics(migrated_db: Path) -> None:
+    from backend.services.db import model_registry_db
+
+    await model_registry_db.upsert_model(
+        version="v1",
+        model_type="xgboost",
+        ticker="7203",
+        objective="regression",
+        val_metrics={"skill": 0.4, "rmse": 1.2},
+    )
+    await model_registry_db.set_champion("xgboost:7203", "v1", promoted_by="quality_gate")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/model-stats/quality")
+
+    body = res.json()
+    assert body["success"] is True
+    xgb = next(row for row in body["data"] if row["model_type"] == "xgboost")
+    assert xgb["skill_scores"] == [0.4]
+    assert xgb["rmse_scores"] == [1.2]
+
+
+async def test_model_stats_training_trend_endpoint_returns_daily_counts(migrated_db: Path) -> None:
+    from backend.services.db.training_batch_db import insert_training_batch_run
+    from backend.services.jst_time import today_jst
+
+    today = today_jst()
+    await insert_training_batch_run(run_date=today, ticker="7203", model_type="xgboost", status="completed")
+    await insert_training_batch_run(run_date=today, ticker="6758", model_type="xgboost", status="failed")
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/model-stats/training-trend?days=30")
+
+    body = res.json()
+    assert body["success"] is True
+    point = next(row for row in body["data"] if row["date"] == today and row["model_type"] == "xgboost")
+    assert point["trained_count"] == 1
+    assert point["failed_count"] == 1
+
+
+async def test_model_stats_training_trend_rejects_invalid_days(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/model-stats/training-trend?days=0")
+
+    assert res.status_code == 422
+
+
 async def test_evaluate_promotion_routes_ml_pool_lane_to_holdout_gate(migrated_db: Path) -> None:
     """lane="ml_pool" は held-out AUC/Brier ゲート（`evaluate_ml_pool_promotion`）へ分岐する."""
     await mr.ensure_registered("pool-champ", lane="ml_pool", val_metrics={"auc": 0.55, "brier": 0.22})

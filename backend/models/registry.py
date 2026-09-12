@@ -42,6 +42,43 @@ class ChampionEntry(BaseModel):
     promoted_by: str
 
 
+class ModelCoverage(BaseModel):
+    """銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_type: str
+    label: str
+    universe_size: int
+    trained_count: int
+    champion_count: int
+
+
+class QualityDistribution(BaseModel):
+    """銘柄別モデルの現行 champion における品質指標の生値（🆕 P15、ヒストグラム用）.
+
+    ビン分けはフロントエンド側で行う（値は skill/rmse の生リストのみ）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    model_type: str
+    label: str
+    skill_scores: list[float]
+    rmse_scores: list[float]
+
+
+class TrainingTrendPoint(BaseModel):
+    """日別・モデルタイプ別の学習試行件数（🆕 P15、学習の推移グラフ用）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    date: str
+    model_type: str
+    trained_count: int
+    failed_count: int
+
+
 class PromotionEntry(BaseModel):
     """`model_promotions` の 1 行（昇格ゲートの判定ログ）."""
 

@@ -1155,6 +1155,96 @@
         }
       }
     },
+    "/api/registry/model-stats/coverage": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "銘柄別モデルの学習カバレッジ",
+        "description": "モデルタイプ別に、東証全銘柄のうち学習済み・champion採用済みの件数と割合を返す（🆕 P15）.",
+        "operationId": "model_stats_coverage_api_registry_model_stats_coverage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ModelCoverage__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/model-stats/quality": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "銘柄別モデルの品質分布",
+        "description": "モデルタイプ別に、現行 champion の品質指標（skill・rmse）の生値リストを返す（🆕 P15）.\n\nヒストグラムのビン分けはフロントエンドで行う。",
+        "operationId": "model_stats_quality_api_registry_model_stats_quality_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_QualityDistribution__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/model-stats/training-trend": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "銘柄別モデルの学習件数の推移",
+        "description": "直近 `days` 日分の、日別・モデルタイプ別の学習試行件数（成功/失敗）推移を返す（🆕 P15）.",
+        "operationId": "model_stats_training_trend_api_registry_model_stats_training_trend_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TrainingTrendPoint__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registry/drift": {
       "get": {
         "tags": [
@@ -2834,6 +2924,54 @@
         ],
         "title": "ApiResponse[dict]"
       },
+      "ApiResponse_list_ModelCoverage__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelCoverage"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[ModelCoverage]]"
+      },
       "ApiResponse_list_Notification__": {
         "properties": {
           "success": {
@@ -3025,6 +3163,102 @@
           "success"
         ],
         "title": "ApiResponse[list[PortfolioSignal]]"
+      },
+      "ApiResponse_list_QualityDistribution__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/QualityDistribution"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[QualityDistribution]]"
+      },
+      "ApiResponse_list_TrainingTrendPoint__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TrainingTrendPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[TrainingTrendPoint]]"
       },
       "ApiResponse_list_dict__": {
         "properties": {
@@ -3320,6 +3554,40 @@
         ],
         "title": "MarketSnapshot",
         "description": "`GET /api/market/snapshot` の応答."
+      },
+      "ModelCoverage": {
+        "properties": {
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "universe_size": {
+            "type": "integer",
+            "title": "Universe Size"
+          },
+          "trained_count": {
+            "type": "integer",
+            "title": "Trained Count"
+          },
+          "champion_count": {
+            "type": "integer",
+            "title": "Champion Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_type",
+          "label",
+          "universe_size",
+          "trained_count",
+          "champion_count"
+        ],
+        "title": "ModelCoverage",
+        "description": "銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか."
       },
       "Notification": {
         "properties": {
@@ -4159,6 +4427,41 @@
         "title": "PushSubscriptionRequest",
         "description": "ブラウザの `PushSubscription` をそのまま受け取る登録リクエスト."
       },
+      "QualityDistribution": {
+        "properties": {
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "skill_scores": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Skill Scores"
+          },
+          "rmse_scores": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Rmse Scores"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_type",
+          "label",
+          "skill_scores",
+          "rmse_scores"
+        ],
+        "title": "QualityDistribution",
+        "description": "銘柄別モデルの現行 champion における品質指標の生値（🆕 P15、ヒストグラム用）.\n\nビン分けはフロントエンド側で行う（値は skill/rmse の生リストのみ）。"
+      },
       "RejectedPick": {
         "properties": {
           "symbol": {
@@ -4470,6 +4773,35 @@
         ],
         "title": "TrainingRunRequest",
         "description": "`POST /api/registry/training/run` のリクエストボディ."
+      },
+      "TrainingTrendPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "trained_count": {
+            "type": "integer",
+            "title": "Trained Count"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "model_type",
+          "trained_count",
+          "failed_count"
+        ],
+        "title": "TrainingTrendPoint",
+        "description": "日別・モデルタイプ別の学習試行件数（🆕 P15、学習の推移グラフ用）."
       },
       "Trend": {
         "properties": {

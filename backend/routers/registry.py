@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
+from backend.models.registry import ModelCoverage, QualityDistribution, TrainingTrendPoint
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
 from backend.services.db.training_batch_db import get_attempted_tickers
@@ -24,6 +25,7 @@ from backend.services.learning.per_ticker_training_service import (
     run_daily_training_batch,
 )
 from backend.services.learning.pool_model import POOL_LANE
+from backend.services.registry import model_stats_service
 from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
 logger = logging.getLogger(__name__)
@@ -172,6 +174,37 @@ async def training_status(
             "last_result": _last_results.get(model_type),
         }
     )
+
+
+@router.get(
+    "/model-stats/coverage", response_model=ApiResponse[list[ModelCoverage]], summary="銘柄別モデルの学習カバレッジ"
+)
+async def model_stats_coverage() -> ApiResponse[list[ModelCoverage]]:
+    """モデルタイプ別に、東証全銘柄のうち学習済み・champion採用済みの件数と割合を返す（🆕 P15）."""
+    return ApiResponse.ok(await model_stats_service.build_coverage())
+
+
+@router.get(
+    "/model-stats/quality", response_model=ApiResponse[list[QualityDistribution]], summary="銘柄別モデルの品質分布"
+)
+async def model_stats_quality() -> ApiResponse[list[QualityDistribution]]:
+    """モデルタイプ別に、現行 champion の品質指標（skill・rmse）の生値リストを返す（🆕 P15）.
+
+    ヒストグラムのビン分けはフロントエンドで行う。
+    """
+    return ApiResponse.ok(await model_stats_service.build_quality_distribution())
+
+
+@router.get(
+    "/model-stats/training-trend",
+    response_model=ApiResponse[list[TrainingTrendPoint]],
+    summary="銘柄別モデルの学習件数の推移",
+)
+async def model_stats_training_trend(
+    days: int = Query(default=30, ge=1, le=365),
+) -> ApiResponse[list[TrainingTrendPoint]]:
+    """直近 `days` 日分の、日別・モデルタイプ別の学習試行件数（成功/失敗）推移を返す（🆕 P15）."""
+    return ApiResponse.ok(await model_stats_service.build_training_trend(days))
 
 
 @router.get("/drift", response_model=ApiResponse[list[dict]], summary="PSI ドリフト履歴")
