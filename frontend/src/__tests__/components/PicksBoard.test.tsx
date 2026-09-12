@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { PicksBoard } from '@/components/dashboard/PicksBoard';
 import { fetchPickDetail, fetchPicks, runPicks } from '@/lib/api/picks';
-import { fetchStockNote } from '@/lib/api/stock';
+import { fetchOhlc, fetchStockNote } from '@/lib/api/stock';
 import type { PickDetail, PickSummary } from '@/lib/api/picks';
 
 jest.mock('@/lib/api/picks');
@@ -13,6 +13,7 @@ const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
 const mockRunPicks = runPicks as jest.MockedFunction<typeof runPicks>;
 const mockFetchPickDetail = fetchPickDetail as jest.MockedFunction<typeof fetchPickDetail>;
 const mockFetchStockNote = fetchStockNote as jest.MockedFunction<typeof fetchStockNote>;
+const mockFetchOhlc = fetchOhlc as jest.MockedFunction<typeof fetchOhlc>;
 
 const PICK_DETAIL: PickDetail = {
   pick_id: 'pick-1',
@@ -64,6 +65,11 @@ const PICK: PickSummary = {
 };
 
 describe('PicksBoard', () => {
+  beforeEach(() => {
+    // PickDetailPanel が埋め込む PriceChart のデータ取得（詳細ポップアップ表示時のみ発火）。
+    mockFetchOhlc.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -231,7 +237,10 @@ describe('PicksBoard', () => {
     await user.click(await screen.findByRole('button', { name: '詳細' }));
 
     expect(mockFetchPickDetail).toHaveBeenCalledWith('pick-1');
-    expect(await screen.findByText('テクニカル: 72')).toBeInTheDocument();
+    expect(await screen.findByText('ピックアップ根拠')).toBeInTheDocument();
+    expect(screen.getByText('テクニカル')).toBeInTheDocument();
+    expect(screen.getByText('72')).toBeInTheDocument();
+    expect(screen.getByText('合成スコア寄与 40.0（重み 60%）')).toBeInTheDocument();
     expect(screen.getByText('金利上昇リスク')).toBeInTheDocument();
     expect(screen.getByText('想定保有期間: 約10営業日')).toBeInTheDocument();
   });
@@ -243,11 +252,11 @@ describe('PicksBoard', () => {
 
     render(<PicksBoard />);
     await user.click(await screen.findByRole('button', { name: '詳細' }));
-    await screen.findByText('ピック詳細・根拠');
+    await screen.findByRole('heading', { name: '7203（トヨタ自動車）' });
 
     await user.click(screen.getByRole('button', { name: '閉じる' }));
 
-    expect(screen.queryByText('ピック詳細・根拠')).not.toBeInTheDocument();
+    expect(screen.queryByText('ピックアップ根拠')).not.toBeInTheDocument();
   });
 
   it('🆕 P12: 他の LLM（Gemini 等）の shadow 判定をポップアップに表示する', async () => {
@@ -287,7 +296,7 @@ describe('PicksBoard', () => {
 
     render(<PicksBoard />);
     await user.click(await screen.findByRole('button', { name: '詳細' }));
-    await screen.findByText('テクニカル: 72');
+    await screen.findByText('ピックアップ根拠');
 
     expect(screen.queryByText('他の LLM による判定（参考、比較用）')).not.toBeInTheDocument();
   });

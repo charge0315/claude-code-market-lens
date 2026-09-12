@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { DataTable, type Column } from '@/components/ui/DataTable';
-import { fetchPickDetail, fetchPicks, runPicks, type HorizonType, type PickDetail, type PickSummary } from '@/lib/api/picks';
+import { PickDetailPanel } from '@/components/dashboard/PickDetailPanel';
+import { fetchPicks, runPicks, type HorizonType, type PickSummary } from '@/lib/api/picks';
 import { fetchStockNote, type StockNote } from '@/lib/api/stock';
 import './dashboard.css';
 
@@ -72,80 +73,6 @@ function NoteModalBody({ symbol }: { symbol: string }): ReactNode {
   if (note === undefined) return <p>読み込み中…</p>;
   if (note === null) return <p className="signal-queue-empty">この銘柄のナレッジベースノートはまだありません</p>;
   return <>{note.content}</>;
-}
-
-function DetailModalBody({ pickId }: { pickId: string }): ReactNode {
-  const [detail, setDetail] = useState<PickDetail | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchPickDetail(pickId)
-      .then(setDetail)
-      .catch(() => setError('ピック詳細の取得に失敗しました'));
-  }, [pickId]);
-
-  if (error) return <p className="signal-queue-error">{error}</p>;
-  if (detail === undefined) return <p>読み込み中…</p>;
-  if (detail === null) return <p className="signal-queue-empty">詳細が見つかりません</p>;
-
-  const riskFactors = detail.rationale_struct.llm_risk_factors;
-  const holdingDays = detail.rationale_struct.holding_period_days;
-
-  return (
-    <div className="pick-detail-body">
-      <p>{detail.rationale_text}</p>
-      <h3 className="pick-detail-subheading">4分析内訳</h3>
-      <ul className="pick-detail-subscores">
-        <li>テクニカル: {detail.sub_scores.technical.toFixed(0)}</li>
-        <li>トレンド: {detail.sub_scores.trend.toFixed(0)}</li>
-        <li>ファンダメンタル: {detail.sub_scores.fundamental.toFixed(0)}</li>
-        <li>センチメント: {detail.sub_scores.sentiment.toFixed(0)}</li>
-      </ul>
-      <h3 className="pick-detail-subheading">情報源ごとの寄与度</h3>
-      <pre className="pick-detail-json">{JSON.stringify(detail.source_contributions, null, 2)}</pre>
-      {Array.isArray(riskFactors) && riskFactors.length > 0 && (
-        <>
-          <h3 className="pick-detail-subheading">AI が挙げたリスク要因</h3>
-          <ul>
-            {riskFactors.map((factor, i) => (
-               
-              <li key={i}>{String(factor)}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {typeof holdingDays === 'number' && <p className="model-lab-brier">想定保有期間: 約{holdingDays}営業日</p>}
-      {detail.shadow_predictions.length > 0 && (
-        <>
-          <h3 className="pick-detail-subheading">他の LLM による判定（参考、比較用）</h3>
-          <ul className="pick-detail-shadow-list">
-            {detail.shadow_predictions.map((shadow) => (
-              <li key={shadow.shadow_id} className="pick-detail-shadow-item">
-                <p className="pick-detail-shadow-header">
-                  <span>{shadow.challenger_version}</span>
-                  <span style={{ color: directionColor(shadow.direction) }}>
-                    {DIRECTION_LABELS[shadow.direction]}（確度 {shadow.confidence.toFixed(0)}）
-                  </span>
-                </p>
-                <p className="pick-detail-shadow-bracket">
-                  買値 {formatYen(shadow.entry)} / 損切値 {formatYen(shadow.stop)} / 売値 {formatYen(shadow.target)}
-                </p>
-                {shadow.reasoning && <p>{shadow.reasoning}</p>}
-                {shadow.risk_factors.length > 0 && (
-                  <ul>
-                    {shadow.risk_factors.map((factor, i) => (
-
-                      <li key={i}>{factor}</li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
 }
 
 export function PicksBoard(): ReactNode {
@@ -325,11 +252,16 @@ export function PicksBoard(): ReactNode {
         </Modal>
       )}
 
-      {detailModalPickId && (
-        <Modal title="ピック詳細・根拠" onClose={() => setDetailModalPickId(null)}>
-          <DetailModalBody key={detailModalPickId} pickId={detailModalPickId} />
-        </Modal>
-      )}
+      {detailModalPickId &&
+        (() => {
+          const target = picks.find((p) => p.pick_id === detailModalPickId);
+          const title = target ? `${target.symbol}${target.company_name ? `（${target.company_name}）` : ''}` : 'ピック詳細';
+          return (
+            <Modal title={title} onClose={() => setDetailModalPickId(null)} variant="panel">
+              <PickDetailPanel key={detailModalPickId} pickId={detailModalPickId} />
+            </Modal>
+          );
+        })()}
     </div>
   );
 }
