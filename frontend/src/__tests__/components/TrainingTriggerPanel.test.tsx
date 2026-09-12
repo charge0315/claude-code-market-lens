@@ -28,6 +28,13 @@ describe('TrainingTriggerPanel', () => {
     jest.useRealTimers();
   });
 
+  it('🆕 P14: モデルタイプごとに平易な説明と既定設定を表示する', () => {
+    render(<TrainingTriggerPanel />);
+
+    expect(screen.getByText(/表形式データの学習が得意な高速AI/)).toBeInTheDocument();
+    expect(screen.getByText('既定設定: 決定木100本・木の深さ5・学習率0.1')).toBeInTheDocument();
+  });
+
   it('4モデルタイプの学習ボタンを表示する', () => {
     render(<TrainingTriggerPanel />);
 
@@ -70,7 +77,7 @@ describe('TrainingTriggerPanel', () => {
     render(<TrainingTriggerPanel />);
     await user.click(screen.getAllByRole('button', { name: '今すぐ学習' })[0]);
 
-    expect(await screen.findByText('試行済み(本日計) 12')).toBeInTheDocument();
+    expect(await screen.findByText('試行済み(本日計) 12銘柄')).toBeInTheDocument();
 
     await jest.advanceTimersByTimeAsync(3000);
 

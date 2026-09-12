@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
+import { BeginnerIntro } from '@/components/model-lab/BeginnerIntro';
+import { ModelLabTabs } from '@/components/model-lab/ModelLabTabs';
 import { GrowthChart } from '@/components/model-lab/GrowthChart';
 import { EquityCurveChart } from '@/components/model-lab/EquityCurveChart';
 import { CalibrationChart } from '@/components/model-lab/CalibrationChart';
@@ -8,12 +10,28 @@ import { DriftPanel } from '@/components/model-lab/DriftPanel';
 import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPanel';
 import { WeeklyLearningPanel } from '@/components/model-lab/WeeklyLearningPanel';
 
-export default function ModelLabPage(): ReactNode {
-  return (
-    <PageShell title="モデルラボ" phase="P8">
-      <p>精度の成長曲線（AUC / IC / 較正誤差 / 勝率）、Calibration curve、モデルバージョン比較、再学習ログ、PSI ドリフト、週次学習差分。</p>
+// 🆕 P14: 初心者は「かんたん」タブ（学習トリガー中心）だけで完結できるようにし、
+// champion/challenger 比較・PSI ドリフト・成長曲線等の既存の上級者向けセクションは
+// 「詳細」タブへ切り離す（ModelLabTabs 参照、内部実装・テストは変更しない）。
 
-      <section aria-labelledby="growth-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+function SimpleTab(): ReactNode {
+  return (
+    <>
+      <BeginnerIntro />
+      <section aria-labelledby="training-trigger-heading">
+        <h2 id="training-trigger-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          銘柄別モデルの学習
+        </h2>
+        <TrainingTriggerPanel />
+      </section>
+    </>
+  );
+}
+
+function AdvancedTab(): ReactNode {
+  return (
+    <>
+      <section aria-labelledby="growth-heading">
         <h2 id="growth-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
           成長曲線
         </h2>
@@ -32,13 +50,6 @@ export default function ModelLabPage(): ReactNode {
           較正曲線
         </h2>
         <CalibrationChart />
-      </section>
-
-      <section aria-labelledby="training-trigger-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
-        <h2 id="training-trigger-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
-          銘柄別モデルの学習トリガー
-        </h2>
-        <TrainingTriggerPanel />
       </section>
 
       <section aria-labelledby="champions-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
@@ -61,6 +72,14 @@ export default function ModelLabPage(): ReactNode {
         </h2>
         <WeeklyLearningPanel />
       </section>
+    </>
+  );
+}
+
+export default function ModelLabPage(): ReactNode {
+  return (
+    <PageShell title="モデルラボ">
+      <ModelLabTabs simple={<SimpleTab />} advanced={<AdvancedTab />} />
     </PageShell>
   );
 }
