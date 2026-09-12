@@ -31,6 +31,8 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Final, Literal
 
 from backend.config import settings
@@ -130,6 +132,23 @@ def _lane(model_type: str, ticker: str) -> str:
     return f"{model_type}:{ticker}"
 
 
+@dataclass(frozen=True)
+class TrainingProgressEvent:
+    """1銘柄の学習開始/終了時に `on_progress` へ渡す進捗イベント（🆕 P17）.
+
+    モデルラボの「学習の状況」表示（処理中の銘柄・残り推定時間・精度スコア既存比）を
+    ポーリング可能にするため、`run_daily_training_batch` 呼び出し元（`routers/registry.py`）
+    がこのイベントを受け取ってインメモリの進捗状態を更新する。
+    """
+
+    ticker: str
+    processed: int
+    total: int
+    status: Literal["running", "completed", "failed"]
+    activated: bool = False
+    data_source: str | None = None
+
+
 class TrainingBatchSummary:
     """1回の呼び出し分の実行結果サマリ（Celery タスクの戻り値用）."""
 
@@ -167,12 +186,18 @@ async def run_daily_training_batch(
     *,
     daily_limit_override: int | None = None,
     max_duration_override: float | None = None,
+    on_progress: Callable[[TrainingProgressEvent], None] | None = None,
 ) -> TrainingBatchSummary:
     """当日の学習上限に達するまで、未学習/学習が最も古い銘柄から順に当該モデルタイプで学習する.
 
     `daily_limit_override`/`max_duration_override` は手動トリガー（🆕 P14、
     `manual_full_run_overrides` 参照）専用。省略時（celery-beat の自動定期実行）は
     既存の `_daily_ticker_limit`/`_max_batch_duration`（settings 由来）のまま変更しない。
+
+    `on_progress`（🆕 P17）は各銘柄の学習開始/終了時に呼ばれるコールバック。
+    呼び出し元（`routers/registry.py`）がこれを使ってインメモリの進捗状態
+    （処理中の銘柄・残り推定時間・既存比等）を更新し、`GET /training/status` で
+    ポーリング可能にする。celery-beat 経路では渡されず、動作に影響しない。
     """
     run_date = today_jst()
     limit = daily_limit_override if daily_limit_override is not None else _daily_ticker_limit(model_type)
@@ -190,6 +215,8 @@ async def run_daily_training_batch(
         )
 
     candidates = await _select_candidates(attempted_today, model_type)
+    # 進捗表示用の「今回の予定件数」。実際にはさらに時間予算で打ち切られうる上限見積り。
+    planned_total = min(len(candidates), limit - len(attempted_today))
 
     trained = 0
     failed = 0
@@ -202,9 +229,16 @@ async def run_daily_training_batch(
         if time.monotonic() - start >= budget:
             break
 
+        if on_progress is not None:
+            on_progress(
+                TrainingProgressEvent(ticker=ticker, processed=trained + failed, total=planned_total, status="running")
+            )
+
         version = f"{_BATCH_VERSION_PREFIX}{uuid.uuid4()}"
         try:
-            new_metrics, df = await asyncio.wait_for(_train_and_register(ticker, model_type, version), timeout=timeout)
+            new_metrics, df, data_source = await asyncio.wait_for(
+                _train_and_register(ticker, model_type, version), timeout=timeout
+            )
         except TimeoutError:
             logger.warning("日次学習バッチ[%s]: %s の学習が%.0f秒でタイムアウトしました", model_type, ticker, timeout)
             await training_batch_db.insert_training_batch_run(
@@ -215,6 +249,12 @@ async def run_daily_training_batch(
                 error=f"タイムアウト（{timeout:.0f}秒）",
             )
             failed += 1
+            if on_progress is not None:
+                on_progress(
+                    TrainingProgressEvent(
+                        ticker=ticker, processed=trained + failed, total=planned_total, status="failed"
+                    )
+                )
             continue
         except Exception as exc:  # noqa: BLE001 - 1銘柄の失敗で全体を止めない
             logger.warning("日次学習バッチ[%s]: %s の学習に失敗しました: %s", model_type, ticker, exc, exc_info=True)
@@ -222,14 +262,37 @@ async def run_daily_training_batch(
                 run_date=run_date, ticker=ticker, model_type=model_type, status="failed", error=str(exc)
             )
             failed += 1
+            if on_progress is not None:
+                on_progress(
+                    TrainingProgressEvent(
+                        ticker=ticker, processed=trained + failed, total=planned_total, status="failed"
+                    )
+                )
             continue
 
         await training_batch_db.insert_training_batch_run(
-            run_date=run_date, ticker=ticker, model_type=model_type, status="completed", error=None
+            run_date=run_date,
+            ticker=ticker,
+            model_type=model_type,
+            status="completed",
+            error=None,
+            data_source=data_source,
         )
         trained += 1
-        if await _apply_quality_gate(ticker, model_type, version, new_metrics, df):
+        promoted = await _apply_quality_gate(ticker, model_type, version, new_metrics, df)
+        if promoted:
             activated += 1
+        if on_progress is not None:
+            on_progress(
+                TrainingProgressEvent(
+                    ticker=ticker,
+                    processed=trained + failed,
+                    total=planned_total,
+                    status="completed",
+                    activated=promoted,
+                    data_source=data_source,
+                )
+            )
 
     total_attempted_today = len(attempted_today) + trained + failed
     return TrainingBatchSummary(
@@ -244,17 +307,18 @@ async def run_daily_training_batch(
 
 async def _train_and_register(
     ticker: str, model_type: str, version: str
-) -> tuple[dict[str, float | str | int | bool], object]:
+) -> tuple[dict[str, float | str | int | bool], object, str]:
     """1銘柄を学習し、`model_registry` へ登録する（champion 化は品質ゲートに委ねる）.
 
     戻り値の第2要素（学習に使った OHLCV データフレーム）は、品質ゲートが既存 champion を
     同じ検証窓で再評価する際、追加のネットワーク取得なしに再利用するために返す
     （`get_stock_data` は TTL キャッシュ済みのため実害はほぼ無いが、素朴に再利用する）。
+    第3要素は実際に採用したデータソース（🆕 P17、"yfinance"/"jquants"）。
 
     データ取得は yfinance を優先し、履歴が不十分な場合は J-Quants にフォールバックする
     （🆕 P14、`training_data_source.fetch_training_ohlcv` 参照）。
     """
-    df = await fetch_training_ohlcv(ticker, period=_TRAINING_PERIOD)
+    df, data_source = await fetch_training_ohlcv(ticker, period=_TRAINING_PERIOD)
     if df.empty:
         raise ValueError(f"株価データが取得できません: {ticker}")
 
@@ -272,7 +336,7 @@ async def _train_and_register(
         feature_list=[],
         trained_at=None,
     )
-    return metrics, df
+    return metrics, df, data_source
 
 
 def _rmse_from_val_metrics(row: dict[str, object]) -> float | None:

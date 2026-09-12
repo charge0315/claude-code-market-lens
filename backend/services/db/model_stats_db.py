@@ -50,6 +50,22 @@ async def list_per_ticker_champion_metrics() -> list[dict[str, object]]:
         return [dict(r._mapping) for r in result]
 
 
+async def get_last_trained_at_by_model_type() -> dict[str, str]:
+    """モデルタイプ別に、最後に学習が成功した日時（trained_at の最大値）を返す（🆕 P17）.
+
+    `ticker != '__pool__'` で銘柄別モデルのみを対象にする（`count_trained_tickers_by_model_type`
+    と同じ除外理由）。モデルラボの「最終学習日時」表示に使う。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                "SELECT model_type, MAX(trained_at) AS latest FROM model_registry "
+                "WHERE ticker != '__pool__' GROUP BY model_type"
+            )
+        )
+        return {str(r[0]): str(r[1]) for r in result if r[1] is not None}
+
+
 async def get_training_counts_by_date(since: str) -> list[dict[str, object]]:
     """日別・モデルタイプ別・ステータス別の学習試行件数を返す（学習の推移グラフ用）.
 

@@ -172,7 +172,11 @@ async def test_run_training_starts_in_background_and_status_reports_completion(
     gate = asyncio.Event()
 
     async def fake_run_daily_training_batch(
-        model_type: str, *, daily_limit_override: int | None = None, max_duration_override: float | None = None
+        model_type: str,
+        *,
+        daily_limit_override: int | None = None,
+        max_duration_override: float | None = None,
+        on_progress: object = None,  # 🆕 P17: シグネチャ互換のため受け取るが未使用
     ) -> TrainingBatchSummary:
         nonlocal seen_model_type, seen_overrides
         seen_model_type = model_type
@@ -229,6 +233,63 @@ async def test_run_training_starts_in_background_and_status_reports_completion(
         "activated_this_call": 2,
         "error": None,
     }
+
+
+async def test_training_status_reports_live_progress_while_running(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 P17: 実行中は処理中の銘柄・進捗率・既存比（品質ゲート通過率）等をライブで返す."""
+    from backend.routers import registry as registry_router_module
+    from backend.services.learning.per_ticker_training_service import TrainingBatchSummary, TrainingProgressEvent
+
+    gate = asyncio.Event()
+
+    async def fake_run_daily_training_batch(
+        model_type: str,
+        *,
+        daily_limit_override: int | None = None,  # noqa: ARG001
+        max_duration_override: float | None = None,  # noqa: ARG001
+        on_progress: object = None,
+    ) -> TrainingBatchSummary:
+        assert callable(on_progress)
+        on_progress(TrainingProgressEvent(ticker="7203", processed=0, total=2, status="running"))
+        on_progress(
+            TrainingProgressEvent(
+                ticker="7203", processed=1, total=2, status="completed", activated=True, data_source="yfinance"
+            )
+        )
+        on_progress(TrainingProgressEvent(ticker="6758", processed=1, total=2, status="running"))
+        await gate.wait()
+        return TrainingBatchSummary(
+            model_type=model_type, attempted_today=1, trained_this_call=1, failed_this_call=0, quota_reached=False
+        )
+
+    monkeypatch.setattr(registry_router_module, "run_daily_training_batch", fake_run_daily_training_batch)
+    registry_router_module._running_batches.clear()
+    registry_router_module._last_results.clear()
+    registry_router_module._progress.clear()
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/api/registry/training/run", json={"model_type": "xgboost"})
+        status_res = await client.get("/api/registry/training/status?model_type=xgboost")
+
+        gate.set()
+        await registry_router_module._running_batches["xgboost"]
+
+        idle_res = await client.get("/api/registry/training/status?model_type=xgboost")
+
+    progress = status_res.json()["data"]["progress"]
+    assert progress["current_ticker"] == "6758"
+    assert progress["processed"] == 1
+    assert progress["total"] == 2
+    assert progress["promotion_rate_pct"] == 100.0
+    assert progress["failed_this_run"] == 0
+    assert progress["eta_seconds"] is not None and progress["eta_seconds"] >= 0
+
+    # バッチ終了後は progress がクリアされ、実行中のライブ状態は無くなる。
+    assert idle_res.json()["data"]["progress"] is None
 
 
 async def test_run_training_returns_already_running_when_triggered_twice(

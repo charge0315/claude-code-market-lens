@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Literal
 
 import pandas as pd
 
@@ -26,23 +27,30 @@ from backend.services.learning.feature_engineering import MIN_HISTORY_DAYS
 
 logger = logging.getLogger(__name__)
 
+DataSource = Literal["yfinance", "jquants"]
 
-async def fetch_training_ohlcv(ticker: str, period: str) -> pd.DataFrame:
+
+async def fetch_training_ohlcv(ticker: str, period: str) -> tuple[pd.DataFrame, DataSource]:
     """学習用 OHLCV を取得する（yfinance 優先、不足時は J-Quants にフォールバック）.
 
     yfinance の結果が `MIN_HISTORY_DAYS` 以上あればそのまま返す（フォールバック不要、
     既存の挙動を変えない）。不足・空で `JQUANTS_API_KEY` が設定済みなら J-Quants を
     試し、より行数の多い方を採用する。J-Quants 側が失敗しても yfinance の結果
     （不足していてもそのまま）を返し、呼び出し元の既存エラーハンドリングに委ねる。
+
+    実際に採用したデータソース（🆕 P17、`training_batch_runs.data_source` へ記録し
+    モデルラボの「カバレッジ（データソース別）」表示に使う）も併せて返す。
     """
     yf_df = await asyncio.to_thread(get_stock_data, ticker, period=period)
     if len(yf_df) >= MIN_HISTORY_DAYS or not jquants.is_configured:
-        return yf_df
+        return yf_df, "yfinance"
 
     try:
         jq_df = await jquants.fetch_daily_quotes(ticker, period=period)
     except JQuantsError as e:
         logger.warning("J-Quants 学習データフォールバックに失敗しました（%s）: %s", ticker, e)
-        return yf_df
+        return yf_df, "yfinance"
 
-    return jq_df if len(jq_df) > len(yf_df) else yf_df
+    if len(jq_df) > len(yf_df):
+        return jq_df, "jquants"
+    return yf_df, "yfinance"

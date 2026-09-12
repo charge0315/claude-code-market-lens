@@ -31,9 +31,12 @@ def _async_return(value: _T) -> Callable[..., Awaitable[_T]]:
     return _fn
 
 
-async def _fake_fetch_training_ohlcv(ticker: str, period: str = "5y") -> pd.DataFrame:  # noqa: ARG001
-    """`fetch_training_ohlcv`（🆕 P14）のフェイク: 銘柄ごとに再現可能な OHLCV を返す."""
-    return _make_ohlcv(seed=abs(hash(ticker)) % 1000)
+async def _fake_fetch_training_ohlcv(ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
+    """`fetch_training_ohlcv`（🆕 P14、🔧 P17でデータソース付きに変更）のフェイク.
+
+    銘柄ごとに再現可能な OHLCV と、固定のデータソース（"yfinance"）を返す。
+    """
+    return _make_ohlcv(seed=abs(hash(ticker)) % 1000), "yfinance"
 
 
 def _make_ohlcv(n: int = 300, seed: int = 42) -> pd.DataFrame:
@@ -256,10 +259,10 @@ async def test_run_daily_training_batch_records_failure_without_stopping_others(
     monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
-    async def _stock_data(ticker: str, period: str = "5y") -> pd.DataFrame:  # noqa: ARG001
+    async def _stock_data(ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
         if ticker == "1111":
-            return pd.DataFrame()  # 空データ → ValueError → failed 扱い
-        return _make_ohlcv(seed=abs(hash(ticker)) % 1000)
+            return pd.DataFrame(), "yfinance"  # 空データ → ValueError → failed 扱い
+        return _make_ohlcv(seed=abs(hash(ticker)) % 1000), "yfinance"
 
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _stock_data)
 
@@ -361,3 +364,65 @@ async def test_interrupted_run_resumes_from_remaining_tickers_on_next_call(
     assert all_attempted == {"1111", "2222", "3333", "4444"}
     for code in all_attempted:
         assert await model_registry_db.get_champion(f"xgboost:{code}") is not None
+
+
+# ---------------------------------------------------------------------------
+# 🆕 P17: on_progress コールバック・データソース記録
+# ---------------------------------------------------------------------------
+
+
+async def test_on_progress_emits_running_then_completed_events(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+    monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
+
+    events: list[svc.TrainingProgressEvent] = []
+    await svc.run_daily_training_batch("xgboost", on_progress=events.append)
+
+    running = [e for e in events if e.status == "running"]
+    completed = [e for e in events if e.status == "completed"]
+    assert [e.ticker for e in running] == ["1111", "2222"]
+    assert [e.ticker for e in completed] == ["1111", "2222"]
+    assert all(e.total == 2 for e in events)
+    assert [e.processed for e in completed] == [1, 2]
+    assert all(e.activated for e in completed)  # 学習可能な系列のため品質ゲートを通過する
+    assert all(e.data_source == "yfinance" for e in completed)
+
+
+async def test_on_progress_emits_failed_status_without_activation(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+
+    async def _empty(_ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
+        return pd.DataFrame(), "yfinance"
+
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _empty)
+
+    events: list[svc.TrainingProgressEvent] = []
+    await svc.run_daily_training_batch("xgboost", on_progress=events.append)
+
+    failed = [e for e in events if e.status == "failed"]
+    assert len(failed) == 1
+    assert failed[0].activated is False
+    assert failed[0].data_source is None
+
+
+async def test_successful_training_records_data_source(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """学習成功時の `training_batch_runs.data_source` が集計クエリから引けることを確認する."""
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111"]]
+    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+
+    async def _jquants_sourced(_ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
+        return _make_ohlcv(seed=1), "jquants"
+
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _jquants_sourced)
+
+    await svc.run_daily_training_batch("xgboost")
+
+    breakdown = await training_batch_db.get_latest_data_source_by_model_type()
+    assert breakdown["xgboost"] == {"jquants": 1}

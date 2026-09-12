@@ -43,7 +43,12 @@ class ChampionEntry(BaseModel):
 
 
 class ModelCoverage(BaseModel):
-    """銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか."""
+    """銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか.
+
+    `yfinance_count`/`jquants_count`（🆕 P17）は、銘柄ごとの最新の学習成功試行が
+    採用したデータソースの内訳（`training_batch_runs.data_source`）。
+    `last_trained_at`（🆕 P17）はそのモデルタイプで最後に学習が成功した日時。
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -52,6 +57,9 @@ class ModelCoverage(BaseModel):
     universe_size: int
     trained_count: int
     champion_count: int
+    yfinance_count: int = 0
+    jquants_count: int = 0
+    last_trained_at: str | None = None
 
 
 class QualityDistribution(BaseModel):

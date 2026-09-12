@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -21,6 +24,7 @@ from backend.services.db.training_batch_db import get_attempted_tickers
 from backend.services.jst_time import today_jst
 from backend.services.learning.per_ticker_training_service import (
     ModelType,
+    TrainingProgressEvent,
     manual_full_run_overrides,
     run_daily_training_batch,
 )
@@ -43,6 +47,45 @@ _running_batches: dict[ModelType, asyncio.Task[None]] = {}
 _last_results: dict[ModelType, dict[str, object]] = {}
 
 
+@dataclass
+class _ProgressState:
+    """実行中バッチの進捗（🆕 P17）: 処理中の銘柄・残り推定時間・既存比等の元データ."""
+
+    started_at: float = field(default_factory=time.monotonic)
+    current_ticker: str | None = None
+    total: int = 0
+    processed: int = 0
+    completed: int = 0
+    activated: int = 0
+    failed: int = 0
+
+
+# `run_daily_training_batch` の `on_progress` コールバック経由で更新し、バッチ終了時にクリア
+# する（`_running_batches`/`_last_results` 同様、インメモリ・サーバ再起動でリセット）。
+_progress: dict[ModelType, _ProgressState] = {}
+
+
+def _make_on_progress(model_type: ModelType) -> Callable[[TrainingProgressEvent], None]:
+    """`run_daily_training_batch` からの進捗イベントを `_progress` へ反映するクロージャを返す."""
+
+    def _handler(event: TrainingProgressEvent) -> None:
+        state = _progress.setdefault(model_type, _ProgressState())
+        state.total = event.total
+        if event.status == "running":
+            state.current_ticker = event.ticker
+            return
+        state.current_ticker = None
+        state.processed = event.processed
+        if event.status == "completed":
+            state.completed += 1
+            if event.activated:
+                state.activated += 1
+        else:
+            state.failed += 1
+
+    return _handler
+
+
 async def _run_and_record(model_type: ModelType) -> None:
     """バックグラウンドで学習バッチを実行し、結果を `_last_results` へ記録する.
 
@@ -51,9 +94,13 @@ async def _run_and_record(model_type: ModelType) -> None:
     （`tasks.py`）はこれを経由せず既存の上限のまま変更しない。
     """
     daily_limit, max_duration = manual_full_run_overrides(model_type)
+    _progress.pop(model_type, None)
     try:
         summary = await run_daily_training_batch(
-            model_type, daily_limit_override=daily_limit, max_duration_override=max_duration
+            model_type,
+            daily_limit_override=daily_limit,
+            max_duration_override=max_duration,
+            on_progress=_make_on_progress(model_type),
         )
         _last_results[model_type] = {**summary.to_dict(), "error": None}
     except Exception as e:  # noqa: BLE001 — バックグラウンドタスクの想定外エラーを UI 側へ伝える
@@ -61,6 +108,7 @@ async def _run_and_record(model_type: ModelType) -> None:
         _last_results[model_type] = {"model_type": model_type, "error": str(e)}
     finally:
         _running_batches.pop(model_type, None)
+        _progress.pop(model_type, None)
 
 
 class EvaluatePromotionRequest(BaseModel):
@@ -156,6 +204,31 @@ async def run_training(req: TrainingRunRequest) -> ApiResponse[dict]:
     return ApiResponse.ok({"model_type": model_type, "status": "started"})
 
 
+def _build_progress_payload(model_type: ModelType) -> dict[str, object] | None:
+    """`_progress` の生状態から `GET /training/status` へ返す進捗ペイロードを組み立てる（🆕 P17）.
+
+    処理中の銘柄・進捗率・残り推定時間（今回の処理速度からの単純な線形見積り）・
+    既存比（品質ゲート通過率）を計算する。バッチが実行中でない場合は None。
+    """
+    state = _progress.get(model_type)
+    if state is None:
+        return None
+
+    elapsed = time.monotonic() - state.started_at
+    processed, total = state.processed, state.total
+    eta_seconds = (elapsed / processed) * (total - processed) if processed > 0 and total > processed else None
+    promotion_rate_pct = (state.activated / state.completed * 100) if state.completed > 0 else None
+
+    return {
+        "current_ticker": state.current_ticker,
+        "processed": processed,
+        "total": total,
+        "failed_this_run": state.failed,
+        "eta_seconds": eta_seconds,
+        "promotion_rate_pct": promotion_rate_pct,
+    }
+
+
 @router.get("/training/status", response_model=ApiResponse[dict], summary="銘柄別モデル学習バッチの進捗・結果")
 async def training_status(
     model_type: Literal["xgboost", "random_forest", "lstm", "transformer"] = Query(...),
@@ -163,6 +236,8 @@ async def training_status(
     """指定モデルタイプの学習バッチが実行中かどうか・本日ここまでの試行件数・直近の結果を返す.
 
     `TrainingTriggerPanel`（🔧 P13h）が `POST /training/run` 後にポーリングする想定。
+    `progress`（🆕 P17）は実行中のみ値を持ち、処理中の銘柄・残り推定時間・既存比
+    （品質ゲート通過率）等のライブ状態を表す。
     """
     running = model_type in _running_batches
     attempted_today = len(await get_attempted_tickers(today_jst(), model_type))
@@ -172,6 +247,7 @@ async def training_status(
             "running": running,
             "attempted_today": attempted_today,
             "last_result": _last_results.get(model_type),
+            "progress": _build_progress_payload(model_type),
         }
     )
 

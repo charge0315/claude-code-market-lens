@@ -22,14 +22,19 @@ async def insert_training_batch_run(
     model_type: str,
     status: str,
     error: str | None = None,
+    data_source: str | None = None,
 ) -> None:
-    """日次学習バッチの1銘柄分の試行結果を1行追加する（INSERT-only の監査ログ）."""
+    """日次学習バッチの1銘柄分の試行結果を1行追加する（INSERT-only の監査ログ）.
+
+    `data_source`（🆕 P17）は学習に成功した場合のみ `fetch_training_ohlcv` が返す
+    実際の採用元（"yfinance"/"jquants"）。失敗行は取得元を特定できないため None のまま。
+    """
     async with get_db() as db:
         await db.execute(
             text(
                 """
-                INSERT INTO training_batch_runs (run_date, ticker, model_type, status, error, created_at)
-                VALUES (:run_date, :ticker, :model_type, :status, :error, :created_at)
+                INSERT INTO training_batch_runs (run_date, ticker, model_type, status, error, data_source, created_at)
+                VALUES (:run_date, :ticker, :model_type, :status, :error, :data_source, :created_at)
                 """
             ),
             {
@@ -38,6 +43,7 @@ async def insert_training_batch_run(
                 "model_type": model_type,
                 "status": status,
                 "error": error,
+                "data_source": data_source,
                 "created_at": datetime.now(JST).isoformat(timespec="seconds"),
             },
         )
@@ -80,3 +86,35 @@ async def get_latest_trained_at_by_ticker(model_type: str) -> dict[str, str]:
             {"model_type": model_type},
         )
         return {str(r[0]): str(r[1]) for r in result}
+
+
+async def get_latest_data_source_by_model_type() -> dict[str, dict[str, int]]:
+    """モデルタイプ別に、銘柄ごとの最新の学習成功試行が使ったデータソースの内訳件数を返す.
+
+    `{"xgboost": {"yfinance": 3900, "jquants": 320}, ...}` の形。銘柄が同一モデルタイプで
+    複数回学習されている場合は最新（id が最大）の試行のみを数える（🆕 P17、
+    モデルラボの「カバレッジ（データソース別）」表示用）。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                """
+                WITH latest AS (
+                    SELECT
+                        model_type,
+                        data_source,
+                        ROW_NUMBER() OVER (PARTITION BY model_type, ticker ORDER BY id DESC) AS rn
+                    FROM training_batch_runs
+                    WHERE status = 'completed' AND data_source IS NOT NULL
+                )
+                SELECT model_type, data_source, COUNT(*) AS n
+                FROM latest
+                WHERE rn = 1
+                GROUP BY model_type, data_source
+                """
+            )
+        )
+        breakdown: dict[str, dict[str, int]] = {}
+        for model_type, data_source, n in result:
+            breakdown.setdefault(str(model_type), {})[str(data_source)] = int(n)
+        return breakdown

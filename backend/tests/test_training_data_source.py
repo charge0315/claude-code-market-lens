@@ -33,8 +33,9 @@ async def test_returns_yfinance_data_when_sufficient(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(svc, "get_stock_data", lambda ticker, period: _ohlcv(svc.MIN_HISTORY_DAYS))
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=True))
 
-    df = await svc.fetch_training_ohlcv("7203", period="5y")
+    df, source = await svc.fetch_training_ohlcv("7203", period="5y")
     assert len(df) == svc.MIN_HISTORY_DAYS
+    assert source == "yfinance"
 
 
 async def test_falls_back_to_jquants_when_yfinance_insufficient(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,8 +46,9 @@ async def test_falls_back_to_jquants_when_yfinance_insufficient(monkeypatch: pyt
 
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=True, fetch=_fake_fetch))
 
-    df = await svc.fetch_training_ohlcv("166A", period="5y")
+    df, source = await svc.fetch_training_ohlcv("166A", period="5y")
     assert len(df) == svc.MIN_HISTORY_DAYS
+    assert source == "jquants"
 
 
 async def test_falls_back_to_jquants_when_yfinance_empty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,8 +59,9 @@ async def test_falls_back_to_jquants_when_yfinance_empty(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=True, fetch=_fake_fetch))
 
-    df = await svc.fetch_training_ohlcv("7203", period="5y")
+    df, source = await svc.fetch_training_ohlcv("7203", period="5y")
     assert len(df) == 60
+    assert source == "jquants"
 
 
 async def test_returns_yfinance_result_when_jquants_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,8 +69,9 @@ async def test_returns_yfinance_result_when_jquants_not_configured(monkeypatch: 
     monkeypatch.setattr(svc, "get_stock_data", lambda ticker, period: _ohlcv(10))
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=False))
 
-    df = await svc.fetch_training_ohlcv("7203", period="5y")
+    df, source = await svc.fetch_training_ohlcv("7203", period="5y")
     assert len(df) == 10
+    assert source == "yfinance"
 
 
 async def test_falls_back_to_yfinance_result_when_jquants_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,8 +83,9 @@ async def test_falls_back_to_yfinance_result_when_jquants_fails(monkeypatch: pyt
 
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=True, fetch=_raise))
 
-    df = await svc.fetch_training_ohlcv("7203", period="5y")
+    df, source = await svc.fetch_training_ohlcv("7203", period="5y")
     assert len(df) == 10
+    assert source == "yfinance"
 
 
 async def test_uses_whichever_source_has_more_rows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,5 +97,6 @@ async def test_uses_whichever_source_has_more_rows(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(svc, "jquants", _FakeJQuants(configured=True, fetch=_fake_fetch))
 
-    df = await svc.fetch_training_ohlcv("7203", period="5y")
+    df, source = await svc.fetch_training_ohlcv("7203", period="5y")
     assert len(df) == 30
+    assert source == "yfinance"

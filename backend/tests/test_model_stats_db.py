@@ -44,6 +44,23 @@ async def test_list_per_ticker_champion_metrics_excludes_non_per_ticker_lanes(mi
     assert json.loads(str(rows[0]["val_metrics"])) == {"rmse": 0.1, "skill": 0.2}
 
 
+async def test_get_last_trained_at_by_model_type_takes_max_excludes_pool(migrated_db: Path) -> None:
+    await model_registry_db.upsert_model(
+        version="v1", model_type="xgboost", ticker="7203", objective="regression", trained_at="2026-09-01T00:00:00"
+    )
+    await model_registry_db.upsert_model(
+        version="v2", model_type="xgboost", ticker="6758", objective="regression", trained_at="2026-09-10T00:00:00"
+    )
+    await model_registry_db.upsert_model(
+        version="v3", model_type="ml_pool", ticker="__pool__", objective="regression", trained_at="2026-09-12T00:00:00"
+    )
+
+    latest = await model_stats_db.get_last_trained_at_by_model_type()
+
+    assert latest["xgboost"] == "2026-09-10T00:00:00"
+    assert "ml_pool" not in latest
+
+
 async def test_get_training_counts_by_date_groups_by_date_type_status(migrated_db: Path) -> None:
     from backend.services.db.training_batch_db import insert_training_batch_run
 

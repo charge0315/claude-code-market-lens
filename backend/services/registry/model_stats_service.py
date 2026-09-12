@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 from backend.models.registry import ModelCoverage, QualityDistribution, TrainingTrendPoint
 from backend.services.data.data_fetcher import _get_ticker_master
-from backend.services.db import model_stats_db
+from backend.services.db import model_stats_db, training_batch_db
 from backend.services.jst_time import JST
 from backend.services.learning.per_ticker_training_service import PER_TICKER_MODEL_TYPES
 
@@ -50,10 +50,15 @@ def _as_finite_float(value: object) -> float | None:
 
 
 async def build_coverage() -> list[ModelCoverage]:
-    """モデルタイプ別の学習カバレッジ（学習済み銘柄数・champion数・全銘柄数）を返す."""
+    """モデルタイプ別の学習カバレッジ（学習済み銘柄数・champion数・全銘柄数）を返す.
+
+    🆕 P17: データソース内訳（yfinance/J-Quants）と最終学習日時も併せて返す。
+    """
     universe_size = len(await _get_ticker_master())
     trained_counts = await model_stats_db.count_trained_tickers_by_model_type()
     champion_rows = await model_stats_db.list_per_ticker_champion_metrics()
+    data_source_breakdown = await training_batch_db.get_latest_data_source_by_model_type()
+    last_trained_at = await model_stats_db.get_last_trained_at_by_model_type()
 
     champion_counts: dict[str, int] = defaultdict(int)
     for row in champion_rows:
@@ -68,6 +73,9 @@ async def build_coverage() -> list[ModelCoverage]:
             universe_size=universe_size,
             trained_count=trained_counts.get(mt, 0),
             champion_count=champion_counts.get(mt, 0),
+            yfinance_count=data_source_breakdown.get(mt, {}).get("yfinance", 0),
+            jquants_count=data_source_breakdown.get(mt, {}).get("jquants", 0),
+            last_trained_at=last_trained_at.get(mt),
         )
         for mt in PER_TICKER_MODEL_TYPES
     ]

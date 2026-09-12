@@ -90,6 +90,16 @@ async def test_build_coverage_combines_universe_trained_and_champion_counts(
             ]
         ),
     )
+    monkeypatch.setattr(
+        svc.training_batch_db,
+        "get_latest_data_source_by_model_type",
+        _async_return({"xgboost": {"yfinance": 1, "jquants": 1}}),
+    )
+    monkeypatch.setattr(
+        svc.model_stats_db,
+        "get_last_trained_at_by_model_type",
+        _async_return({"xgboost": "2026-09-10T00:00:00"}),
+    )
 
     coverage = await svc.build_coverage()
 
@@ -98,6 +108,13 @@ async def test_build_coverage_combines_universe_trained_and_champion_counts(
     assert by_type["xgboost"].universe_size == 3
     assert by_type["xgboost"].trained_count == 2
     assert by_type["xgboost"].champion_count == 2
+    assert by_type["xgboost"].yfinance_count == 1
+    assert by_type["xgboost"].jquants_count == 1
+    assert by_type["xgboost"].last_trained_at == "2026-09-10T00:00:00"
+    # データソース内訳・最終学習日時が無いモデルタイプは既定値（0/None）で出現する。
+    assert by_type["lstm"].yfinance_count == 0
+    assert by_type["lstm"].jquants_count == 0
+    assert by_type["lstm"].last_trained_at is None
     assert by_type["lstm"].trained_count == 1
     assert by_type["lstm"].champion_count == 1
     # 学習履歴が無いモデルタイプも 0 件として出現する（フロントでの一覧表示のため）。

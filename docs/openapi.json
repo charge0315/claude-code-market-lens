@@ -1112,7 +1112,7 @@
           "registry"
         ],
         "summary": "銘柄別モデル学習バッチの進捗・結果",
-        "description": "指定モデルタイプの学習バッチが実行中かどうか・本日ここまでの試行件数・直近の結果を返す.\n\n`TrainingTriggerPanel`（🔧 P13h）が `POST /training/run` 後にポーリングする想定。",
+        "description": "指定モデルタイプの学習バッチが実行中かどうか・本日ここまでの試行件数・直近の結果を返す.\n\n`TrainingTriggerPanel`（🔧 P13h）が `POST /training/run` 後にポーリングする想定。\n`progress`（🆕 P17）は実行中のみ値を持ち、処理中の銘柄・残り推定時間・既存比\n（品質ゲート通過率）等のライブ状態を表す。",
         "operationId": "training_status_api_registry_training_status_get",
         "parameters": [
           {
@@ -3576,6 +3576,27 @@
           "champion_count": {
             "type": "integer",
             "title": "Champion Count"
+          },
+          "yfinance_count": {
+            "type": "integer",
+            "title": "Yfinance Count",
+            "default": 0
+          },
+          "jquants_count": {
+            "type": "integer",
+            "title": "Jquants Count",
+            "default": 0
+          },
+          "last_trained_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trained At"
           }
         },
         "type": "object",
@@ -3587,7 +3608,7 @@
           "champion_count"
         ],
         "title": "ModelCoverage",
-        "description": "銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか."
+        "description": "銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか.\n\n`yfinance_count`/`jquants_count`（🆕 P17）は、銘柄ごとの最新の学習成功試行が\n採用したデータソースの内訳（`training_batch_runs.data_source`）。\n`last_trained_at`（🆕 P17）はそのモデルタイプで最後に学習が成功した日時。"
       },
       "Notification": {
         "properties": {
