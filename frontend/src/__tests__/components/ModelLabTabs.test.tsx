@@ -15,7 +15,7 @@ describe('ModelLabTabs', () => {
     expect(screen.getByText('詳細内容')).not.toBeVisible();
   });
 
-  it('「詳細」タブへ切り替えると保存され、次のレンダーでも復元される', async () => {
+  it('「詳細」タブへ切り替えられるが、再表示すると「かんたん」に戻る（永続化しない）', async () => {
     const user = userEvent.setup();
     const { unmount } = render(<ModelLabTabs simple={<p>かんたん内容</p>} advanced={<p>詳細内容</p>} />);
 
@@ -25,7 +25,8 @@ describe('ModelLabTabs', () => {
 
     unmount();
     render(<ModelLabTabs simple={<p>かんたん内容</p>} advanced={<p>詳細内容</p>} />);
-    expect(screen.getByText('詳細内容')).toBeVisible();
+    expect(screen.getByText('かんたん内容')).toBeVisible();
+    expect(screen.getByText('詳細内容')).not.toBeVisible();
   });
 
   it('アクセシビリティ違反がない', async () => {

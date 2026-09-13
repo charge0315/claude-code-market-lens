@@ -215,8 +215,10 @@ export function TrainingTriggerPanel(): ReactNode {
                   {running ? '実行中' : '待機中'}
                 </span>
               </div>
-              <p className="training-trigger-description">{description}</p>
-              <p className="training-trigger-defaults">{defaults}</p>
+              <div className="training-trigger-copy">
+                <p className="training-trigger-description">{description}</p>
+                <p className="training-trigger-defaults">{defaults}</p>
+              </div>
 
               <button type="button" className="training-trigger-start-btn" onClick={() => handleRun(value)} disabled={running}>
                 {running ? '実行中…' : '▶ 学習を開始'}

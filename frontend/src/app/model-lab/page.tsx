@@ -12,7 +12,9 @@ import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPane
 import { WeeklyLearningPanel } from '@/components/model-lab/WeeklyLearningPanel';
 import { ModelCoverageChart } from '@/components/model-lab/ModelCoverageChart';
 import { ModelQualityChart } from '@/components/model-lab/ModelQualityChart';
+import { ModelQualitySummaryLine } from '@/components/model-lab/ModelQualitySummaryLine';
 import { TrainingTrendChart } from '@/components/model-lab/TrainingTrendChart';
+import { TrainingTrendSummaryLine } from '@/components/model-lab/TrainingTrendSummaryLine';
 
 // 🆕 P14: 初心者は「かんたん」タブ（学習トリガー中心）だけで完結できるようにし、
 // champion/challenger 比較・PSI ドリフト・成長曲線等の既存の上級者向けセクションは
@@ -22,6 +24,10 @@ import { TrainingTrendChart } from '@/components/model-lab/TrainingTrendChart';
 // 見出し直下に平易な説明文を追加。また学習状況グラフ（学習カバレッジ・品質分布・
 // 学習の推移）は「詳細」タブだけでなく「かんたん」タブにも表示し、初心者でも
 // 学習の進み具合をすぐ確認できるようにした。
+//
+// 🔧 学習の品質・学習の推移は「かんたん」タブでは1行サマリーへ簡略化した（ユーザー指示）。
+// モデルタイプ・指標を切り替えられる詳細なグラフ（`ModelQualityChart`/`TrainingTrendChart`）
+// は「詳細」タブに残す。
 
 const H2_STYLE = { fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' } as const;
 
@@ -52,10 +58,10 @@ function SimpleTab(): ReactNode {
           学習の品質
         </h2>
         <p className="model-lab-as-of">
-          今使われているモデル（champion）の予測精度を銘柄ごとに集計したグラフです。skillスコアは高いほど、
+          今使われているモデル（champion）の予測精度を銘柄ごとに集計したものです。skillスコアは高いほど、
           RMSE は低いほど精度が高いことを意味します。
         </p>
-        <ModelQualityChart />
+        <ModelQualitySummaryLine />
       </section>
 
       <section aria-labelledby="simple-trend-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
@@ -63,7 +69,7 @@ function SimpleTab(): ReactNode {
           学習の推移
         </h2>
         <p className="model-lab-as-of">日ごとに何銘柄のモデルを学習・更新できたかの推移です。</p>
-        <TrainingTrendChart />
+        <TrainingTrendSummaryLine />
       </section>
     </>
   );

@@ -216,6 +216,12 @@
   margin-top: 2px;
 }
 
+.training-trigger-copy {
+  /* 説明文の行数はモデルごとに異なるため、最低高さを確保して「学習を開始」ボタンの
+     縦位置をカード間で揃える（ユーザー指示）。 */
+  min-height: 58px;
+}
+
 .training-trigger-description {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
@@ -225,7 +231,7 @@
 .training-trigger-defaults {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  margin: 0 0 var(--spacing-sm);
+  margin: var(--spacing-xs) 0 0;
 }
 
 .training-progress-bar {
