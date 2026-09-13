@@ -18,6 +18,7 @@ function cssVar(name: string): string {
 
 export function PriceChart({ symbol }: { symbol: string }): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const [period, setPeriod] = useState<OhlcPeriod>('6mo');
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       wickUpColor: gain,
       wickDownColor: loss,
     });
+    chartRef.current = chart;
 
     const handleResize = (): void => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -56,6 +58,7 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      chartRef.current = null;
       seriesRef.current = null;
     };
   }, []);
@@ -65,6 +68,8 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       .then((bars) => {
         setIsEmpty(bars.length === 0);
         seriesRef.current?.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+        // データの開始点（最も古い足）が左端から見えるよう、期間全体を表示領域に収める。
+        chartRef.current?.timeScale().fitContent();
       })
       .catch(() => setError('株価データの取得に失敗しました'));
   }, [symbol, period]);
