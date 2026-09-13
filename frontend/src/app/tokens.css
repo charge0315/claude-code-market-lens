@@ -1,39 +1,54 @@
 /* ============================================
    Alpha Forge — デザイントークン（単一情報源）
-   プロ向けトレーディング端末（Bloomberg Terminal / MARKETSPEED II / TradingView）
-   に寄せた near-black ベース × プライマリブルー、高密度・低余白、等幅数値。
-   騰落色は国内証券標準＝上げ赤／下げ緑。
+   🔧 P21: 暖色ダークブラウン基調 → 明るいクリーム色（"Organic" デザインシステム）基調へ
+   全画面統一（ユーザー指示。ダッシュボード / モデルラボ両参考デザインが共通してこの
+   ライトテーマだったため採用。旧: 暖色ダークブラウン×オレンジの P18 テーマ）。
+   高密度・低余白、等幅数値の方針は維持。騰落色は国内証券標準＝上げ赤／下げ緑
+   （ブランド配色とは独立したドメイン規約のため、テーマ変更の対象外。ただし明るい
+   背景でのコントラストを確保するため色調は再調整した）。
 
    色・タイポ・余白・角丸・影・トランジションの正はここだけに置く。
    globals.css 先頭で @import される。Market Lens `src/app/tokens.css` を踏襲。
    ============================================ */
 
 :root {
-  /* --- 背景階層（near-black〜沈んだダークグレー） --- */
-  --color-bg-primary: #0a0e14;
-  --color-bg-secondary: #12161c;
-  --color-bg-tertiary: #161b22;
-  --color-surface: #1e242c;
+  /* --- 背景階層（明るいクリーム。"Organic" デザインシステムの neutral スケール踏襲） --- */
+  --color-bg-primary: #f5ead8;
+  --color-bg-secondary: #eee7db;
+  --color-bg-tertiary: #f9f4ed;
+  --color-surface: #ebddc5;
 
   /* --- ボーダー・テキスト --- */
-  --color-border: #2a323d;
-  --color-border-active: #1f6feb;
-  --color-text-primary: #e6edf3;
-  --color-text-secondary: #a0aec0;
-  --color-text-muted: #8b949e;
+  --color-border: color-mix(in srgb, #201e1d 16%, transparent);
+  --color-border-active: #c67139;
+  --color-text-primary: #201e1d;
+  --color-text-secondary: color-mix(in srgb, #201e1d 75%, transparent);
+  --color-text-muted: color-mix(in srgb, #201e1d 55%, transparent);
 
-  /* --- アクセント（プライマリブルー） --- */
-  --color-accent: #1f6feb;
-  --color-accent-bright: #3b82f6;
-  --color-accent-dim: rgba(31, 111, 235, 0.15);
+  /* --- アクセント（オレンジ）
+     --color-accent-bright は文字色・フォーカスリング・チャート線として明るいクリーム
+     背景の上で使うため、"Organic" ランプの accent-500 ではなく accent-700 相当まで
+     沈めて WCAG AA（4.5:1 以上）を確保する（塗り背景用の --color-accent 自体は
+     accent-500 のまま。文字を乗せる際は必ず --color-text-primary 等の濃色と組む）。 --- */
+  --color-accent: #c67139;
+  --color-accent-bright: #8c491a;
+  --color-accent-dim: rgba(198, 113, 57, 0.16);
 
-  /* --- セマンティックパレット（方向に依存しない literal な色） --- */
-  --color-term-green: #00c853;
-  --color-term-red: #ff4d4f;
-  --color-term-blue: #58a6ff;
-  --color-term-yellow: #d29922;
-  --color-term-cyan: #00b4d8;
-  --color-term-purple: #bc8cff;
+  /* --- セカンダリアクセント（オリーブグリーン。データソース内訳等、2系列目の識別に使用。
+     -bright は同様の理由で accent-2-700 相当。） --- */
+  --color-accent-2: #7a8a5e;
+  --color-accent-2-bright: #56633f;
+  --color-accent-2-dim: rgba(122, 138, 94, 0.16);
+
+  /* --- セマンティックパレット（方向に依存しない literal な色）
+     明るいクリーム背景で本文サイズの文字色として使っても WCAG AA（4.5:1 以上）を
+     満たすよう、ダークテーマ時より一段深いトーンに調整（用途・意味は変えない）。 --- */
+  --color-term-green: #1f6b3a;
+  --color-term-red: #b32424;
+  --color-term-blue: #265d94;
+  --color-term-yellow: #8f5a08;
+  --color-term-cyan: #116d85;
+  --color-term-purple: #6a4297;
 
   /* --- 方向セマンティック（国内証券標準：上げ＝赤／下げ＝緑） ---
      騰落率・評価損益・買い/売り・上昇/下降トレンドの色分けは必ずこれ経由。
@@ -41,8 +56,8 @@
   --color-gain: var(--color-term-red);
   --color-loss: var(--color-term-green);
   --color-flat: var(--color-text-muted);
-  --color-gain-bg: rgba(255, 77, 79, 0.12);
-  --color-loss-bg: rgba(0, 200, 83, 0.12);
+  --color-gain-bg: rgba(179, 36, 36, 0.12);
+  --color-loss-bg: rgba(31, 107, 58, 0.12);
 
   /* --- パイプライン状態（AI 思考トレースの DAG ノード） --- */
   --color-stage-pending: var(--color-text-muted);
@@ -71,17 +86,17 @@
   --font-size-2xl: 1.25rem;
   --font-size-3xl: 1.5rem;
 
-  /* --- 角丸（シャープ） --- */
-  --radius-sm: 2px;
-  --radius-md: 2px;
-  --radius-lg: 3px;
+  /* --- 角丸（"Organic" デザインシステムの値を踏襲） --- */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
   --radius-full: 9999px;
 
-  /* --- シャドウ（フラット。ほぼ罫線で表現） --- */
-  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.6);
-  --shadow-glow-accent: 0 0 0 1px rgba(31, 111, 235, 0.5);
+  /* --- シャドウ（インク寄りの柔らかい影。"Organic" デザインシステムを踏襲） --- */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+  --shadow-glow-accent: 0 0 0 1px rgba(198, 113, 57, 0.5);
 
   /* --- トランジション（transform / opacity のみアニメーションする方針） --- */
   --transition-fast: 80ms ease;

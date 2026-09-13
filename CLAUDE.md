@@ -62,7 +62,8 @@
 
 ## UI 規約（プロ端末デファクト）
 
-- near-black `#0a0e14` ベース + プライマリブルー `#1f6feb`。高密度・低余白。
+- 明るいクリーム色 `#f5ead8` ベース + オレンジ `#c67139`（セカンダリ: オリーブグリーン `#7a8a5e`）。高密度・低余白は維持。
+- 上げ赤／下げ緑（`--color-gain`/`--color-loss`）はブランド配色と独立したドメイン規約のため、上記のテーマ変更でも変わらない。
 - 数値は等幅相当（`font-variant-numeric: tabular-nums`）で右寄せ・カンマ区切り・小数点位置統一。
 - テーブルは `@/components/ui` の `DataTable` 経由（**生 `<table>` 禁止**、`caption` 必須）。
 - `@media` の max-width は **640 / 768 / 900 / 1280 のみ**（`__tests__/styles/breakpoints.test.ts` が強制）。
