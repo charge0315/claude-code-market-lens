@@ -147,6 +147,28 @@ class PortfolioSummary(BaseModel):
     updated_at: str
 
 
+class PortfolioSignalShadow(BaseModel):
+    """AI 売買タイミング判定の Gemini（challenger）版（🆕、比較参考用）.
+
+    Claude（公式）と同一のプロンプトを Gemini にも判定させ、`portfolio_signals` の承認・
+    却下・実約定判定には一切関与しない表示専用の比較材料として記録する
+    （`shadow_predictions` と同じ設計思想、CLAUDE.md「継続学習の教師信号は自分の実測値のみ」）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    shadow_id: str
+    signal_id: str
+    challenger_version: str
+    action: PortfolioSignalAction
+    entry: float | None = None
+    stop: float
+    target: float
+    confidence: float
+    reasoning: str
+    created_at: str
+
+
 class PortfolioSignal(BaseModel):
     """保有 1 件に対する AI 売買タイミング判定（HITL 承認キュー、PF-3〜PF-5）.
 
@@ -167,6 +189,8 @@ class PortfolioSignal(BaseModel):
     rationale: str
     status: PortfolioSignalStatus
     fill_report: str | None = None  # JSON 文字列（ReportFillRequest の内容）
+    # 🆕 Gemini（challenger）の同一判定（比較参考用、無ければ None）。
+    gemini_shadow: PortfolioSignalShadow | None = None
 
 
 class ReportFillRequest(BaseModel):

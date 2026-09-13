@@ -65,6 +65,25 @@ _STOCK_PICK_RESPONSE_SCHEMA: JsonDict = {
     "required": ["should_include", "buy_price", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
 }
 
+# `anthropic_client._PORTFOLIO_SIGNAL_TOOL_SCHEMA` と同じ項目を Gemini の responseSchema で
+# 表現する（🆕、保有銘柄の AI 売買タイミング判定を Claude と並行して challenger 判定させる）。
+_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA: JsonDict = {
+    "type": "OBJECT",
+    "properties": {
+        "action": {
+            "type": "STRING",
+            "enum": ["hold", "trim", "stop_loss", "add"],
+            "description": "hold=継続保有 / trim=一部利確 / stop_loss=損切り / add=買い増し",
+        },
+        "entry": {"type": "NUMBER", "description": "買い増し時の推奨買値（円）。action=add のときのみ使用する。"},
+        "stop_loss_price": {"type": "NUMBER", "description": "更新後の損切り価格（円）。現在値より低い値。"},
+        "take_profit_price": {"type": "NUMBER", "description": "更新後の利確目標（円）。現在値より高い値。"},
+        "confidence": {"type": "NUMBER", "description": "この判定への確信度 0-100"},
+        "reasoning": {"type": "STRING", "description": "日本語での判定根拠（2〜4文）"},
+    },
+    "required": ["action", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
+}
+
 
 class GeminiClient:
     """Gemini API の非同期シングルトンクライアント（`AnthropicClient` と同じ形）."""
@@ -151,6 +170,17 @@ class GeminiClient:
             feature="stock_pick_gemini",
             model=settings.gemini_model,
             response_schema=_STOCK_PICK_RESPONSE_SCHEMA,
+            prompt=prompt,
+        )
+
+    async def propose_portfolio_signal(
+        self, *, symbol: str, prompt: str
+    ) -> JsonDict:  # noqa: ARG002 - AnthropicClient と呼び出しシグネチャを揃える
+        """forced structured-output で保有 1 件の継続保有/一部利確/損切/買い増し判定を取得する."""
+        return await self._generate_structured(
+            feature="portfolio_signal_gemini",
+            model=settings.gemini_model,
+            response_schema=_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA,
             prompt=prompt,
         )
 

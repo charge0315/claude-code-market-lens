@@ -100,6 +100,21 @@ async def test_propose_stock_pick_parses_structured_json(client: GeminiClient, m
     assert out == payload
 
 
+async def test_propose_portfolio_signal_parses_structured_json(
+    client: GeminiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "action": "hold",
+        "stop_loss_price": 950,
+        "take_profit_price": 1150,
+        "confidence": 65,
+        "reasoning": "テスト根拠",
+    }
+    _mock_client(monkeypatch, _candidate_response(payload))
+    out = await client.propose_portfolio_signal(symbol="7203", prompt="...")
+    assert out == payload
+
+
 async def test_sends_response_schema_and_api_key(client: GeminiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_client(monkeypatch, _candidate_response({"should_include": False}))
     await client.propose_stock_pick(ticker="7203", prompt="prompt-text")

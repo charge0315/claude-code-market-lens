@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.services.data import quote_service
 from backend.services.db.portfolio_signal_db import insert_signal
+from backend.services.db.portfolio_signal_shadow_db import insert_shadow
 from backend.services.portfolio import portfolio_service as psvc
 
 
@@ -209,6 +210,32 @@ async def test_signals_list_and_filter_by_status(migrated_db: Path) -> None:
 
         filtered = await client.get("/api/portfolio/signals?status=approved")
         assert filtered.json()["data"] == []
+
+
+async def test_signals_list_includes_gemini_shadow_when_present(migrated_db: Path) -> None:
+    signal_id = await insert_signal(
+        symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    await insert_shadow(
+        signal_id=signal_id,
+        challenger_version="gemini:test",
+        action="hold",
+        stop=910.0,
+        target=1080.0,
+        confidence=55.0,
+        reasoning="Gemini側の根拠",
+    )
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/portfolio/signals")
+
+    data = res.json()["data"]
+    assert len(data) == 1
+    shadow = data[0]["gemini_shadow"]
+    assert shadow is not None
+    assert shadow["signal_id"] == signal_id
+    assert shadow["reasoning"] == "Gemini側の根拠"
 
 
 async def test_signal_approve_then_report_fill_flow(migrated_db: Path) -> None:

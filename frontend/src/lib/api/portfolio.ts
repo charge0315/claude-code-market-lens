@@ -38,6 +38,20 @@ export interface PortfolioSummary {
 export type PortfolioSignalAction = 'hold' | 'trim' | 'stop_loss' | 'add';
 export type PortfolioSignalStatus = 'proposed' | 'approved' | 'rejected' | 'executed';
 
+// 🆕 AI 売買タイミング判定の Gemini（challenger）版。比較参考用で承認フローには関与しない。
+export interface PortfolioSignalShadow {
+  shadow_id: string;
+  signal_id: string;
+  challenger_version: string;
+  action: PortfolioSignalAction;
+  entry: number | null;
+  stop: number;
+  target: number;
+  confidence: number;
+  reasoning: string;
+  created_at: string;
+}
+
 export interface PortfolioSignal {
   signal_id: string;
   symbol: string;
@@ -50,6 +64,7 @@ export interface PortfolioSignal {
   rationale: string;
   status: PortfolioSignalStatus;
   fill_report: string | null;
+  gemini_shadow: PortfolioSignalShadow | null;
 }
 
 export interface HeuristicItem {

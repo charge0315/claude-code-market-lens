@@ -166,6 +166,7 @@ export function SignalQueue(): ReactNode {
             <li key={signal.signal_id} className="signal-card">
               <div className="signal-card-header">
                 <span className="signal-card-symbol">{signal.symbol}</span>
+                <span className="signal-card-engine-badge">Claude</span>
                 <span className={`signal-card-action signal-card-action--${signal.action}`}>
                   {ACTION_LABELS[signal.action]}
                 </span>
@@ -192,6 +193,38 @@ export function SignalQueue(): ReactNode {
                   <dd>{signal.confidence.toFixed(0)}</dd>
                 </div>
               </dl>
+
+              {signal.gemini_shadow && (
+                <div className="signal-card-shadow">
+                  <div className="signal-card-header">
+                    <span className="signal-card-engine-badge signal-card-engine-badge--gemini">Gemini（比較）</span>
+                    <span className={`signal-card-action signal-card-action--${signal.gemini_shadow.action}`}>
+                      {ACTION_LABELS[signal.gemini_shadow.action]}
+                    </span>
+                  </div>
+                  <p className="signal-card-rationale">{signal.gemini_shadow.reasoning}</p>
+                  <dl className="signal-card-bracket">
+                    {signal.gemini_shadow.entry !== null && (
+                      <div>
+                        <dt>買値目安</dt>
+                        <dd>{formatYen(signal.gemini_shadow.entry)}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>損切り</dt>
+                      <dd>{formatYen(signal.gemini_shadow.stop)}</dd>
+                    </div>
+                    <div>
+                      <dt>利確目標</dt>
+                      <dd>{formatYen(signal.gemini_shadow.target)}</dd>
+                    </div>
+                    <div>
+                      <dt>確信度</dt>
+                      <dd>{signal.gemini_shadow.confidence.toFixed(0)}</dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
 
               {signal.status === 'proposed' && (
                 <div className="signal-card-actions">

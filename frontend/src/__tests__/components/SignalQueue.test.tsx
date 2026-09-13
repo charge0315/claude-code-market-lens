@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { SignalQueue } from '@/components/portfolio/SignalQueue';
 import { approveSignal, fetchSignals, rejectSignal, reportFill } from '@/lib/api/portfolio';
-import type { PortfolioSignal } from '@/lib/api/portfolio';
+import type { PortfolioSignal, PortfolioSignalShadow } from '@/lib/api/portfolio';
 
 jest.mock('@/lib/api/portfolio');
 
@@ -25,6 +25,23 @@ function makeSignal(overrides: Partial<PortfolioSignal> = {}): PortfolioSignal {
     rationale: 'RSIが70を超過し過熱感がある',
     status: 'proposed',
     fill_report: null,
+    gemini_shadow: null,
+    ...overrides,
+  };
+}
+
+function makeGeminiShadow(overrides: Partial<PortfolioSignalShadow> = {}): PortfolioSignalShadow {
+  return {
+    shadow_id: 'sh1',
+    signal_id: 's1',
+    challenger_version: 'gemini:test',
+    action: 'hold',
+    entry: null,
+    stop: 2750,
+    target: 3300,
+    confidence: 65,
+    reasoning: 'テクニカル指標は中立圏で推移',
+    created_at: '2026-06-02T10:00:00+09:00',
     ...overrides,
   };
 }
@@ -124,6 +141,25 @@ describe('SignalQueue', () => {
     render(<SignalQueue />);
 
     expect(await screen.findByText('約定報告済み')).toBeInTheDocument();
+  });
+
+  it('Gemini shadow 判定があれば Claude の判定と併記する', async () => {
+    mockFetchSignals.mockResolvedValue([makeSignal({ gemini_shadow: makeGeminiShadow() })]);
+
+    render(<SignalQueue />);
+
+    expect(await screen.findByText('Claude')).toBeInTheDocument();
+    expect(screen.getByText('Gemini（比較）')).toBeInTheDocument();
+    expect(screen.getByText('テクニカル指標は中立圏で推移')).toBeInTheDocument();
+  });
+
+  it('Gemini shadow 判定が無ければ Claude の判定のみ表示する', async () => {
+    mockFetchSignals.mockResolvedValue([makeSignal()]);
+
+    render(<SignalQueue />);
+
+    await screen.findByText('7203');
+    expect(screen.queryByText('Gemini（比較）')).not.toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {

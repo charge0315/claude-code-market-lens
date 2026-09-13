@@ -33,6 +33,7 @@ from backend.services.db.portfolio_db import (
     update_holding,
 )
 from backend.services.db.portfolio_signal_db import get_signal, list_signals, set_fill_report, set_status
+from backend.services.db.portfolio_signal_shadow_db import get_shadows_for_signals
 from backend.services.portfolio.eod_review_service import get_latest as get_latest_eod_review
 from backend.services.portfolio.eod_review_service import run_eod_review
 from backend.services.portfolio.portfolio_service import build_portfolio
@@ -179,9 +180,12 @@ async def get_sell_history() -> ApiResponse[list[SellHistoryEntry]]:
 async def get_signals(
     status: PortfolioSignalStatus | None = Query(default=None),
 ) -> ApiResponse[list[PortfolioSignal]]:
-    """判定履歴（承認キュー）を新しい順で返す."""
+    """判定履歴（承認キュー）を新しい順で返す（🆕 Gemini shadow 判定があれば併記）."""
     rows = await list_signals(status=status)
-    return ApiResponse.ok([PortfolioSignal.model_validate(r) for r in rows])
+    shadows = await get_shadows_for_signals([str(r["signal_id"]) for r in rows])
+    return ApiResponse.ok(
+        [PortfolioSignal.model_validate({**r, "gemini_shadow": shadows.get(str(r["signal_id"]))}) for r in rows]
+    )
 
 
 @router.post("/signals/run", response_model=ApiResponse[dict], summary="保有監視を手動実行")
