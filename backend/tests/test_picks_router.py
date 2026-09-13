@@ -80,6 +80,21 @@ async def test_list_mid_term_returns_envelope_with_three_values(client: AsyncCli
     assert pick["stop"] < pick["entry"] < pick["target"]
 
 
+async def test_list_mid_term_dedupes_repeated_runs_keeping_latest(client: AsyncClient) -> None:
+    """beat + 手動 run が同日に重複起動すると同一銘柄が複数台帳化されるが、一覧では最新 1 件のみ表示する."""
+    older = _entry("p1", "mid_term", "7203")
+    newer = older.model_copy(
+        update={"pick_id": "p2", "issued_at": "2026-09-11T09:30:00+09:00", "composite_score": 40.0}
+    )
+    await pl.insert_pick(older)
+    await pl.insert_pick(newer)
+
+    res = await client.get("/api/picks/mid-term")
+    body = res.json()
+    assert [p["symbol"] for p in body["data"]] == ["7203"]
+    assert body["data"][0]["pick_id"] == "p2"
+
+
 async def test_list_gemini_returns_shadow_predictions(client: AsyncClient) -> None:
 
     await insert_shadow_prediction(

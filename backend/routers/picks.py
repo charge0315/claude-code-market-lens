@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Literal, Protocol, TypeVar
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -51,6 +51,31 @@ def _f(value: object) -> float:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
+class _HasSymbol(Protocol):
+    @property
+    def symbol(self) -> str: ...
+
+
+_SymbolRow = TypeVar("_SymbolRow", bound=_HasSymbol)
+
+
+def _dedupe_by_symbol(rows: list[_SymbolRow]) -> list[_SymbolRow]:
+    """同一銘柄の重複行を、先頭（新しい順に並んでいるため最新）だけ残して落とす.
+
+    beat の定期実行と手動 `POST /api/picks/run` は冪等でないため、同日に重複起動される
+    と同一銘柄の台帳行 / shadow 判定行が複数生成されうる（`run` の docstring 参照）。
+    一覧表示ではその銘柄の最新判定だけを見せる（台帳自体からは削除しない）。
+    """
+    seen: set[str] = set()
+    out: list[_SymbolRow] = []
+    for row in rows:
+        if row.symbol in seen:
+            continue
+        seen.add(row.symbol)
+        out.append(row)
+    return out
+
+
 def _shadow_summary(row: dict[str, object]) -> ShadowPredictionSummary:
     """`shadow_predictions` の生行（🆕 P12）を表示用の `ShadowPredictionSummary` へ変換する."""
     payload = row["payload"] if isinstance(row["payload"], dict) else {}
@@ -80,7 +105,7 @@ async def list_mid_term(
     """中長期ピックを確度・合成スコア順で返す（3 値・根拠・確度バケット付き）."""
     lo, hi = _date_bounds(date)
     rows = await pl.list_picks(horizon_type="mid_term", issued_from=lo, issued_to=hi, bucket=bucket, limit=limit)
-    return ApiResponse.ok(rows)
+    return ApiResponse.ok(_dedupe_by_symbol(rows))
 
 
 @router.get("/short-term", response_model=ApiResponse[list[PickSummary]], summary="短期（デイトレ）ピック一覧")
@@ -92,7 +117,7 @@ async def list_short_term(
     """短期ピックを確度・合成スコア順で返す."""
     lo, hi = _date_bounds(date)
     rows = await pl.list_picks(horizon_type="short_term", issued_from=lo, issued_to=hi, bucket=bucket, limit=limit)
-    return ApiResponse.ok(rows)
+    return ApiResponse.ok(_dedupe_by_symbol(rows))
 
 
 @router.get("/gemini", response_model=ApiResponse[list[GeminiPickSummary]], summary="Gemini判定によるピック一覧")
@@ -104,7 +129,7 @@ async def list_gemini(
     """Gemini（challenger LLM）の判定を新しい順で返す（公式パイプラインとは別の比較表示用）."""
     lo, hi = _date_bounds(date)
     rows = await list_gemini_picks(horizon_type=horizon_type, issued_from=lo, issued_to=hi, limit=limit)
-    return ApiResponse.ok(rows)
+    return ApiResponse.ok(_dedupe_by_symbol(rows))
 
 
 @router.post("/run", response_model=ApiResponse[PickRunResult], summary="ピックを手動実行")
