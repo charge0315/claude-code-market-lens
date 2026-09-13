@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { PipelineTraceViewer } from '@/components/pipeline/PipelineTraceViewer';
 import { PickedTickersList } from '@/components/stock-detail/PickedTickersList';
+import { StockDetailSearchBox } from '@/components/stock-detail/StockDetailSearchBox';
 import { StockOverview } from '@/components/stock-detail/StockOverview';
 
 export default async function StockDetailPage({
@@ -15,6 +16,13 @@ export default async function StockDetailPage({
   return (
     <PageShell title="銘柄詳細" phase="P8">
       <p>ピック銘柄一覧 + チャート（期間切替）+ 4 分析内訳 + AI 思考トレース（ライブ / リプレイ）。</p>
+
+      <section aria-labelledby="stock-search-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="stock-search-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          銘柄検索
+        </h2>
+        <StockDetailSearchBox />
+      </section>
 
       <section aria-labelledby="tickers-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
         <h2 id="tickers-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>

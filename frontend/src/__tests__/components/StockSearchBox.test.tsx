@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
-import { StockSearchBox } from '@/components/portfolio/StockSearchBox';
+import { StockSearchBox } from '@/components/ui/StockSearchBox';
 import { searchStocks } from '@/lib/api/stock';
 
 jest.mock('@/lib/api/stock');

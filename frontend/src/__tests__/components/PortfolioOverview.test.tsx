@@ -1,17 +1,25 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { PortfolioOverview } from '@/components/portfolio/PortfolioOverview';
 import { fetchPortfolio, fetchSellHistory } from '@/lib/api/portfolio';
 import type { PortfolioSummary } from '@/lib/api/portfolio';
+import { fetchGeminiPicks, fetchPicks } from '@/lib/api/picks';
+import type { PickSummary } from '@/lib/api/picks';
 
 jest.mock('@/lib/api/portfolio');
 jest.mock('@/lib/api/stock');
+jest.mock('@/lib/api/picks');
 
 const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
 const mockFetchSellHistory = fetchSellHistory as jest.MockedFunction<typeof fetchSellHistory>;
+const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
+const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
 
 beforeEach(() => {
   mockFetchSellHistory.mockResolvedValue([]);
+  mockFetchPicks.mockResolvedValue([]);
+  mockFetchGeminiPicks.mockResolvedValue([]);
 });
 
 const SUMMARY: PortfolioSummary = {
@@ -62,6 +70,40 @@ describe('PortfolioOverview', () => {
     render(<PortfolioOverview />);
 
     expect(await screen.findByText('ポートフォリオの取得に失敗しました')).toBeInTheDocument();
+  });
+
+  it('AIピックから選択すると推奨買値を取得単価の初期値にしたポップアップを開く', async () => {
+    mockFetchPortfolio.mockResolvedValue(SUMMARY);
+    const aiPick: PickSummary = {
+      pick_id: 'p1',
+      issued_at: '2026-09-13T08:50:00+09:00',
+      horizon_type: 'mid_term',
+      symbol: '9256',
+      company_name: 'サクシード',
+      direction: 'bullish',
+      entry: 975,
+      stop: 800,
+      target: 1250,
+      composite_score: 80,
+      concordance: 1,
+      confidence: 72,
+      confidence_bucket: 'high',
+      rationale_text: 'x',
+      model_version: 'v1',
+      source_contributions: {},
+      current_price: null,
+      change_pct: null,
+      spark: [],
+      reasoning_tags: [],
+    };
+    mockFetchPicks.mockImplementation((horizonType) => Promise.resolve(horizonType === 'mid_term' ? [aiPick] : []));
+    const user = userEvent.setup();
+
+    render(<PortfolioOverview />);
+    await user.click(await screen.findByRole('button', { name: /9256（サクシード）/ }));
+
+    expect(await screen.findByText('ポートフォリオに追加: 9256（サクシード）')).toBeInTheDocument();
+    expect(screen.getByLabelText('取得単価（円）')).toHaveValue(975);
   });
 
   it('アクセシビリティ違反がない', async () => {

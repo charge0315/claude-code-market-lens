@@ -2,17 +2,23 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { deleteHolding, fetchPortfolio, type PortfolioHolding, type PortfolioSummary } from '@/lib/api/portfolio';
-import type { TickerInfo } from '@/lib/api/stock';
+import { StockSearchBox } from '@/components/ui/StockSearchBox';
 import { AddHoldingModal } from './AddHoldingModal';
+import { AiPickSelector, type AiPickOption } from './AiPickSelector';
 import { HoldingsTable } from './HoldingsTable';
 import { SellHistoryTable } from './SellHistoryTable';
 import { SellHoldingModal } from './SellHoldingModal';
-import { StockSearchBox } from './StockSearchBox';
 import './portfolio.css';
 
 // 🆕 P26: 保有一覧に、銘柄検索からの追加・売却・削除・売却履歴を追加した。
-// AIピックからの追加は `AddHoldingModal` を共用し、PicksBoard/GeminiPicksBoard から
-// symbol・推奨買値を渡して開く（ダッシュボード側の実装を参照）。
+// 🆕 ポートフォリオ画面自体からも本日の AI ピック（Claude/Gemini）を選んで追加できるようにした
+// （ダッシュボードの PicksBoard/GeminiPicksBoard の「ポートフォリオに追加」とは別経路、ユーザー指示）。
+
+interface AddTarget {
+  symbol: string;
+  companyName: string | null;
+  suggestedPrice?: number | null;
+}
 
 function formatYen(value: number): string {
   return `¥${Math.round(value).toLocaleString('ja-JP')}`;
@@ -26,7 +32,7 @@ function directionColor(value: number): string {
 export function PortfolioOverview(): ReactNode {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [addTarget, setAddTarget] = useState<TickerInfo | null>(null);
+  const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
   const [sellTarget, setSellTarget] = useState<PortfolioHolding | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
 
@@ -53,7 +59,12 @@ export function PortfolioOverview(): ReactNode {
 
   return (
     <div>
-      <StockSearchBox onSelect={(ticker) => setAddTarget(ticker)} />
+      <StockSearchBox onSelect={(ticker) => setAddTarget({ symbol: ticker.code, companyName: ticker.name })} />
+      <AiPickSelector
+        onSelect={(option: AiPickOption) =>
+          setAddTarget({ symbol: option.symbol, companyName: option.companyName, suggestedPrice: option.entry })
+        }
+      />
 
       <dl className="signal-card-bracket" style={{ margin: 'var(--spacing-lg) 0' }}>
         <div>
@@ -79,8 +90,9 @@ export function PortfolioOverview(): ReactNode {
 
       {addTarget && (
         <AddHoldingModal
-          symbol={addTarget.code}
-          companyName={addTarget.name}
+          symbol={addTarget.symbol}
+          companyName={addTarget.companyName}
+          suggestedPrice={addTarget.suggestedPrice}
           onClose={() => setAddTarget(null)}
           onAdded={load}
         />

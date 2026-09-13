@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { searchStocks, type TickerInfo } from '@/lib/api/stock';
-import './portfolio.css';
+import './stocksearchbox.css';
 
 const DEBOUNCE_MS = 300;
 
-// 証券コード/銘柄名で検索し、選択した銘柄をポートフォリオへ追加できるようにする（🆕 P26）。
+// 証券コード/銘柄名で検索する共用コンポーネント（🆕 P26、当初はポートフォリオ専用だったが
+// 銘柄詳細画面でも使うため `ui/` へ移動）。選択後の挙動は呼び出し元が `onSelect` で決める
+// （ポートフォリオへの追加ポップアップを開く／銘柄詳細ページへ遷移する、等）。
 
 export function StockSearchBox({ onSelect }: { onSelect: (ticker: TickerInfo) => void }): ReactNode {
   const [query, setQuery] = useState('');
@@ -54,7 +56,7 @@ export function StockSearchBox({ onSelect }: { onSelect: (ticker: TickerInfo) =>
         onFocus={() => results.length > 0 && setOpen(true)}
         aria-label="銘柄検索"
       />
-      {error && <p className="signal-queue-error">{error}</p>}
+      {error && <p className="stock-search-error">{error}</p>}
       {open && results.length > 0 && (
         <ul className="stock-search-results">
           {results.map((t) => (
@@ -67,7 +69,7 @@ export function StockSearchBox({ onSelect }: { onSelect: (ticker: TickerInfo) =>
           ))}
         </ul>
       )}
-      {open && results.length === 0 && query.trim() && <p className="signal-queue-empty">該当する銘柄がありません</p>}
+      {open && results.length === 0 && query.trim() && <p className="stock-search-empty">該当する銘柄がありません</p>}
     </div>
   );
 }
