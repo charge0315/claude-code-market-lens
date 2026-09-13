@@ -1,0 +1,120 @@
+/* ============================================
+   設定画面（🆕 P20、外部 API キー管理）
+   ============================================ */
+
+.api-keys-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.api-keys-restart-notice {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background: var(--color-accent-dim);
+  border: 1px solid var(--color-border-active);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+}
+
+.api-keys-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.api-keys-row {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.api-keys-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.api-keys-label {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.api-keys-tag {
+  display: inline-block;
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-full);
+  padding: 2px var(--spacing-sm);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.api-keys-tag-ok {
+  color: var(--color-accent-bright);
+  background: var(--color-accent-dim);
+}
+
+.api-keys-tag-empty {
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+.api-keys-row-form {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.api-keys-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+}
+
+.api-keys-panel button {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.api-keys-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.api-keys-reveal-btn {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+@media (max-width: 640px) {
+  .api-keys-row-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

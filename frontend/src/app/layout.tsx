@@ -16,6 +16,7 @@ const NAV = [
   { href: '/portfolio', label: 'ポートフォリオ' },
   { href: '/model-lab', label: 'モデルラボ' },
   { href: '/notifications', label: '通知センター' },
+  { href: '/settings', label: '設定' },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactNode {

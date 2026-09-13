@@ -120,6 +120,8 @@ celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める
 
 必須変数（`ML_SECRET_KEY`, `ML_PASSWORD_HASH`）はどちらか欠けると `backend/config.py` の `Settings()` が起動時に例外を投げる（フェイルファスト設計、Market Lens 踏襲）。ローカル動作確認だけであれば任意のダミー値（32文字以上の `ML_SECRET_KEY` と bcrypt 形式の `ML_PASSWORD_HASH`）で起動できる。
 
+**外部 API キー（`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`JQUANTS_API_KEY`）は `/settings` 画面からも編集できる**（🆕 P20）。画面からの保存は `.env` への永続化のみで、`Settings` は起動時に一度だけ読み込む frozen オブジェクトのため**実行中の backend / celery worker・beat には反映されない**。値を変えたら該当プロセスを再起動すること。設定画面は §6 の認証機構と同じ前提（無認証・単一ユーザー・デスクトップ常駐）を引き継ぐため、同一 LAN 上の他端末からもキーを書き換えられる状態である点に留意する。
+
 ---
 
 ## 3. 監視・ヘルスチェック
