@@ -109,26 +109,6 @@ export function TrainingTriggerPanel(): ReactNode {
   const [startErrors, setStartErrors] = useState<Partial<Record<TrainingModelType, string>>>({});
   const timers = useRef<Partial<Record<TrainingModelType, ReturnType<typeof setTimeout>>>>({});
 
-  useEffect(() => {
-    const activeTimers = timers.current;
-    fetchModelCoverage()
-      .then(setCoverage)
-      .catch(() => {
-        /* カバレッジ表示は補助情報のため、取得失敗時は静かに空のまま表示する */
-      });
-    const coverageInterval = setInterval(() => {
-      fetchModelCoverage()
-        .then(setCoverage)
-        .catch(() => undefined);
-    }, COVERAGE_REFRESH_MS);
-    return () => {
-      clearInterval(coverageInterval);
-      Object.values(activeTimers).forEach((id) => {
-        if (id) clearTimeout(id);
-      });
-    };
-  }, []);
-
   const poll = (modelType: TrainingModelType): void => {
     fetchTrainingStatus(modelType)
       .then((status) => {
@@ -145,6 +125,42 @@ export function TrainingTriggerPanel(): ReactNode {
         setStartErrors((prev) => ({ ...prev, [modelType]: '進捗の取得に失敗しました' }));
       });
   };
+
+  useEffect(() => {
+    const activeTimers = timers.current;
+    fetchModelCoverage()
+      .then(setCoverage)
+      .catch(() => {
+        /* カバレッジ表示は補助情報のため、取得失敗時は静かに空のまま表示する */
+      });
+    const coverageInterval = setInterval(() => {
+      fetchModelCoverage()
+        .then(setCoverage)
+        .catch(() => undefined);
+    }, COVERAGE_REFRESH_MS);
+
+    // 🔧 学習バッチはサーバ側の asyncio タスクとして実行中の状態を継続する
+    // （`POST /registry/training/run` 参照）ため、他画面へ移動して戻ってきても実際には
+    // 止まっていない。しかしこのコンポーネントの `statuses` は毎回空の状態から始まるため、
+    // マウント時に各モデルの実行状態を確認し、実行中なら表示・ポーリングを復元する
+    // （さもないと「学習が停止した」ように見えてしまう）。
+    MODEL_TYPES.forEach(({ value }) => {
+      fetchTrainingStatus(value)
+        .then((status) => {
+          setStatuses((prev) => ({ ...prev, [value]: status }));
+          if (status.running) poll(value);
+        })
+        .catch(() => undefined);
+    });
+
+    return () => {
+      clearInterval(coverageInterval);
+      Object.values(activeTimers).forEach((id) => {
+        if (id) clearTimeout(id);
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- マウント時に一度だけ実行状態を復元する意図的な設計
+  }, []);
 
   const handleRun = (modelType: TrainingModelType): void => {
     setStartErrors((prev) => ({ ...prev, [modelType]: undefined }));

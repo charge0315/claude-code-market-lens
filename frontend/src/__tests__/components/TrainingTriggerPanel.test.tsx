@@ -35,6 +35,17 @@ const IDLE_STATUS: TrainingStatus = {
   progress: null,
 };
 
+// マウント時に各モデルの実行状態を確認する（🔧 他画面から戻っても実行中表示が復元される
+// ように変更）ため、既定では「一度も実行していない」状態を返す。実行履歴がある前提の
+// テストは個別に IDLE_STATUS 等へ上書きする。
+const NOT_RUN_STATUS: TrainingStatus = {
+  model_type: 'xgboost',
+  running: false,
+  attempted_today: 0,
+  last_result: null,
+  progress: null,
+};
+
 const COVERAGE: ModelCoverage[] = (['xgboost', 'random_forest', 'lstm', 'transformer'] as TrainingModelType[]).map(
   (model_type) => ({
     model_type,
@@ -60,6 +71,7 @@ function startButtonFor(modelLabel: string): HTMLElement {
 describe('TrainingTriggerPanel', () => {
   beforeEach(() => {
     mockCoverage.mockResolvedValue(COVERAGE);
+    mockStatus.mockResolvedValue(NOT_RUN_STATUS);
   });
 
   afterEach(() => {
@@ -135,6 +147,32 @@ describe('TrainingTriggerPanel', () => {
     expect(screen.getByText('1時間30分')).toBeInTheDocument();
     expect(screen.getByText('1件')).toBeInTheDocument();
     expect(screen.getByText(/実行中 1\/4 モデル/)).toBeInTheDocument();
+  });
+
+  it('マウント時に実行中のバッチがあれば表示・ポーリングを復元する（他画面から戻ってきた場合）', async () => {
+    mockStatus.mockImplementation(async (modelType) => ({
+      model_type: modelType,
+      running: modelType === 'xgboost',
+      attempted_today: 100,
+      last_result: null,
+      progress:
+        modelType === 'xgboost'
+          ? {
+              current_ticker: '7203',
+              processed: 10,
+              total: 40,
+              failed_this_run: 0,
+              eta_seconds: 60,
+              promotion_rate_pct: null,
+            }
+          : null,
+    }));
+
+    render(<TrainingTriggerPanel />);
+
+    expect(await screen.findByText('7203')).toBeInTheDocument();
+    expect(screen.getByText(/実行中 1\/4 モデル/)).toBeInTheDocument();
+    expect(startButtonFor('XGBoost')).toBeDisabled();
   });
 
   it('学習結果がエラーを含む場合は実行ログにエラーを表示する', async () => {
