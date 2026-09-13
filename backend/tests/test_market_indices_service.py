@@ -15,7 +15,8 @@ def _hist(closes: list[float]) -> pd.DataFrame:
 async def test_returns_quote_for_each_resolvable_index(monkeypatch: pytest.MonkeyPatch) -> None:
     table = {
         "^N225": _hist([42_000.0, 42_300.0]),
-        "^TPX": _hist([2_970.0, 2_985.0]),
+        "1306.T": _hist([297.0, 298.5]),
+        "^DJI": _hist([38_000.0, 38_200.0]),
         "^GSPC": pd.DataFrame(),  # 取得失敗（空データ）
         "JPY=X": _hist([150.0, 151.5]),
         "^VIX": _hist([22.0, 21.0]),
@@ -28,13 +29,14 @@ async def test_returns_quote_for_each_resolvable_index(monkeypatch: pytest.Monke
 
     result = await svc.get_market_snapshot()
     labels = {r.label for r in result}
-    assert labels == {"日経平均株価", "TOPIX", "USD/JPY", "日経VI"}
+    assert labels == {"日経平均株価", "TOPIX", "NYダウ", "USD/JPY", "日経VI"}
     assert "S&P 500" not in labels  # 取得失敗した指数はフェイルソフトで除外
 
     n225 = next(r for r in result if r.label == "日経平均株価")
     assert n225.value == 42_300.0
     assert n225.change == pytest.approx(300.0)
     assert n225.change_pct == pytest.approx(300.0 / 42_000.0 * 100.0)
+    assert n225.spark == [42_000.0, 42_300.0]
 
 
 async def test_single_bar_index_is_excluded(monkeypatch: pytest.MonkeyPatch) -> None:

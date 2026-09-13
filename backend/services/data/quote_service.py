@@ -23,18 +23,31 @@ async def fetch_quote(symbol: str) -> tuple[float | None, float | None]:
     -------
     tuple of (current_price, prev_close)。取得失敗時は (None, None)（フェイルソフト）。
     """
+    current, prev, _spark = await fetch_quote_with_spark(symbol)
+    return current, prev
+
+
+async def fetch_quote_with_spark(symbol: str, period: str = "1mo") -> tuple[float | None, float | None, list[float]]:
+    """現在値・前日終値に加え、簡易スパークライン用の直近終値系列も返す（🆕 P23）.
+
+    `fetch_quote` と同じ1回の取得から系列も切り出すため、追加の通信は発生しない。
+
+    Returns
+    -------
+    tuple of (current_price, prev_close, spark)。取得失敗時は (None, None, [])（フェイルソフト）。
+    """
     try:
-        hist = await asyncio.to_thread(fetch_stock_data, symbol, period="5d", interval="1d")
+        hist = await asyncio.to_thread(fetch_stock_data, symbol, period=period, interval="1d")
     except Exception:  # noqa: BLE001 — 表示専用のライブ値取得。失敗しても呼び出し元は継続する
         logger.warning("現在値の取得に失敗しました（%s）", symbol, exc_info=True)
-        return None, None
+        return None, None, []
 
     if hist.empty or "Close" not in hist.columns:
-        return None, None
+        return None, None, []
     closes = hist["Close"].dropna()
     current = float(closes.iloc[-1]) if len(closes) >= 1 else None
     prev = float(closes.iloc[-2]) if len(closes) >= 2 else None
-    return current, prev
+    return current, prev, closes.tolist()
 
 
 def compute_change_pct(current: float | None, prev: float | None) -> float | None:

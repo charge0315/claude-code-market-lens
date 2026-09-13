@@ -80,8 +80,40 @@ class PickSummary(BaseModel):
     # 取得できない場合は None（フェイルソフト、ダッシュボード全体は壊さない）。
     current_price: float | None = None
     change_pct: float | None = None
+    # 🆕 P23: 簡易スパークライン用の直近終値系列（表示専用、DB非永続）。
+    spark: list[float] = []
     # rationale_struct.recommender_reasoning の先頭2件（一覧行のタグ表示用）。
     reasoning_tags: list[str] = []
+
+
+class GeminiPickSummary(BaseModel):
+    """Gemini（challenger LLM）判定の一覧表示用行（🆕 P25）.
+
+    `shadow_predictions` を `prediction_ledger`（Claude/Anthropic の公式ピック）とは別に、
+    単独の一覧として表示するための型。`pick_id` は同じ候補を判定した公式ピックへの
+    参照であり、あくまで比較表示用（昇格・確度較正には一切関与しない、CLAUDE.md）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    shadow_id: str
+    pick_id: str | None = None
+    challenger_version: str
+    issued_at: str
+    horizon_type: HorizonType
+    symbol: str
+    company_name: str | None = None
+    direction: Direction
+    entry: float
+    stop: float
+    target: float
+    confidence: float
+    reasoning: str | None = None
+    risk_factors: list[str] = []
+    holding_period_days: int | None = None
+    current_price: float | None = None
+    change_pct: float | None = None
+    spark: list[float] = []
 
 
 class ShadowPredictionSummary(BaseModel):

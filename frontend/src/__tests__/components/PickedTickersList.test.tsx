@@ -28,6 +28,7 @@ function pick(overrides: Partial<PickSummary>): PickSummary {
     source_contributions: {},
     current_price: null,
     change_pct: null,
+    spark: [],
     reasoning_tags: [],
     ...overrides,
   };

@@ -9,6 +9,8 @@ export interface IndexQuote {
   value: number;
   change: number;
   change_pct: number;
+  // 🆕 P23: 直近の終値系列（簡易スパークライン表示用）。
+  spark: number[];
 }
 
 export interface MarketSnapshot {

@@ -10,8 +10,8 @@ const mockFetchSnapshot = fetchMarketSnapshot as jest.MockedFunction<typeof fetc
 
 const SNAPSHOT: MarketSnapshot = {
   indices: [
-    { label: '日経平均株価', value: 42_318.75, change: 386.2, change_pct: 0.92 },
-    { label: 'グロース250', value: 742.18, change: -4.36, change_pct: -0.58 },
+    { label: '日経平均株価', value: 42_318.75, change: 386.2, change_pct: 0.92, spark: [41_900.0, 42_318.75] },
+    { label: 'グロース250', value: 742.18, change: -4.36, change_pct: -0.58, spark: [746.5, 742.18] },
   ],
   market_status: 'ザラ場中',
   updated_at: '2026-09-12T14:32:00+09:00',

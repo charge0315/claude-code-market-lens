@@ -22,6 +22,8 @@ class IndexQuote(BaseModel):
     value: float
     change: float
     change_pct: float
+    # 🆕 P23: 直近の終値系列（簡易スパークライン表示用、表示専用・DB非永続）。
+    spark: list[float] = []
 
 
 class MarketSnapshot(BaseModel):

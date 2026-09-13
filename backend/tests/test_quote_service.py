@@ -37,3 +37,22 @@ async def test_fetch_failure_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(quote_service, "fetch_stock_data", _raise)
     assert await quote_service.fetch_quote("7203") == (None, None)
+
+
+async def test_fetch_quote_with_spark_returns_full_series(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(quote_service, "fetch_stock_data", lambda *_a, **_kw: _hist([1000.0, 1050.0, 1100.0]))
+    current, prev, spark = await quote_service.fetch_quote_with_spark("7203")
+    assert current == 1100.0
+    assert prev == 1050.0
+    assert spark == [1000.0, 1050.0, 1100.0]
+
+
+async def test_fetch_quote_with_spark_empty_history_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(quote_service, "fetch_stock_data", lambda *_a, **_kw: pd.DataFrame())
+    assert await quote_service.fetch_quote_with_spark("7203") == (None, None, [])
+
+
+async def test_fetch_quote_delegates_to_fetch_quote_with_spark(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(quote_service, "fetch_stock_data", lambda *_a, **_kw: _hist([1050.0, 1100.0, 1150.0]))
+    # fetch_quote は spark を捨てて (current, prev) だけ返す薄いラッパであることを確認する。
+    assert await quote_service.fetch_quote("7203") == (1150.0, 1100.0)

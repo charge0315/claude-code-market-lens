@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { Sparkline } from '@/components/ui/Sparkline';
 import { fetchMarketSnapshot, type MarketSnapshot } from '@/lib/api/market';
 import './dashboard.css';
 
@@ -40,13 +41,16 @@ export function MarketTickerBar(): ReactNode {
       <div className="market-ticker-tiles">
         {snapshot.indices.map((idx) => (
           <div key={idx.label} className="market-ticker-tile">
-            <span className="market-ticker-label">{idx.label}</span>
-            <span className="market-ticker-value">
-              {idx.value.toLocaleString('ja-JP', { maximumFractionDigits: 2 })}
-            </span>
-            <span className="market-ticker-change" style={{ color: changeColor(idx.change) }}>
-              {formatSigned(idx.change, 2)}（{formatSigned(idx.change_pct, 2)}%）
-            </span>
+            <div className="market-ticker-tile-text">
+              <span className="market-ticker-label">{idx.label}</span>
+              <span className="market-ticker-value">
+                {idx.value.toLocaleString('ja-JP', { maximumFractionDigits: 2 })}
+              </span>
+              <span className="market-ticker-change" style={{ color: changeColor(idx.change) }}>
+                {formatSigned(idx.change, 2)}（{formatSigned(idx.change_pct, 2)}%）
+              </span>
+            </div>
+            <Sparkline values={idx.spark} color={changeColor(idx.change)} />
           </div>
         ))}
       </div>

@@ -15,10 +15,10 @@ from backend.services.ledger import prediction_ledger as pl
 def _no_live_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
     """🆕 P13: `list_picks` の現在値取得（ライブ、yfinance）を決定的にする（既定は取得失敗扱い）."""
 
-    async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None]:
-        return None, None
+    async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None, list[float]]:
+        return None, None, []
 
-    monkeypatch.setattr(pl, "fetch_quote", fake_fetch_quote)
+    monkeypatch.setattr(pl, "fetch_quote_with_spark", fake_fetch_quote)
 
 
 def _entry(pick_id: str, *, horizon: str = "mid_term", symbol: str = "7203", confidence: float = 72.0) -> LedgerEntry:
@@ -104,10 +104,10 @@ async def test_list_picks_enriches_live_quote_and_reasoning_tags(
 ) -> None:
     """🆕 P13: 現在値/前日比はライブ値（銘柄ごとに de-dup 取得）、タグは recommender_reasoning 由来."""
 
-    async def fake_fetch_quote(symbol: str) -> tuple[float | None, float | None]:
-        return {"7203": (1020.0, 1000.0), "9999": (None, None)}[symbol]
+    async def fake_fetch_quote(symbol: str) -> tuple[float | None, float | None, list[float]]:
+        return {"7203": (1020.0, 1000.0, [1000.0, 1010.0, 1020.0]), "9999": (None, None, [])}[symbol]
 
-    monkeypatch.setattr(pl, "fetch_quote", fake_fetch_quote)
+    monkeypatch.setattr(pl, "fetch_quote_with_spark", fake_fetch_quote)
 
     tags = ["RSI 売られすぎ", "25日線ゴールデンクロス", "出来高急増"]
     entry = _entry("p1", symbol="7203").model_copy(update={"rationale_struct": {"recommender_reasoning": tags}})
@@ -117,9 +117,11 @@ async def test_list_picks_enriches_live_quote_and_reasoning_tags(
 
     assert picks["7203"].current_price == 1020.0
     assert picks["7203"].change_pct == pytest.approx(2.0)
+    assert picks["7203"].spark == [1000.0, 1010.0, 1020.0]
     assert picks["7203"].reasoning_tags == ["RSI 売られすぎ", "25日線ゴールデンクロス"]
 
     assert picks["9999"].current_price is None
     assert picks["9999"].change_pct is None
+    assert picks["9999"].spark == []
     # _entry の既定 rationale_struct は "drivers" キーのため recommender_reasoning が無くタグ無し。
     assert picks["9999"].reasoning_tags == []

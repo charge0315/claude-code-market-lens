@@ -11,7 +11,9 @@ from backend.routers import market as market_router_module
 
 async def test_get_snapshot_returns_indices_and_status(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_snapshot() -> list[IndexQuote]:
-        return [IndexQuote(label="日経平均株価", value=42_300.0, change=300.0, change_pct=0.71)]
+        return [
+            IndexQuote(label="日経平均株価", value=42_300.0, change=300.0, change_pct=0.71, spark=[42_000.0, 42_300.0])
+        ]
 
     monkeypatch.setattr(market_router_module, "get_market_snapshot", fake_snapshot)
     monkeypatch.setattr(market_router_module, "market_status_label", lambda: "ザラ場中")
@@ -25,7 +27,7 @@ async def test_get_snapshot_returns_indices_and_status(monkeypatch: pytest.Monke
     assert body["success"] is True
     assert body["data"]["market_status"] == "ザラ場中"
     assert body["data"]["indices"] == [
-        {"label": "日経平均株価", "value": 42_300.0, "change": 300.0, "change_pct": 0.71}
+        {"label": "日経平均株価", "value": 42_300.0, "change": 300.0, "change_pct": 0.71, "spark": [42_000.0, 42_300.0]}
     ]
     assert "updated_at" in body["data"]
 

@@ -2,8 +2,10 @@
 
 `fetch_macro_symbol_data`（yfinance、TTL キャッシュ付き、`macro_features.py` と同じ関数）で
 主要指数を並列取得する。日経VI は yfinance 制約で CBOE VIX（`^VIX`）を代替使用（CLAUDE.md /
-`macro_features.py` と同じ踏襲）。個々の指数が取得できない場合は結果から除外し（フェイル
-ソフト）、一部欠けても残りの指数だけで画面を成立させる（全指数が必ず揃う前提を置かない）。
+`macro_features.py` と同じ踏襲）。TOPIX も同じ制約（`^TPX`/`^TOPX` とも yfinance 未提供）
+のため、連動ETF「NEXT FUNDS TOPIX連動型上場投信」（`1306.T`）の価格変動率を代替使用する
+（🔧 P21）。個々の指数が取得できない場合は結果から除外し（フェイルソフト）、一部欠けても
+残りの指数だけで画面を成立させる（全指数が必ず揃う前提を置かない）。
 """
 
 from __future__ import annotations
@@ -16,11 +18,13 @@ from backend.services.data.data_fetcher import fetch_macro_symbol_data
 
 logger = logging.getLogger(__name__)
 
-# (yfinance シンボル, 表示ラベル)。TOPIX/グロース250/S&P500 は Alpha Forge 初導入のため、
+# (yfinance シンボル, 表示ラベル)。TOPIX/グロース250/S&P500/NYダウ は Alpha Forge 初導入のため、
 # 実運用で解決できない場合は自動的にスキップされる（フェイルソフト、固定登録のみ）。
+# TOPIX は `1306.T`（連動ETF）の変動率で代替。
 _INDEX_SYMBOLS: tuple[tuple[str, str], ...] = (
     ("^N225", "日経平均株価"),
-    ("^TPX", "TOPIX"),
+    ("1306.T", "TOPIX"),
+    ("^DJI", "NYダウ"),
     ("^GSPC", "S&P 500"),
     ("JPY=X", "USD/JPY"),
     ("^VIX", "日経VI"),
@@ -29,7 +33,9 @@ _INDEX_SYMBOLS: tuple[tuple[str, str], ...] = (
 
 async def _fetch_one(symbol: str, label: str) -> IndexQuote | None:
     try:
-        hist = await asyncio.to_thread(fetch_macro_symbol_data, symbol, "5d", "1d")
+        # "1mo" にすることで、追加の通信なしに簡易スパークライン用の系列も一緒に取れる
+        # （🆕 P23。current/prev の意味は従来どおり末尾2件）。
+        hist = await asyncio.to_thread(fetch_macro_symbol_data, symbol, "1mo", "1d")
     except Exception:  # noqa: BLE001 — 1 指数の失敗で他指数まで巻き込まない
         logger.warning("指数データの取得に失敗しました（%s）", symbol, exc_info=True)
         return None
@@ -43,7 +49,7 @@ async def _fetch_one(symbol: str, label: str) -> IndexQuote | None:
     prev = float(closes.iloc[-2])
     change = current - prev
     change_pct = (change / prev * 100.0) if prev != 0 else 0.0
-    return IndexQuote(label=label, value=current, change=change, change_pct=change_pct)
+    return IndexQuote(label=label, value=current, change=change, change_pct=change_pct, spark=closes.tolist())
 
 
 async def get_market_snapshot() -> list[IndexQuote]:

@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from backend.models.pick import ConfidenceBucket, LedgerEntry, PickSummary
 from backend.services.data.data_fetcher import _get_ticker_master
-from backend.services.data.quote_service import compute_change_pct, fetch_quote
+from backend.services.data.quote_service import compute_change_pct, fetch_quote_with_spark
 from backend.services.db.database import get_db
 
 # 確度バケットの境界（較正後 confidence 0〜100）。
@@ -123,6 +123,7 @@ def _row_to_summary(
     company_name: str | None = None,
     current_price: float | None = None,
     change_pct: float | None = None,
+    spark: list[float] | None = None,
 ) -> PickSummary:
     return PickSummary(
         pick_id=str(row["pick_id"]),
@@ -143,6 +144,7 @@ def _row_to_summary(
         source_contributions=json.loads(str(row["source_contributions"] or "{}")),
         current_price=current_price,
         change_pct=change_pct,
+        spark=spark or [],
         reasoning_tags=_reasoning_tags(row),
     )
 
@@ -188,18 +190,20 @@ async def list_picks(
     name_by_code = {t.code: t.name for t in await _get_ticker_master()}
 
     # 🆕 P13: 現在値/前日比はライブ値（DB非永続）。銘柄ごとに重複取得しないよう de-dup する。
+    # 🆕 P23: 同じ取得から簡易スパークライン用の系列も併せて受け取る（追加の通信は発生しない）。
     symbols = {str(row["symbol"]) for row in rows}
-    quotes = dict(zip(symbols, await asyncio.gather(*[fetch_quote(s) for s in symbols]), strict=True))
+    quotes = dict(zip(symbols, await asyncio.gather(*[fetch_quote_with_spark(s) for s in symbols]), strict=True))
 
     summaries: list[PickSummary] = []
     for row in rows:
-        current, prev = quotes[str(row["symbol"])]
+        current, prev, spark = quotes[str(row["symbol"])]
         summaries.append(
             _row_to_summary(
                 row,
                 company_name=name_by_code.get(str(row["symbol"])),
                 current_price=current,
                 change_pct=compute_change_pct(current, prev),
+                spark=spark,
             )
         )
     return summaries

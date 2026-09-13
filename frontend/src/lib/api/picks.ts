@@ -26,6 +26,8 @@ export interface PickSummary {
   // 🆕 P13: 表示専用のライブ値（取得できなければ null）。
   current_price: number | null;
   change_pct: number | null;
+  // 🆕 P23: 直近の終値系列（簡易スパークライン表示用）。
+  spark: number[];
   reasoning_tags: string[];
 }
 
@@ -115,4 +117,37 @@ export interface PickDetail {
 
 export function fetchPickDetail(pickId: string): Promise<PickDetail> {
   return api.get<PickDetail>(`/picks/${encodeURIComponent(pickId)}`);
+}
+
+// 🆕 P25: Gemini（challenger LLM）判定を Claude（公式パイプライン）とは別の一覧として表示する。
+export interface GeminiPickSummary {
+  shadow_id: string;
+  pick_id: string | null;
+  challenger_version: string;
+  issued_at: string;
+  horizon_type: HorizonType;
+  symbol: string;
+  company_name: string | null;
+  direction: Direction;
+  entry: number;
+  stop: number;
+  target: number;
+  confidence: number;
+  reasoning: string | null;
+  risk_factors: string[];
+  holding_period_days: number | null;
+  current_price: number | null;
+  change_pct: number | null;
+  spark: number[];
+}
+
+export function fetchGeminiPicks(
+  horizonType: HorizonType,
+  params?: { date?: string; limit?: number },
+): Promise<GeminiPickSummary[]> {
+  const q = new URLSearchParams();
+  q.set('horizon_type', horizonType);
+  if (params?.date) q.set('date', params.date);
+  if (params?.limit) q.set('limit', String(params.limit));
+  return api.get<GeminiPickSummary[]>(`/picks/gemini?${q.toString()}`);
 }
