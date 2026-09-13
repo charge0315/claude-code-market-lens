@@ -84,3 +84,32 @@ async def list_shadow_predictions_for_pick(pick_id: str) -> list[dict[str, objec
         )
         rows = [dict(r._mapping) for r in result]
     return [_parse_payload(r) for r in rows]
+
+
+async def list_shadow_predictions(
+    *,
+    horizon_type: str | None = None,
+    issued_from: str | None = None,
+    issued_to: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, object]]:
+    """条件で絞り込んだ challenger 判定を新しい順で返す（🆕 P25、Gemini ピック一覧用）."""
+    clauses: list[str] = []
+    params: dict[str, object] = {"limit": limit}
+    if horizon_type is not None:
+        clauses.append("horizon_type = :horizon_type")
+        params["horizon_type"] = horizon_type
+    if issued_from is not None:
+        clauses.append("issued_at >= :issued_from")
+        params["issued_from"] = issued_from
+    if issued_to is not None:
+        clauses.append("issued_at <= :issued_to")
+        params["issued_to"] = issued_to
+
+    # clauses は定数リテラルのみ（外部入力は全て :param バインド）のため注入経路は無い。
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    query = f"SELECT * FROM shadow_predictions {where} ORDER BY issued_at DESC LIMIT :limit"  # noqa: S608  # nosec B608 - where は定数リテラルのみ・値は全てバインド
+    async with get_db() as db:
+        result = await db.execute(text(query), params)
+        rows = [dict(r._mapping) for r in result]
+    return [_parse_payload(r) for r in rows]

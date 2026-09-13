@@ -49,9 +49,15 @@
 
 .market-ticker-tile {
   display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 96px;
+}
+
+.market-ticker-tile-text {
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 96px;
 }
 
 .market-ticker-label {
@@ -91,6 +97,10 @@
   overflow: hidden;
 }
 
+.ai-engine-tabs {
+  margin-bottom: var(--spacing-lg);
+}
+
 .picks-board-tabs button {
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
@@ -127,6 +137,19 @@
   cursor: not-allowed;
 }
 
+.pick-symbol-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.pick-symbol-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .pick-symbol-link {
   background: transparent;
   border: none;
@@ -137,6 +160,15 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   font-size: inherit;
+}
+
+.pick-engine-badge {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-xs);
 }
 
 .pick-symbol-link:hover,
@@ -240,6 +272,7 @@
   font-size: var(--font-size-xs);
   cursor: pointer;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .pick-rationale-cell button:hover {

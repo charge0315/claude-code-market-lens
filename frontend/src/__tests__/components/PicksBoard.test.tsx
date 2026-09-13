@@ -61,6 +61,7 @@ const PICK: PickSummary = {
   source_contributions: {},
   current_price: 3050,
   change_pct: 1.5,
+  spark: [3000, 3020, 3050],
   reasoning_tags: ['業績上方修正', '25日線ゴールデンクロス'],
 };
 
@@ -79,7 +80,7 @@ describe('PicksBoard', () => {
 
     render(<PicksBoard />);
 
-    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { limit: 50 }));
+    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { date: expect.any(String), limit: 50 }));
     expect(await screen.findByText('本日のピックはまだありません')).toBeInTheDocument();
   });
 
@@ -137,11 +138,11 @@ describe('PicksBoard', () => {
     const user = userEvent.setup();
 
     render(<PicksBoard />);
-    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { limit: 50 }));
+    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { date: expect.any(String), limit: 50 }));
 
     await user.click(screen.getByRole('button', { name: '短期' }));
 
-    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('short_term', { limit: 50 }));
+    await waitFor(() => expect(mockFetchPicks).toHaveBeenCalledWith('short_term', { date: expect.any(String), limit: 50 }));
   });
 
   it('手動更新ボタンでピック生成を実行し一覧を再取得する', async () => {
@@ -284,7 +285,7 @@ describe('PicksBoard', () => {
     render(<PicksBoard />);
     await user.click(await screen.findByRole('button', { name: '詳細' }));
 
-    expect(await screen.findByText('gemini:gemini-2.5-pro')).toBeInTheDocument();
+    expect(await screen.findByText('Gemini（gemini-2.5-pro）')).toBeInTheDocument();
     expect(screen.getByText('Gemini 側の根拠')).toBeInTheDocument();
     expect(screen.getByText('需給悪化')).toBeInTheDocument();
   });

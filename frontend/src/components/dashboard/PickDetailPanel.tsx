@@ -29,6 +29,15 @@ function formatYen(value: number): string {
   return `¥${Math.round(value).toLocaleString('ja-JP')}`;
 }
 
+// shadow_predictions.challenger_version は `"gemini:<モデル名>"` 形式で保存される
+// （`orchestrator.py`）。ラベル用に「Gemini（モデル名）」の形へ整形する。
+function formatEngineLabel(challengerVersion: string): string {
+  const [engine, ...rest] = challengerVersion.split(':');
+  const model = rest.join(':');
+  if (engine.toLowerCase() === 'gemini' && model) return `Gemini（${model}）`;
+  return challengerVersion;
+}
+
 function deviationFromCurrent(value: number, currentPrice: number | null): string | null {
   if (currentPrice === null || currentPrice === 0) return null;
   const pct = ((value - currentPrice) / currentPrice) * 100;
@@ -155,7 +164,7 @@ export function PickDetailPanel({ pickId }: { pickId: string }): ReactNode {
             {detail.shadow_predictions.map((shadow) => (
               <li key={shadow.shadow_id} className="pick-detail-shadow-item">
                 <p className="pick-detail-shadow-header">
-                  <span>{shadow.challenger_version}</span>
+                  <span>{formatEngineLabel(shadow.challenger_version)}</span>
                   <span style={{ color: directionColor(shadow.direction) }}>
                     {DIRECTION_LABELS[shadow.direction]}（確度 {shadow.confidence.toFixed(0)}）
                   </span>
@@ -179,8 +188,8 @@ export function PickDetailPanel({ pickId }: { pickId: string }): ReactNode {
       )}
 
       <p className="pick-detail-footer">
-        スコア {detail.composite_score.toFixed(1)} / 抽出日時 {detail.issued_at.slice(0, 16).replace('T', ' ')} / モデル{' '}
-        {detail.model_version}
+        スコア {detail.composite_score.toFixed(1)} / 抽出日時 {detail.issued_at.slice(0, 16).replace('T', ' ')} / 生成AI Claude
+        （モデル {detail.model_version}）
       </p>
     </div>
   );

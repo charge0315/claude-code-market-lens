@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.models.pick import LedgerEntry, SubScores
-from backend.services.db.shadow_prediction_db import insert_shadow_prediction, list_shadow_predictions_for_pick
+from backend.services.db.shadow_prediction_db import (
+    insert_shadow_prediction,
+    list_shadow_predictions,
+    list_shadow_predictions_for_pick,
+)
 from backend.services.ledger import prediction_ledger as pl
 
 
@@ -86,3 +90,72 @@ async def test_insert_shadow_prediction_allows_null_pick_id(migrated_db: Path) -
     )
     # pick_id 無しの行は pick 紐付けの一覧には出てこない（symbol/run 単位の集計は今回対象外）。
     assert await list_shadow_predictions_for_pick("does-not-exist") == []
+
+
+async def test_list_shadow_predictions_filters_by_horizon_and_date(migrated_db: Path) -> None:
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-mid",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1000.0,
+        stop=950.0,
+        target=1100.0,
+        confidence_raw=60.0,
+        confidence=60.0,
+        payload={},
+        issued_at="2026-09-13T08:30:00+09:00",
+    )
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-short",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="9984",
+        horizon_type="short_term",
+        direction="bearish",
+        entry=500.0,
+        stop=520.0,
+        target=470.0,
+        confidence_raw=55.0,
+        confidence=55.0,
+        payload={},
+        issued_at="2026-09-12T08:30:00+09:00",
+    )
+
+    mid_only = await list_shadow_predictions(horizon_type="mid_term")
+    assert {r["symbol"] for r in mid_only} == {"7203"}
+
+    today_only = await list_shadow_predictions(issued_from="2026-09-13T00:00:00", issued_to="2026-09-13T23:59:59+09:00")
+    assert {r["symbol"] for r in today_only} == {"7203"}
+
+    assert await list_shadow_predictions(limit=1) != []
+
+
+async def test_list_shadow_predictions_returns_newest_first(migrated_db: Path) -> None:
+    for i, issued_at in enumerate(
+        ["2026-09-11T08:30:00+09:00", "2026-09-13T08:30:00+09:00", "2026-09-12T08:30:00+09:00"]
+    ):
+        await insert_shadow_prediction(
+            pick_id=None,
+            run_id=f"run-{i}",
+            challenger_version="gemini:gemini-2.5-pro",
+            symbol=f"000{i}",
+            horizon_type="mid_term",
+            direction="bullish",
+            entry=1000.0,
+            stop=950.0,
+            target=1100.0,
+            confidence_raw=60.0,
+            confidence=60.0,
+            payload={},
+            issued_at=issued_at,
+        )
+
+    rows = await list_shadow_predictions()
+    assert [r["issued_at"] for r in rows] == [
+        "2026-09-13T08:30:00+09:00",
+        "2026-09-12T08:30:00+09:00",
+        "2026-09-11T08:30:00+09:00",
+    ]

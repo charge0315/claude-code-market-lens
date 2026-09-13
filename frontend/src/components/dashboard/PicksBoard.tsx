@@ -3,9 +3,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { DataTable, type Column } from '@/components/ui/DataTable';
+import { Sparkline } from '@/components/ui/Sparkline';
 import { PickDetailPanel } from '@/components/dashboard/PickDetailPanel';
+import {
+  DIRECTION_LABELS,
+  NoteModalBody,
+  directionColor,
+  expectedReturnPct as expectedReturnPctOf,
+  formatYen,
+  sparkColor,
+  truncate,
+} from '@/components/dashboard/pickDisplay';
+import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
 import { fetchPicks, runPicks, type HorizonType, type PickSummary } from '@/lib/api/picks';
-import { fetchStockNote, type StockNote } from '@/lib/api/stock';
+import { todayJst } from '@/lib/jstDate';
 import './dashboard.css';
 
 type SortKey = 'confidence' | 'expected_return' | 'symbol';
@@ -17,7 +28,7 @@ const SORT_LABELS: Record<SortKey, string> = {
 };
 
 function expectedReturnPct(p: PickSummary): number {
-  return p.entry === 0 ? 0 : ((p.target - p.entry) / p.entry) * 100;
+  return expectedReturnPctOf(p.entry, p.target);
 }
 
 function sortPicks(picks: readonly PickSummary[], key: SortKey): PickSummary[] {
@@ -28,52 +39,18 @@ function sortPicks(picks: readonly PickSummary[], key: SortKey): PickSummary[] {
   return sorted;
 }
 
-// 本日の AI 銘柄ピック（中長期 / 短期タブ）。確度順（backend が既にソート済み）で表示し、
-// 3 値（買値 / 損切値 / 売値）と根拠プレビューを必ず併記する（CLAUDE.md）。
-// 銘柄名クリックでナレッジベースノート（本文込み・UI表示専用）、
+// Claude（公式パイプライン）による、本日の AI 銘柄ピック（中長期 / 短期タブ）。
+// 確度順（backend が既にソート済み）で表示し、3 値（買値 / 損切値 / 売値）と根拠プレビューを
+// 必ず併記する（CLAUDE.md）。銘柄名クリックでナレッジベースノート（本文込み・UI表示専用）、
 // 根拠「詳細」ボタンでピック詳細（4分析内訳・寄与度・LLMリスク要因）をポップアップ表示する。
-
-const DIRECTION_LABELS: Record<PickSummary['direction'], string> = {
-  bullish: '強気',
-  bearish: '弱気',
-  neutral: '中立',
-};
+// Gemini（challenger LLM）の判定は混在させず、別コンポーネント（GeminiPicksBoard）で表示する
+// （🆕 P25、ユーザー指示: エンジンごとに分けて表示）。
 
 const BUCKET_LABELS: Record<PickSummary['confidence_bucket'], string> = {
   high: '高',
   mid: '中',
   low: '低',
 };
-
-function directionColor(direction: PickSummary['direction']): string {
-  if (direction === 'bullish') return 'var(--color-gain)';
-  if (direction === 'bearish') return 'var(--color-loss)';
-  return 'var(--color-flat)';
-}
-
-function formatYen(value: number): string {
-  return `¥${Math.round(value).toLocaleString('ja-JP')}`;
-}
-
-function truncate(text: string, max = 50): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-function NoteModalBody({ symbol }: { symbol: string }): ReactNode {
-  const [note, setNote] = useState<StockNote | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchStockNote(symbol)
-      .then(setNote)
-      .catch(() => setError('ナレッジベースノートの取得に失敗しました'));
-  }, [symbol]);
-
-  if (error) return <p className="signal-queue-error">{error}</p>;
-  if (note === undefined) return <p>読み込み中…</p>;
-  if (note === null) return <p className="signal-queue-empty">この銘柄のナレッジベースノートはまだありません</p>;
-  return <>{note.content}</>;
-}
 
 export function PicksBoard(): ReactNode {
   const [horizon, setHorizon] = useState<HorizonType>('mid_term');
@@ -82,10 +59,14 @@ export function PicksBoard(): ReactNode {
   const [running, setRunning] = useState(false);
   const [noteModalSymbol, setNoteModalSymbol] = useState<string | null>(null);
   const [detailModalPickId, setDetailModalPickId] = useState<string | null>(null);
+  const [addHoldingPick, setAddHoldingPick] = useState<PickSummary | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('confidence');
 
   const load = useCallback((h: HorizonType) => {
-    fetchPicks(h, { limit: 50 })
+    // 見出し・空表示ともに「本日の」ピックと明記しているため、日付を指定せず全期間の
+    // 最新50件を取得すると前日以前の分まで混ざって同一銘柄が重複して見える
+    // （台帳は日ごとに新しい行を追記する設計のため）。JST の当日分だけに絞り込む。
+    fetchPicks(h, { date: todayJst(), limit: 50 })
       .then(setPicks)
       .catch(() => setError('ピック一覧の取得に失敗しました'));
   }, []);
@@ -115,10 +96,21 @@ export function PicksBoard(): ReactNode {
       key: 'symbol',
       header: '銘柄',
       render: (p) => (
-        <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
-          {p.symbol}
-          {p.company_name && `（${p.company_name}）`}
-        </button>
+        <span className="pick-symbol-cell">
+          <span className="pick-symbol-row">
+            <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
+              {p.symbol}
+              {p.company_name && `（${p.company_name}）`}
+            </button>
+            <Sparkline values={p.spark} color={sparkColor(p.spark)} />
+          </span>
+          {/* 公式パイプラインは常に Anthropic（Claude）が生成する（未設定なら run_picks
+              自体が status='not_configured' で早期リターンし台帳化されない）。Gemini は
+              shadow_predictions への比較用判定のみで、ここには載らない。 */}
+          <span className="pick-engine-badge" title="このピックは Claude（Anthropic）が生成しました">
+            Claude
+          </span>
+        </span>
       ),
     },
     {
@@ -191,6 +183,9 @@ export function PicksBoard(): ReactNode {
           <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
             詳細
           </button>
+          <button type="button" onClick={() => setAddHoldingPick(p)}>
+            ポートフォリオに追加
+          </button>
         </span>
       ),
     },
@@ -262,6 +257,16 @@ export function PicksBoard(): ReactNode {
             </Modal>
           );
         })()}
+
+      {addHoldingPick && (
+        <AddHoldingModal
+          symbol={addHoldingPick.symbol}
+          companyName={addHoldingPick.company_name}
+          suggestedPrice={addHoldingPick.entry}
+          onClose={() => setAddHoldingPick(null)}
+          onAdded={() => undefined}
+        />
+      )}
     </div>
   );
 }

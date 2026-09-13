@@ -13,6 +13,7 @@ from backend.models.pick import LedgerEntry, PickRunResult, SubScores
 from backend.routers import picks as picks_router_module
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.ledger import prediction_ledger as pl
+from backend.services.picks import gemini_picks as gp
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +23,11 @@ def _no_live_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None]:
         return None, None
 
-    monkeypatch.setattr(pl, "fetch_quote", fake_fetch_quote)
+    async def fake_fetch_quote_with_spark(_symbol: str) -> tuple[float | None, float | None, list[float]]:
+        return None, None, []
+
+    monkeypatch.setattr(pl, "fetch_quote_with_spark", fake_fetch_quote_with_spark)
+    monkeypatch.setattr(gp, "fetch_quote_with_spark", fake_fetch_quote_with_spark)
     monkeypatch.setattr(picks_router_module, "fetch_quote", fake_fetch_quote)
 
 
@@ -73,6 +78,70 @@ async def test_list_mid_term_returns_envelope_with_three_values(client: AsyncCli
     for k in ("entry", "stop", "target", "confidence", "confidence_bucket"):
         assert k in pick
     assert pick["stop"] < pick["entry"] < pick["target"]
+
+
+async def test_list_gemini_returns_shadow_predictions(client: AsyncClient) -> None:
+
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-1",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1005.0,
+        stop=960.0,
+        target=1105.0,
+        confidence_raw=65.0,
+        confidence=65.0,
+        payload={"reasoning": "テスト根拠"},
+    )
+
+    res = await client.get("/api/picks/gemini")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["success"] is True
+    assert len(body["data"]) == 1
+    row = body["data"][0]
+    assert row["symbol"] == "7203"
+    assert row["challenger_version"] == "gemini:gemini-2.5-pro"
+    assert row["reasoning"] == "テスト根拠"
+
+
+async def test_list_gemini_filters_by_horizon_type(client: AsyncClient) -> None:
+
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-mid",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1000.0,
+        stop=950.0,
+        target=1100.0,
+        confidence_raw=60.0,
+        confidence=60.0,
+        payload={},
+    )
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-short",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="9984",
+        horizon_type="short_term",
+        direction="bearish",
+        entry=500.0,
+        stop=520.0,
+        target=470.0,
+        confidence_raw=55.0,
+        confidence=55.0,
+        payload={},
+    )
+
+    res = await client.get("/api/picks/gemini", params={"horizon_type": "short_term"})
+    body = res.json()
+    assert [r["symbol"] for r in body["data"]] == ["9984"]
 
 
 async def test_get_pick_detail_omits_feature_snapshot(client: AsyncClient) -> None:

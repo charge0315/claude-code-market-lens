@@ -13,11 +13,19 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.pick import PickDetailResponse, PickRunResult, PickSummary, ShadowPredictionSummary, SubScores
+from backend.models.pick import (
+    GeminiPickSummary,
+    PickDetailResponse,
+    PickRunResult,
+    PickSummary,
+    ShadowPredictionSummary,
+    SubScores,
+)
 from backend.services.data.data_fetcher import get_company_name
 from backend.services.data.quote_service import compute_change_pct, fetch_quote
 from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
 from backend.services.ledger import prediction_ledger as pl
+from backend.services.picks.gemini_picks import list_gemini_picks
 from backend.services.picks.pipeline import run_picks
 
 logger = logging.getLogger(__name__)
@@ -84,6 +92,18 @@ async def list_short_term(
     """短期ピックを確度・合成スコア順で返す."""
     lo, hi = _date_bounds(date)
     rows = await pl.list_picks(horizon_type="short_term", issued_from=lo, issued_to=hi, bucket=bucket, limit=limit)
+    return ApiResponse.ok(rows)
+
+
+@router.get("/gemini", response_model=ApiResponse[list[GeminiPickSummary]], summary="Gemini判定によるピック一覧")
+async def list_gemini(
+    horizon_type: Literal["mid_term", "short_term"] | None = Query(default=None),
+    date: str | None = Query(default=None, description="YYYY-MM-DD（省略時は全期間の新しい順）"),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ApiResponse[list[GeminiPickSummary]]:
+    """Gemini（challenger LLM）の判定を新しい順で返す（公式パイプラインとは別の比較表示用）."""
+    lo, hi = _date_bounds(date)
+    rows = await list_gemini_picks(horizon_type=horizon_type, issued_from=lo, issued_to=hi, limit=limit)
     return ApiResponse.ok(rows)
 
 
