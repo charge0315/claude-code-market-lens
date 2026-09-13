@@ -10,6 +10,7 @@ Market Lens `backend/services/fundamental_analyzer.py` から移植。変更点�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import cast
 
@@ -142,7 +143,9 @@ def _merge_from_vault(
 
 async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | float | int | None]:
     """yfinance の指標を Vault `Tickers/*.md` frontmatter で補完して返す（四季報スタブ期間の主経路）."""
-    base = get_fundamental_data(ticker)
+    # get_fundamental_data は yf.Ticker(...).info を同期的に叩く（ブロッキング I/O）ため、
+    # to_thread に逃がさないとピック生成ループ全体でイベントループを占有してしまう。
+    base = await asyncio.to_thread(get_fundamental_data, ticker)
     note = await get_brand_note(ticker.replace(".T", ""))
     if note is None:
         return base

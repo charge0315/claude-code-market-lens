@@ -169,10 +169,18 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []
     for code in codes:
-        fundamental = await get_fundamental_with_vault_fallback(code)
-        ticker_rows = await fetch_per_ticker_champion_rows(code)
-        ml_score_provider = combine_ml_score_providers(pool_provider, make_per_ticker_ensemble_provider(ticker_rows))
-        rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
+        try:
+            fundamental = await get_fundamental_with_vault_fallback(code)
+            ticker_rows = await fetch_per_ticker_champion_rows(code)
+            ml_score_provider = combine_ml_score_providers(
+                pool_provider, make_per_ticker_ensemble_provider(ticker_rows)
+            )
+            rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
+        except Exception as e:  # noqa: BLE001 — 1銘柄の取得/スコアリング失敗（サーキットブレーカー
+            # オープン・レート制限等）で候補プール全体を落とさない。他の箇所（
+            # `_build_raw_universe_frame` 等）と同じ「1銘柄失敗で全体を止めない」方針。
+            logger.warning("スコアリングに失敗（銘柄をスキップ）: %s — %s", code, e)
+            continue
         scored.append((code, rec, atr, trend_score))
     scored.sort(key=lambda s: _num(s[1].get("composite_score")) or 0.0, reverse=True)
     shortlist = scored[: cfg["shortlist"]]

@@ -24,6 +24,7 @@ Market Lens `backend/services/panel_feature_service.py` から移植。変更点
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -296,7 +297,9 @@ async def build_panel(
     """
     tickers = list(universe) if universe is not None else await _get_ticker_master()
     wanted = sorted({str(d) for d in as_of_dates})
-    panel = _build_raw_universe_frame(tickers, set(wanted), price_loader)
+    # ユニバース全銘柄分の価格取得（同期 I/O）をイベントループ上で直接回すと、その間
+    # 他の全リクエストが応答不能になる（1銘柄ずつ yfinance/J-Quants を叩くため長時間かかる）。
+    panel = await asyncio.to_thread(_build_raw_universe_frame, tickers, set(wanted), price_loader)
     if panel.empty:
         return pd.DataFrame()
     panel["label"] = np.nan
@@ -354,7 +357,8 @@ async def build_panel_context(
     `add_cross_sectional_features` を1回だけ適用する。`code` を index にして返す。
     """
     tickers = list(universe) if universe is not None else await _get_ticker_master()
-    raw = _build_raw_universe_frame(tickers, {as_of}, price_loader)
+    # build_panel と同じ理由でスレッドへ逃がす（ユニバース全銘柄分の同期価格取得）。
+    raw = await asyncio.to_thread(_build_raw_universe_frame, tickers, {as_of}, price_loader)
     if raw.empty:
         return PanelContext(as_of=as_of, frame=pd.DataFrame().set_index(pd.Index([], name="code")))
     enriched = add_cross_sectional_features(raw)
