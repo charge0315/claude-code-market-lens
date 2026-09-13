@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from backend.services.db.portfolio_db import delete_holding, get_holding, insert_holding, list_holdings, update_holding
+from backend.services.db.portfolio_db import (
+    delete_holding,
+    get_holding,
+    insert_holding,
+    insert_sell_history,
+    list_holdings,
+    list_sell_history,
+    update_holding,
+)
 
 
 async def test_insert_and_get_holding(migrated_db: Path) -> None:
@@ -75,3 +83,51 @@ async def test_delete_holding_removes_row(migrated_db: Path) -> None:
 
 async def test_delete_holding_unknown_returns_false(migrated_db: Path) -> None:
     assert await delete_holding("does-not-exist") is False
+
+
+async def test_insert_and_list_sell_history(migrated_db: Path) -> None:
+    sell_id = await insert_sell_history(
+        holding_id="h1",
+        symbol="7203",
+        quantity=50,
+        avg_cost=1000.0,
+        sell_price=1200.0,
+        realized_pnl=10_000.0,
+        sold_at="2026-09-13",
+        note="利確",
+    )
+
+    rows = await list_sell_history()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["sell_id"] == sell_id
+    assert row["symbol"] == "7203"
+    assert row["quantity"] == 50
+    assert row["realized_pnl"] == 10_000.0
+    assert row["note"] == "利確"
+
+
+async def test_list_sell_history_returns_newest_sold_at_first(migrated_db: Path) -> None:
+    await insert_sell_history(
+        holding_id="h1",
+        symbol="7203",
+        quantity=10,
+        avg_cost=1000.0,
+        sell_price=1100.0,
+        realized_pnl=1_000.0,
+        sold_at="2026-09-10",
+        note=None,
+    )
+    await insert_sell_history(
+        holding_id="h2",
+        symbol="6758",
+        quantity=20,
+        avg_cost=2000.0,
+        sell_price=1900.0,
+        realized_pnl=-2_000.0,
+        sold_at="2026-09-13",
+        note=None,
+    )
+
+    rows = await list_sell_history()
+    assert [r["symbol"] for r in rows] == ["6758", "7203"]

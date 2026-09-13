@@ -29,3 +29,14 @@ export interface StockNote {
 export function fetchStockNote(symbol: string): Promise<StockNote | null> {
   return api.get<StockNote | null>(`/stock/${encodeURIComponent(symbol)}/note`);
 }
+
+// 🆕 P26: 証券コード/銘柄名の部分一致検索（ポートフォリオへの銘柄追加用）。
+export interface TickerInfo {
+  code: string;
+  name: string;
+  sector: string | null;
+}
+
+export function searchStocks(query: string): Promise<TickerInfo[]> {
+  return api.get<TickerInfo[]>(`/stock/search?q=${encodeURIComponent(query)}`);
+}

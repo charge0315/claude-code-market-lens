@@ -83,3 +83,53 @@ async def delete_holding(holding_id: str) -> bool:
             text("DELETE FROM portfolios WHERE holding_id = :holding_id"), {"holding_id": holding_id}
         )
         return result.rowcount > 0
+
+
+async def insert_sell_history(
+    *,
+    holding_id: str,
+    symbol: str,
+    quantity: int,
+    avg_cost: float,
+    sell_price: float,
+    realized_pnl: float,
+    sold_at: str,
+    note: str | None,
+) -> str:
+    """売却履歴を1行追加し `sell_id` を返す（🆕 P26）."""
+    sell_id = str(uuid.uuid4())
+    now = datetime.now(JST).isoformat(timespec="seconds")
+    async with get_db() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO portfolio_sell_history (
+                    sell_id, holding_id, symbol, quantity, avg_cost, sell_price,
+                    realized_pnl, sold_at, note, created_at
+                ) VALUES (
+                    :sell_id, :holding_id, :symbol, :quantity, :avg_cost, :sell_price,
+                    :realized_pnl, :sold_at, :note, :created_at
+                )
+                """
+            ),
+            {
+                "sell_id": sell_id,
+                "holding_id": holding_id,
+                "symbol": symbol,
+                "quantity": quantity,
+                "avg_cost": avg_cost,
+                "sell_price": sell_price,
+                "realized_pnl": realized_pnl,
+                "sold_at": sold_at,
+                "note": note,
+                "created_at": now,
+            },
+        )
+    return sell_id
+
+
+async def list_sell_history() -> list[dict[str, object]]:
+    """売却履歴を新しい順で返す（🆕 P26）."""
+    async with get_db() as db:
+        result = await db.execute(text("SELECT * FROM portfolio_sell_history ORDER BY sold_at DESC, created_at DESC"))
+        return [dict(r._mapping) for r in result]

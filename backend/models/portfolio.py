@@ -59,6 +59,53 @@ class UpdateHoldingRequest(BaseModel):
         return v
 
 
+class SellHoldingRequest(BaseModel):
+    """`POST /api/portfolio/holdings/{holding_id}/sell` のリクエストボディ（🆕 P26）.
+
+    `quantity` が保有株数と同数なら全量売却（ロット自体を削除）、それ未満なら一部売却
+    （残り株数へ更新）として扱う。平均取得単価はロットの `avg_cost` をそのまま使う
+    （売却時に別値を指定させると実現損益の計算根拠が崩れるため）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    quantity: int
+    sell_price: float
+    sold_at: str  # 売却日（YYYY-MM-DD）
+    note: str | None = None
+
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("売却株数は正の値を指定してください")
+        return v
+
+    @field_validator("sell_price")
+    @classmethod
+    def sell_price_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("売却価格は正の値を指定してください")
+        return v
+
+
+class SellHistoryEntry(BaseModel):
+    """売却履歴の1行（🆕 P26）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sell_id: str
+    holding_id: str
+    symbol: str
+    company_name: str | None = None
+    quantity: int
+    avg_cost: float
+    sell_price: float
+    realized_pnl: float
+    sold_at: str
+    note: str | None = None
+
+
 class PortfolioHolding(BaseModel):
     """リアルタイム価格で評価済みの保有銘柄（1 ロット）."""
 

@@ -17,12 +17,19 @@ from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
 from backend.models.stock import OhlcBar
-from backend.services.data.data_fetcher import fetch_stock_data
+from backend.models.stocks import TickerInfo
+from backend.services.data.data_fetcher import fetch_stock_data, search_tickers
 from backend.services.vault.brand_notes_service import get_raw_note_content
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
 
 _Period = Literal["1mo", "3mo", "6mo", "1y", "2y"]
+
+
+@router.get("/search", response_model=ApiResponse[list[TickerInfo]], summary="銘柄検索（証券コード/銘柄名の部分一致）")
+async def search(q: str = Query(default="", min_length=0)) -> ApiResponse[list[TickerInfo]]:
+    """証券コードまたは銘柄名の部分一致で銘柄マスタを検索する（🆕 P26、ポートフォリオへの銘柄追加用）."""
+    return ApiResponse.ok(await search_tickers(q))
 
 
 class StockNote(BaseModel):

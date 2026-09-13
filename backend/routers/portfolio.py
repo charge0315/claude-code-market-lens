@@ -18,10 +18,20 @@ from backend.models.portfolio import (
     PortfolioSignalStatus,
     PortfolioSummary,
     ReportFillRequest,
+    SellHistoryEntry,
+    SellHoldingRequest,
     UpdateHoldingRequest,
 )
 from backend.models.risk import PortfolioRiskReport
-from backend.services.db.portfolio_db import delete_holding, insert_holding, update_holding
+from backend.services.data.data_fetcher import get_company_name
+from backend.services.db.portfolio_db import (
+    delete_holding,
+    get_holding,
+    insert_holding,
+    insert_sell_history,
+    list_sell_history,
+    update_holding,
+)
 from backend.services.db.portfolio_signal_db import get_signal, list_signals, set_fill_report, set_status
 from backend.services.portfolio.eod_review_service import get_latest as get_latest_eod_review
 from backend.services.portfolio.eod_review_service import run_eod_review
@@ -32,6 +42,14 @@ from backend.services.portfolio.signal_service import run_portfolio_monitor
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+
+def _i(value: object) -> int:
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
+def _f(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
 @router.get("", response_model=ApiResponse[PortfolioSummary], summary="ポートフォリオ取得")
@@ -70,11 +88,91 @@ async def update_holding_endpoint(holding_id: str, req: UpdateHoldingRequest) ->
 
 @router.delete("/holdings/{holding_id}", response_model=ApiResponse[dict], summary="保有銘柄削除")
 async def remove_holding(holding_id: str) -> ApiResponse[dict]:
-    """指定ロットを削除する."""
+    """指定ロットを削除する（売却記録を残さない取り消し用。売却は `/sell` を使う）."""
     ok = await delete_holding(holding_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"保有銘柄 {holding_id} が見つかりません")
     return ApiResponse.ok({"holding_id": holding_id})
+
+
+@router.post("/holdings/{holding_id}/sell", response_model=ApiResponse[SellHistoryEntry], summary="保有銘柄を売却")
+async def sell_holding(holding_id: str, req: SellHoldingRequest) -> ApiResponse[SellHistoryEntry]:
+    """保有ロットの一部または全部を売却し、履歴（`portfolio_sell_history`）へ記録する（🆕 P26）.
+
+    売却株数が保有株数と同じなら全量売却（ロット削除）、それ未満なら一部売却（残数へ更新）。
+    実現損益は売却時点のロットの平均取得単価から計算する。
+    """
+    holding = await get_holding(holding_id)
+    if holding is None:
+        raise HTTPException(status_code=404, detail=f"保有銘柄 {holding_id} が見つかりません")
+
+    current_quantity = _i(holding["quantity"])
+    if req.quantity > current_quantity:
+        raise HTTPException(
+            status_code=422, detail=f"売却株数（{req.quantity}）が保有株数（{current_quantity}）を超えています"
+        )
+
+    avg_cost = _f(holding["avg_cost"])
+    symbol = str(holding["symbol"])
+    realized_pnl = (req.sell_price - avg_cost) * req.quantity
+
+    sell_id = await insert_sell_history(
+        holding_id=holding_id,
+        symbol=symbol,
+        quantity=req.quantity,
+        avg_cost=avg_cost,
+        sell_price=req.sell_price,
+        realized_pnl=realized_pnl,
+        sold_at=req.sold_at,
+        note=req.note,
+    )
+
+    if req.quantity == current_quantity:
+        await delete_holding(holding_id)
+    else:
+        await update_holding(holding_id, quantity=current_quantity - req.quantity, avg_cost=avg_cost)
+
+    return ApiResponse.ok(
+        SellHistoryEntry(
+            sell_id=sell_id,
+            holding_id=holding_id,
+            symbol=symbol,
+            company_name=await get_company_name(symbol),
+            quantity=req.quantity,
+            avg_cost=avg_cost,
+            sell_price=req.sell_price,
+            realized_pnl=realized_pnl,
+            sold_at=req.sold_at,
+            note=req.note,
+        )
+    )
+
+
+@router.get("/sell-history", response_model=ApiResponse[list[SellHistoryEntry]], summary="売却履歴一覧")
+async def get_sell_history() -> ApiResponse[list[SellHistoryEntry]]:
+    """売却履歴を新しい順で返す（🆕 P26）."""
+    rows = await list_sell_history()
+    name_by_code: dict[str, str | None] = {}
+    entries: list[SellHistoryEntry] = []
+    for row in rows:
+        symbol = str(row["symbol"])
+        if symbol not in name_by_code:
+            name_by_code[symbol] = await get_company_name(symbol)
+        entries.append(
+            SellHistoryEntry(
+                sell_id=str(row["sell_id"]),
+                holding_id=str(row["holding_id"]),
+                symbol=symbol,
+                company_name=name_by_code[symbol],
+                quantity=_i(row["quantity"]),
+                avg_cost=_f(row["avg_cost"]),
+                sell_price=_f(row["sell_price"]),
+                realized_pnl=_f(row["realized_pnl"]),
+                sold_at=str(row["sold_at"]),
+                note=row["note"] if row["note"] is None else str(row["note"]),
+            )
+        )
+    return ApiResponse.ok(entries)
 
 
 @router.get("/signals", response_model=ApiResponse[list[PortfolioSignal]], summary="AI 売買タイミング判定一覧")

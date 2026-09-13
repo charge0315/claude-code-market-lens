@@ -120,3 +120,39 @@ async def test_get_note_returns_null_data_when_note_missing(monkeypatch: pytest.
     body = res.json()
     assert body["success"] is True
     assert body["data"] is None
+
+
+async def test_search_returns_matching_tickers(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.models.stocks import TickerInfo
+
+    async def fake_search_tickers(query: str) -> list[TickerInfo]:
+        assert query == "トヨタ"
+        return [TickerInfo(code="7203", name="トヨタ自動車", sector="輸送用機器")]
+
+    monkeypatch.setattr(stock_router_module, "search_tickers", fake_search_tickers)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/search?q=トヨタ")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] == [{"code": "7203", "name": "トヨタ自動車", "sector": "輸送用機器"}]
+
+
+async def test_search_without_query_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.models.stocks import TickerInfo
+
+    async def fake_search_tickers(query: str) -> list[TickerInfo]:
+        assert query == ""
+        return []
+
+    monkeypatch.setattr(stock_router_module, "search_tickers", fake_search_tickers)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/search")
+
+    assert res.json()["data"] == []

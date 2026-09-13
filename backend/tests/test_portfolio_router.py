@@ -100,6 +100,91 @@ async def test_delete_unknown_holding_returns_404(migrated_db: Path) -> None:
     assert res.status_code == 404
 
 
+async def test_sell_holding_full_quantity_deletes_lot_and_records_history(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        add_res = await client.post(
+            "/api/portfolio/holdings",
+            json={"symbol": "7203", "quantity": 100, "avg_cost": 1000.0, "acquired_at": "2026-01-15"},
+        )
+        holding_id = add_res.json()["data"]["holding_id"]
+
+        sell_res = await client.post(
+            f"/api/portfolio/holdings/{holding_id}/sell",
+            json={"quantity": 100, "sell_price": 1200.0, "sold_at": "2026-09-13"},
+        )
+        assert sell_res.status_code == 200
+        sold = sell_res.json()["data"]
+        assert sold["realized_pnl"] == pytest.approx(20_000.0)
+        assert sold["symbol"] == "7203"
+
+        # 全量売却なのでロット自体が消える。
+        summary = (await client.get("/api/portfolio")).json()
+        assert summary["data"]["holding_count"] == 0
+
+        history = (await client.get("/api/portfolio/sell-history")).json()
+        assert len(history["data"]) == 1
+        assert history["data"][0]["realized_pnl"] == pytest.approx(20_000.0)
+
+
+async def test_sell_holding_partial_quantity_reduces_lot(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        add_res = await client.post(
+            "/api/portfolio/holdings",
+            json={"symbol": "7203", "quantity": 100, "avg_cost": 1000.0, "acquired_at": "2026-01-15"},
+        )
+        holding_id = add_res.json()["data"]["holding_id"]
+
+        sell_res = await client.post(
+            f"/api/portfolio/holdings/{holding_id}/sell",
+            json={"quantity": 40, "sell_price": 1100.0, "sold_at": "2026-09-13"},
+        )
+        assert sell_res.json()["data"]["realized_pnl"] == pytest.approx(4_000.0)
+
+        summary = (await client.get("/api/portfolio")).json()
+        assert summary["data"]["holding_count"] == 1
+        assert summary["data"]["holdings"][0]["quantity"] == 60
+
+
+async def test_sell_holding_more_than_owned_returns_422(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        add_res = await client.post(
+            "/api/portfolio/holdings",
+            json={"symbol": "7203", "quantity": 10, "avg_cost": 1000.0, "acquired_at": "2026-01-15"},
+        )
+        holding_id = add_res.json()["data"]["holding_id"]
+
+        res = await client.post(
+            f"/api/portfolio/holdings/{holding_id}/sell",
+            json={"quantity": 11, "sell_price": 1000.0, "sold_at": "2026-09-13"},
+        )
+    assert res.status_code == 422
+
+
+async def test_sell_unknown_holding_returns_404(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/portfolio/holdings/does-not-exist/sell",
+            json={"quantity": 1, "sell_price": 1000.0, "sold_at": "2026-09-13"},
+        )
+    assert res.status_code == 404
+
+
+async def test_sell_history_endpoint_returns_empty_by_default(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/portfolio/sell-history")
+    assert res.json()["data"] == []
+
+
 async def test_risk_endpoint_returns_report(migrated_db: Path) -> None:
     from backend.main import app
 

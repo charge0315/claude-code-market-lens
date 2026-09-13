@@ -1,12 +1,18 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { PortfolioOverview } from '@/components/portfolio/PortfolioOverview';
-import { fetchPortfolio } from '@/lib/api/portfolio';
+import { fetchPortfolio, fetchSellHistory } from '@/lib/api/portfolio';
 import type { PortfolioSummary } from '@/lib/api/portfolio';
 
 jest.mock('@/lib/api/portfolio');
+jest.mock('@/lib/api/stock');
 
 const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
+const mockFetchSellHistory = fetchSellHistory as jest.MockedFunction<typeof fetchSellHistory>;
+
+beforeEach(() => {
+  mockFetchSellHistory.mockResolvedValue([]);
+});
 
 const SUMMARY: PortfolioSummary = {
   total_value: 303100,

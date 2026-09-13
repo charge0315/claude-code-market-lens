@@ -77,8 +77,52 @@ interface SignalStatusResponse {
   status: PortfolioSignalStatus;
 }
 
+// 🆕 P26: 保有銘柄の追加・更新・削除・売却。
+export interface AddHoldingRequest {
+  symbol: string;
+  quantity: number;
+  avg_cost: number;
+  acquired_at: string; // YYYY-MM-DD
+}
+
+export interface SellHoldingRequest {
+  quantity: number;
+  sell_price: number;
+  sold_at: string; // YYYY-MM-DD
+  note?: string | null;
+}
+
+export interface SellHistoryEntry {
+  sell_id: string;
+  holding_id: string;
+  symbol: string;
+  company_name: string | null;
+  quantity: number;
+  avg_cost: number;
+  sell_price: number;
+  realized_pnl: number;
+  sold_at: string;
+  note: string | null;
+}
+
 export function fetchPortfolio(): Promise<PortfolioSummary> {
   return api.get<PortfolioSummary>('/portfolio');
+}
+
+export function addHolding(req: AddHoldingRequest): Promise<{ holding_id: string }> {
+  return api.post<{ holding_id: string }>('/portfolio/holdings', req);
+}
+
+export function deleteHolding(holdingId: string): Promise<{ holding_id: string }> {
+  return api.del<{ holding_id: string }>(`/portfolio/holdings/${encodeURIComponent(holdingId)}`);
+}
+
+export function sellHolding(holdingId: string, req: SellHoldingRequest): Promise<SellHistoryEntry> {
+  return api.post<SellHistoryEntry>(`/portfolio/holdings/${encodeURIComponent(holdingId)}/sell`, req);
+}
+
+export function fetchSellHistory(): Promise<SellHistoryEntry[]> {
+  return api.get<SellHistoryEntry[]>('/portfolio/sell-history');
 }
 
 export function fetchSignals(params?: { status?: PortfolioSignalStatus }): Promise<PortfolioSignal[]> {
