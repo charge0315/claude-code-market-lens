@@ -8,6 +8,13 @@ export const metadata: Metadata = {
   title: 'Alpha Forge',
   description:
     '日本株の AI 銘柄ピック（中長期 / 短期）と継続学習ループ。出力は分析結果・参考情報であり投資助言ではない。',
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/favicon-180.png",
+  },
 };
 
 const NAV = [
