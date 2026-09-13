@@ -29,6 +29,7 @@ data/calibrators/
 data/cache/
 celerybeat-schedule*
 logs/
+.run/
 
 # --- 環境・秘密 ---
 .env

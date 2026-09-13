@@ -8,7 +8,9 @@
 
 ## 1. 起動・停止
 
-Market Lens と異なり、Alpha Forge は起動をまとめるスクリプト（`start.ps1` 相当）を持たない。以下 4 プロセスを手動で起動する。
+### 通常起動（手動）
+
+以下 4 プロセスを手動で起動する。
 
 ```powershell
 # 1. バックエンド（ポート 8002）
@@ -30,6 +32,49 @@ cd frontend && npm run build && npm start   # 本番相当
 Redis はローカルで別途起動しておく（`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` の既定は `redis://127.0.0.1:6379/4` `/5` — Market Lens の `/0` `/1` と衝突しないよう DB 番号を分離済み）。**Redis 未起動でもバックエンド自体は起動する**が、celery-beat 経由の自走機能（下記表）はすべて動かない。
 
 停止は各プロセスを `Ctrl+C`。Celery ワーカーは実行中タスクの完了を待たず即終了する（再実行すればよい、DB は壊れない）。
+
+### 簡易起動（まとめて起動/停止）
+
+Market Lens `scripts/start.ps1` と同じ設計の起動/停止スクリプトを用意している。
+
+```powershell
+.\scripts\start.ps1   # 4プロセスをまとめてバックグラウンド起動
+.\scripts\stop.ps1    # まとめて停止
+```
+
+### ログオン時の自動起動（🆕、ユーザー指示）
+
+`AlphaForge-Autostart` というタスクスケジューラのタスクを登録すると、ログオン時に Alpha Forge が
+自動起動する。単に `start.ps1` を呼ぶのではなく、まず依存サービス（後述）の起動を
+`scripts\wait-for-kb-services.ps1` がポーリングで待ってから `start.ps1` を実行する
+（`scripts\start-with-dependencies.ps1` 経由）。
+
+起動順序: **Docker Desktop → Redis サービス → Vector API サービス → Vector Watcher → Alpha Forge**。
+後の3つは `obsidian-knowledge-base-creator` プロジェクトが管理する既存のログオン時タスク
+（`KB-Service-Redis` / `KB-Service-VectorApi` / `KB-Vault-VectorWatch`）で、Alpha Forge の
+ナレッジベース検索（`KB_SEARCH_URL`）が使う Vector API と同じもの。Task Scheduler には
+「他タスク完了後に起動」というトリガーが無いため、各サービスの実際の生存確認
+（Docker daemon 応答 / `127.0.0.1:6379` 疎通 / `http://127.0.0.1:8077` 疎通 /
+`KB-Vault-VectorWatch` タスクの Running 状態）をポーリングして順序を保証している。
+いずれかがタイムアウトしても警告を出すだけで起動は続行する（フェイルソフト、
+Redis/KB 系が落ちていても Alpha Forge 自体は起動できるようにするため）。
+
+```powershell
+# 登録（管理者権限の pwsh で1回だけ）
+.\scripts\register-startup-task.ps1
+
+# 解除
+.\scripts\register-startup-task.ps1 -Unregister
+
+# 今すぐ動作確認（既に手動で起動中のプロセスがあると .run\pids.json 衝突で失敗するので注意）
+Start-ScheduledTask -TaskName AlphaForge-Autostart
+```
+
+タスクは「ログオン時」に発火する（`KB-Service-*` / `KB-Vault-VectorWatch` と同じトリガー種別）。
+PC 起動＝ログオンではない環境では `-AtStartup` 版に読み替えること。`start.ps1` は
+`.run\pids.json` が残っていると「起動中」とみなして exit 1 する。前回が正常終了
+（`stop.ps1`）していれば問題ないが、クラッシュ後は手動で `.run\pids.json` を削除してから
+ログオンし直すこと。
 
 ### 起動確認
 
