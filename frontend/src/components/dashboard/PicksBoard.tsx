@@ -180,12 +180,14 @@ export function PicksBoard(): ReactNode {
               ))}
             </span>
           )}
-          <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
-            詳細
-          </button>
-          <button type="button" onClick={() => setAddHoldingPick(p)}>
-            ポートフォリオに追加
-          </button>
+          <span className="pick-action-group">
+            <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
+              詳細
+            </button>
+            <button type="button" onClick={() => setAddHoldingPick(p)}>
+              ポートフォリオに追加
+            </button>
+          </span>
         </span>
       ),
     },

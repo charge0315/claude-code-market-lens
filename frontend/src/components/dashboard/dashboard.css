@@ -263,7 +263,22 @@
   border-color: var(--color-accent);
 }
 
-.pick-rationale-cell button {
+/* 「詳細」「ポートフォリオに追加」等の行内アクションボタン群。個々のボタンに
+   margin-left: auto を付けると複数ボタンでは空き幅が分散し「詳細」が右端まで寄らず
+   中途半端な位置に浮いてしまうため、グループ全体を右寄せしたうえで幅を
+   width: max-content（＝最も長いボタンの幅）へ揃える（ユーザー指示）。 */
+.pick-action-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: max-content;
+  margin-left: auto;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.pick-action-group button {
+  width: 100%;
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
@@ -271,11 +286,9 @@
   padding: 2px var(--spacing-sm);
   font-size: var(--font-size-xs);
   cursor: pointer;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
-.pick-rationale-cell button:hover {
+.pick-action-group button:hover {
   color: var(--color-text-primary);
 }
 

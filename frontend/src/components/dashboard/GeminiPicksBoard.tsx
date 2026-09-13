@@ -131,14 +131,16 @@ export function GeminiPicksBoard(): ReactNode {
               ))}
             </span>
           )}
-          {p.pick_id && (
-            <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
-              Claude版と比較
+          <span className="pick-action-group">
+            {p.pick_id && (
+              <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
+                Claude版と比較
+              </button>
+            )}
+            <button type="button" onClick={() => setAddHoldingPick(p)}>
+              ポートフォリオに追加
             </button>
-          )}
-          <button type="button" onClick={() => setAddHoldingPick(p)}>
-            ポートフォリオに追加
-          </button>
+          </span>
         </span>
       ),
     },
