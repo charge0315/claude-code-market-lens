@@ -20,9 +20,11 @@ import './model-lab.css';
 //
 // 🆕 P14: 手動トリガーは「いけるところまでいく」設計。
 //
-// 🔧 P17: 単一の「学習を開始」ボタンで4モデルタイプをまとめて起動できるようにし、
-// 各カードに実行中の生きた状態（処理中の銘柄・進捗率・残り推定時間・データソース内訳・
-// 品質ゲート通過率・最終学習日時）を表示するダッシュボード風パネルへ刷新した。
+// 🔧 P17: 各カードに実行中の生きた状態（処理中の銘柄・進捗率・残り推定時間・
+// データソース内訳・品質ゲート通過率・最終学習日時）を表示するダッシュボード風パネルへ刷新した。
+//
+// 🔧 P24: 「学習を開始」ボタンは1つにまとめず、モデルタイプごとにカード内へ配置する
+// （個別に開始・進捗確認できるようにする、ユーザー指示）。
 
 interface ModelTypeInfo {
   value: TrainingModelType;
@@ -153,10 +155,6 @@ export function TrainingTriggerPanel(): ReactNode {
       });
   };
 
-  const handleStartAll = (): void => {
-    MODEL_TYPES.filter(({ value }) => !statuses[value]?.running).forEach(({ value }) => handleRun(value));
-  };
-
   const runningCount = MODEL_TYPES.filter(({ value }) => statuses[value]?.running).length;
   const avgCoveragePct =
     coverage.length > 0
@@ -181,15 +179,13 @@ export function TrainingTriggerPanel(): ReactNode {
   return (
     <div className="model-lab-panel">
       <p className="model-lab-as-of">
-        ボタンを押すと、東証の全銘柄を対象に4種類のAIモデルすべてを一括で学習します。「学習が済んでいない
-        銘柄」「最も長く再学習されていない銘柄」から順に、いけるところまで自動で進みます。途中でページを
-        閉じても学習は続行され、次に開いたときや再度ボタンを押したときに続きから再開します。
+        モデルごとに「学習を開始」ボタンを押すと、東証の全銘柄を対象にそのAIモデルを学習します。
+        「学習が済んでいない銘柄」「最も長く再学習されていない銘柄」から順に、いけるところまで自動で
+        進みます。途中でページを閉じても学習は続行され、次に開いたときや再度ボタンを押したときに続きから
+        再開します。
       </p>
 
       <div className="training-panel-header">
-        <button type="button" onClick={handleStartAll} disabled={runningCount === MODEL_TYPES.length}>
-          ▶ 学習を開始
-        </button>
         <span className="model-lab-brier">
           実行中 {runningCount}/{MODEL_TYPES.length} モデル・平均カバレッジ {avgCoveragePct.toFixed(0)}%
         </span>
@@ -221,6 +217,10 @@ export function TrainingTriggerPanel(): ReactNode {
               </div>
               <p className="training-trigger-description">{description}</p>
               <p className="training-trigger-defaults">{defaults}</p>
+
+              <button type="button" className="training-trigger-start-btn" onClick={() => handleRun(value)} disabled={running}>
+                {running ? '実行中…' : '▶ 学習を開始'}
+              </button>
 
               <div className="training-stat-row">
                 <span className="training-stat-label">学習進捗</span>
@@ -285,7 +285,7 @@ export function TrainingTriggerPanel(): ReactNode {
       <div className="training-run-log">
         <p className="model-lab-subheading">実行ログ</p>
         {logLines.length === 0 ? (
-          <p className="model-lab-as-of">まだ実行履歴がありません。上のボタンから学習を開始してください。</p>
+          <p className="model-lab-as-of">まだ実行履歴がありません。上の各モデルのボタンから学習を開始してください。</p>
         ) : (
           <ul className="training-run-log-list">
             {logLines.map((line) => (

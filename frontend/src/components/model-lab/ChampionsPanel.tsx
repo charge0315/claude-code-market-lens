@@ -56,7 +56,19 @@ export function ChampionsPanel(): ReactNode {
     { key: 'champion_version', header: '比較対象 champion', render: (p) => p.champion_version ?? '—' },
     { key: 'holdout_delta', header: 'holdout 差分', numeric: true, render: (p) => p.holdout_delta.toFixed(4) },
     { key: 'paper_perf_delta', header: 'ペーパー成績差分', numeric: true, render: (p) => p.paper_perf_delta.toFixed(4) },
-    { key: 'verdict', header: '判定', render: (p) => VERDICT_LABELS[p.verdict] },
+    {
+      key: 'verdict',
+      header: '判定',
+      render: (p) => {
+        const tagClass =
+          p.verdict === 'propose_promote' && p.applied
+            ? 'ml-tag ml-tag-accent-2'
+            : p.verdict === 'propose_promote'
+              ? 'ml-tag ml-tag-accent'
+              : 'ml-tag ml-tag-neutral';
+        return <span className={tagClass}>{VERDICT_LABELS[p.verdict]}</span>;
+      },
+    },
     { key: 'evaluated_at', header: '評価日時' },
     {
       key: 'action',

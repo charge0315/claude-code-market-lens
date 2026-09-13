@@ -29,7 +29,9 @@ describe('DriftPanel', () => {
 
     render(<DriftPanel />);
 
-    expect(await screen.findByText('technical.rsi')).toBeInTheDocument();
+    // 特徴量ごとの直近状態サマリ（バー表示）と全履歴テーブルの両方に出るため複数マッチになる。
+    expect((await screen.findAllByText('technical.rsi')).length).toBeGreaterThan(0);
+    expect(screen.getByText('要再学習')).toBeInTheDocument();
     expect(screen.getByText('ドリフト検知')).toBeInTheDocument();
   });
 

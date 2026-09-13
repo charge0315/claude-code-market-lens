@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { BeginnerIntro } from '@/components/model-lab/BeginnerIntro';
+import { InfoPopoverButton } from '@/components/model-lab/InfoPopoverButton';
 import { ModelLabTabs } from '@/components/model-lab/ModelLabTabs';
 import { GrowthChart } from '@/components/model-lab/GrowthChart';
 import { EquityCurveChart } from '@/components/model-lab/EquityCurveChart';
@@ -71,38 +72,105 @@ function SimpleTab(): ReactNode {
 function AdvancedTab(): ReactNode {
   return (
     <>
-      <section aria-labelledby="growth-heading">
-        <h2 id="growth-heading" style={H2_STYLE}>
-          成長曲線
-        </h2>
-        <p className="model-lab-as-of">
-          AI全体の評価指標（勝率・IC・較正誤差・AUC・Sharpe）が、評価バッチの実行ごとにどう変化してきたかを
-          表示します。右肩上がりであれば、AIの判断精度が改善していることを意味します。
-        </p>
-        <GrowthChart />
-      </section>
+      <div className="model-lab-chart-grid">
+        <section aria-labelledby="growth-heading" className="model-lab-detail-card">
+          <div className="model-lab-heading-row">
+            <h2 id="growth-heading" style={H2_STYLE}>
+              成長曲線
+            </h2>
+            <InfoPopoverButton title="成長曲線とは">
+              <div className="ml-info-body">
+                <p>
+                  AI全体の評価指標が、評価バッチ（決着済みピックがまとまった時点で自動実行される再評価）の
+                  実行ごとにどう変化してきたかを折れ線で表示します。1回の評価バッチが1点になります。
+                </p>
+                <p>指標は5種類から選べます（scope で中長期/短期/合算も切り替え可能）。</p>
+                <ul>
+                  <li><strong>勝率</strong> — 決着済みピックのうち、方向が当たった割合。</li>
+                  <li><strong>IC（情報係数）</strong> — AIの予測順位と実際の値動き順位の相関。1に近いほど順位付けが正確。</li>
+                  <li><strong>較正誤差</strong> — 確度の自己申告と実測正解率のズレ（小さいほど良い）。</li>
+                  <li><strong>AUC</strong> — 上がる/下がるの二値分類としての判別力（0.5=ランダム、1.0=完全）。</li>
+                  <li><strong>Sharpe</strong> — ピックの損益をリスク（振れ幅）で割った効率性の指標。</li>
+                </ul>
+                <p>
+                  右肩上がりであればAIの判断精度が改善していることを意味しますが、評価バッチの回数（＝決着済み
+                  ピックの蓄積量）が少ないうちは1点ごとの振れ幅が大きく出ます。点数が少ない段階では傾向を
+                  断定せず、参考値として見てください。
+                </p>
+              </div>
+            </InfoPopoverButton>
+          </div>
+          <p className="model-lab-as-of">
+            AI全体の評価指標（勝率・IC・較正誤差・AUC・Sharpe）が、評価バッチの実行ごとにどう変化してきたかを
+            表示します。右肩上がりであれば、AIの判断精度が改善していることを意味します。
+          </p>
+          <GrowthChart />
+        </section>
 
-      <section aria-labelledby="equity-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
-        <h2 id="equity-heading" style={H2_STYLE}>
-          ピック累積成績（エクイティカーブ）
-        </h2>
-        <p className="model-lab-as-of">
-          AIが提案したピックをすべて実行したと仮定した場合の累積損益です。ベンチマーク（TOPIX等）を上回って
-          いれば、AIの銘柄選定がインデックス以上の成果を出していることになります。
-        </p>
-        <EquityCurveChart />
-      </section>
+        <section aria-labelledby="equity-heading" className="model-lab-detail-card">
+          <div className="model-lab-heading-row">
+            <h2 id="equity-heading" style={H2_STYLE}>
+              ピック累積成績（エクイティカーブ）
+            </h2>
+            <InfoPopoverButton title="ピック累積成績（エクイティカーブ）とは">
+              <div className="ml-info-body">
+                <p>
+                  AIが提案したピックを、推奨買値で建てて推奨損切値/推奨売値のどちらかに到達した時点で
+                  決済したと仮定した場合の累積損益を時系列で積み上げたグラフです。ベンチマーク（TOPIX等）の
+                  同期間の推移と重ねて表示し、AIの銘柄選定に実際のインデックス投資を上回る価値があるかを
+                  見るためのものです。
+                </p>
+                <p>
+                  ホライズン（20/60営業日）は「その日数までに損切/利確ラインへ到達しなければ強制決済した
+                  とみなす」打ち切り期間です。scope で中長期/短期/合算を切り替えられます。
+                </p>
+                <p>
+                  あくまで「全ピックを機械的に実行し続けたら」という仮定の試算であり、売買手数料・スリッページ・
+                  資金配分（同時に何銘柄保有するか）は考慮していません。実際の運用成績を保証するものではなく、
+                  相対的な傾向（ベンチマークを上回っているか）を確認する目的で使ってください。
+                </p>
+              </div>
+            </InfoPopoverButton>
+          </div>
+          <p className="model-lab-as-of">
+            AIが提案したピックをすべて実行したと仮定した場合の累積損益です。ベンチマーク（TOPIX等）を上回って
+            いれば、AIの銘柄選定がインデックス以上の成果を出していることになります。
+          </p>
+          <EquityCurveChart />
+        </section>
 
-      <section aria-labelledby="calibration-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
-        <h2 id="calibration-heading" style={H2_STYLE}>
-          較正曲線
-        </h2>
-        <p className="model-lab-as-of">
-          AIが「確度70%」と言ったとき、実際にどのくらいの確率で当たっているかを示します。対角線（点線）に
-          近いほど、AIの自己評価（確信度）が信頼できることを意味します。
-        </p>
-        <CalibrationChart />
-      </section>
+        <section aria-labelledby="calibration-heading" className="model-lab-detail-card">
+          <div className="model-lab-heading-row">
+            <h2 id="calibration-heading" style={H2_STYLE}>
+              較正曲線
+            </h2>
+            <InfoPopoverButton title="較正曲線とは">
+              <div className="ml-info-body">
+                <p>
+                  横軸にAIが申告した確度（例: 70%）、縦軸にその確度帯で実際にピックが的中した割合（実測勝率）を
+                  プロットしたグラフです。点線の対角線は「申告どおりに当たっている」理想の状態を表します。
+                </p>
+                <p>
+                  点が対角線より<strong>上</strong>にある場合はAIが自分の確信度を過小評価している（実際はもっと
+                  当たっている）状態、<strong>下</strong>にある場合は過大評価している（申告ほど当たっていない）
+                  状態を意味します。対角線に近いほど、UIに表示される確度バケット（高/中/低）を額面どおり
+                  信頼できることになります。
+                </p>
+                <p>
+                  この確度は生の予測値をそのまま使うのではなく、isotonic回帰やPlatt scaling（`CALIBRATION_METHOD`
+                  設定）で事後補正した後の値です。台帳（決着済みピック）が薄いうちは補正を適用せず恒等
+                  フォールバックになるため、初期は対角線に近づきにくい点に留意してください。
+                </p>
+              </div>
+            </InfoPopoverButton>
+          </div>
+          <p className="model-lab-as-of">
+            AIが「確度70%」と言ったとき、実際にどのくらいの確率で当たっているかを示します。対角線（点線）に
+            近いほど、AIの自己評価（確信度）が信頼できることを意味します。
+          </p>
+          <CalibrationChart />
+        </section>
+      </div>
 
       <section aria-labelledby="champions-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
         <h2 id="champions-heading" style={H2_STYLE}>
@@ -176,7 +244,7 @@ function AdvancedTab(): ReactNode {
 
 export default function ModelLabPage(): ReactNode {
   return (
-    <PageShell title="モデルラボ">
+    <PageShell title="モデルラボ" badge="自動学習ダッシュボード">
       <ModelLabTabs simple={<SimpleTab />} advanced={<AdvancedTab />} />
     </PageShell>
   );

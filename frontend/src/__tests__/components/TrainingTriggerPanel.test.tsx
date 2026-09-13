@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { TrainingTriggerPanel } from '@/components/model-lab/TrainingTriggerPanel';
@@ -48,8 +48,13 @@ const COVERAGE: ModelCoverage[] = (['xgboost', 'random_forest', 'lstm', 'transfo
   }),
 );
 
-function startAllButton(): HTMLElement {
-  return screen.getByRole('button', { name: /学習を開始/ });
+// 🔧 P24: ボタンはモデルごとにカード内へ配置されているため、カードの見出し（例: "XGBoost"）
+// を起点にそのカード内の「学習を開始」ボタンだけを取得する。
+function startButtonFor(modelLabel: string): HTMLElement {
+  const heading = screen.getByText(modelLabel);
+  const card = heading.closest('li');
+  if (!card) throw new Error(`カードが見つかりません: ${modelLabel}`);
+  return within(card).getByRole('button', { name: /学習を開始|実行中/ });
 }
 
 describe('TrainingTriggerPanel', () => {
@@ -80,19 +85,24 @@ describe('TrainingTriggerPanel', () => {
     expect(screen.getByText('Transformer')).toBeInTheDocument();
   });
 
-  it('統合ボタンで4モデルタイプすべてをまとめて起動する', async () => {
+  it('🔧 P24: モデルごとのボタンでそのモデルだけを起動する', async () => {
     mockStart.mockResolvedValue({ model_type: 'xgboost', status: 'started' } as TrainingRunAck);
     mockStatus.mockResolvedValue(IDLE_STATUS);
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(startAllButton());
+    await user.click(startButtonFor('XGBoost'));
 
-    await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
     expect(mockStart).toHaveBeenCalledWith('xgboost');
-    expect(mockStart).toHaveBeenCalledWith('random_forest');
-    expect(mockStart).toHaveBeenCalledWith('lstm');
-    expect(mockStart).toHaveBeenCalledWith('transformer');
+  });
+
+  it('4枚のカードにそれぞれ独立した「学習を開始」ボタンがある', () => {
+    render(<TrainingTriggerPanel />);
+
+    ['XGBoost', 'RandomForest', 'LSTM', 'Transformer'].forEach((label) => {
+      expect(startButtonFor(label)).toBeInTheDocument();
+    });
   });
 
   it('実行中は処理中の銘柄・進捗率・残り推定時間・既存比をライブ表示する', async () => {
@@ -117,7 +127,7 @@ describe('TrainingTriggerPanel', () => {
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(startAllButton());
+    await user.click(startButtonFor('XGBoost'));
 
     expect(await screen.findByText('7203')).toBeInTheDocument();
     expect(screen.getByText('25%')).toBeInTheDocument(); // 10/40
@@ -140,19 +150,19 @@ describe('TrainingTriggerPanel', () => {
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(startAllButton());
+    await user.click(startButtonFor('XGBoost'));
 
     expect(await screen.findByText(/前回の実行でエラーが発生しました（unexpected failure）/)).toBeInTheDocument();
   });
 
-  it('起動リクエスト自体が失敗した場合はエラーメッセージを表示する', async () => {
+  it('起動リクエスト自体が失敗した場合はそのモデルのエラーメッセージを表示する', async () => {
     mockStart.mockRejectedValue(new Error('boom'));
     const user = userEvent.setup();
 
     render(<TrainingTriggerPanel />);
-    await user.click(startAllButton());
+    await user.click(startButtonFor('XGBoost'));
 
-    expect(await screen.findAllByText('学習の起動に失敗しました')).toHaveLength(4);
+    expect(await screen.findAllByText('学習の起動に失敗しました')).toHaveLength(1);
   });
 
   it('データソース内訳（yfinance/J-Quants）と最終学習日時を表示する', async () => {
@@ -166,7 +176,7 @@ describe('TrainingTriggerPanel', () => {
   it('実行履歴が無ければ案内文を出す', () => {
     render(<TrainingTriggerPanel />);
 
-    expect(screen.getByText('まだ実行履歴がありません。上のボタンから学習を開始してください。')).toBeInTheDocument();
+    expect(screen.getByText('まだ実行履歴がありません。上の各モデルのボタンから学習を開始してください。')).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {
