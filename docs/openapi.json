@@ -210,6 +210,90 @@
         }
       }
     },
+    "/api/picks/gemini": {
+      "get": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "Gemini判定によるピック一覧",
+        "description": "Gemini（challenger LLM）の判定を新しい順で返す（公式パイプラインとは別の比較表示用）.",
+        "operationId": "list_gemini_api_picks_gemini_get",
+        "parameters": [
+          {
+            "name": "horizon_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "mid_term",
+                    "short_term"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Horizon Type"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD（省略時は全期間の新しい順）",
+              "title": "Date"
+            },
+            "description": "YYYY-MM-DD（省略時は全期間の新しい順）"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_GeminiPickSummary__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/picks/run": {
       "post": {
         "tags": [
@@ -1645,7 +1729,7 @@
           "portfolio"
         ],
         "summary": "保有銘柄削除",
-        "description": "指定ロットを削除する.",
+        "description": "指定ロットを削除する（売却記録を残さない取り消し用。売却は `/sell` を使う）.",
         "operationId": "remove_holding_api_portfolio_holdings__holding_id__delete",
         "parameters": [
           {
@@ -1675,6 +1759,81 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/holdings/{holding_id}/sell": {
+      "post": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "保有銘柄を売却",
+        "description": "保有ロットの一部または全部を売却し、履歴（`portfolio_sell_history`）へ記録する（🆕 P26）.\n\n売却株数が保有株数と同じなら全量売却（ロット削除）、それ未満なら一部売却（残数へ更新）。\n実現損益は売却時点のロットの平均取得単価から計算する。",
+        "operationId": "sell_holding_api_portfolio_holdings__holding_id__sell_post",
+        "parameters": [
+          {
+            "name": "holding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Holding Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SellHoldingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SellHistoryEntry_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/sell-history": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "売却履歴一覧",
+        "description": "売却履歴を新しい順で返す（🆕 P26）.",
+        "operationId": "get_sell_history_api_portfolio_sell_history_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_SellHistoryEntry__"
                 }
               }
             }
@@ -2170,6 +2329,51 @@
         }
       }
     },
+    "/api/stock/search": {
+      "get": {
+        "tags": [
+          "stock"
+        ],
+        "summary": "銘柄検索（証券コード/銘柄名の部分一致）",
+        "description": "証券コードまたは銘柄名の部分一致で銘柄マスタを検索する（🆕 P26、ポートフォリオへの銘柄追加用）.",
+        "operationId": "search_api_stock_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 0,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TickerInfo__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/stock/{symbol}/ohlc": {
       "get": {
         "tags": [
@@ -2295,6 +2499,68 @@
         }
       }
     },
+    "/api/settings/api-keys": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "外部APIキーの設定状況",
+        "description": "マスク済みの現在の設定状況を返す（生値は含まない）.",
+        "operationId": "get_api_keys_api_settings_api_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiKeysResponse_"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "外部APIキーを更新（.envへ永続化。反映にはbackend/celeryの再起動が必要）",
+        "description": "指定されたフィールドだけ `.env` を更新する（None のフィールドは変更しない）.",
+        "operationId": "update_api_keys_api_settings_api_keys_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeysUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiKeysResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2347,6 +2613,147 @@
           "acquired_at"
         ],
         "title": "AddHoldingRequest"
+      },
+      "ApiKeyStatus": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "masked_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "configured"
+        ],
+        "title": "ApiKeyStatus",
+        "description": "1 つの外部 API キーの設定状況（生値は含まない）."
+      },
+      "ApiKeysResponse": {
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyStatus"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "keys"
+        ],
+        "title": "ApiKeysResponse",
+        "description": "設定画面向けの外部 API キー一覧応答."
+      },
+      "ApiKeysUpdateRequest": {
+        "properties": {
+          "anthropic_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anthropic Api Key"
+          },
+          "gemini_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gemini Api Key"
+          },
+          "jquants_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jquants Api Key"
+          }
+        },
+        "type": "object",
+        "title": "ApiKeysUpdateRequest",
+        "description": "`PUT /api/settings/api-keys` のリクエストボディ.\n\n各フィールドは `None` なら変更しない、空文字なら未設定に戻す。"
+      },
+      "ApiResponse_ApiKeysResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeysResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[ApiKeysResponse]"
       },
       "ApiResponse_EodReview_": {
         "properties": {
@@ -2611,6 +3018,50 @@
           "success"
         ],
         "title": "ApiResponse[PortfolioSummary]"
+      },
+      "ApiResponse_SellHistoryEntry_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SellHistoryEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[SellHistoryEntry]"
       },
       "ApiResponse_TrendSnapshot_": {
         "properties": {
@@ -2924,6 +3375,54 @@
         ],
         "title": "ApiResponse[dict]"
       },
+      "ApiResponse_list_GeminiPickSummary__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GeminiPickSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[GeminiPickSummary]]"
+      },
       "ApiResponse_list_ModelCoverage__": {
         "properties": {
           "success": {
@@ -3212,6 +3711,102 @@
         ],
         "title": "ApiResponse[list[QualityDistribution]]"
       },
+      "ApiResponse_list_SellHistoryEntry__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SellHistoryEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[SellHistoryEntry]]"
+      },
+      "ApiResponse_list_TickerInfo__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TickerInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[TickerInfo]]"
+      },
       "ApiResponse_list_TrainingTrendPoint__": {
         "properties": {
           "success": {
@@ -3416,6 +4011,156 @@
         "title": "EvaluatePromotionRequest",
         "description": "`POST /api/registry/promotions/evaluate` のリクエストボディ.\n\n`lane=\"ml_pool\"`（断面プール分類器、P5d）は held-out 検証指標で判定するため\n`horizon_days` を無視する（`evaluate_ml_pool_promotion` 参照）。"
       },
+      "GeminiPickSummary": {
+        "properties": {
+          "shadow_id": {
+            "type": "string",
+            "title": "Shadow Id"
+          },
+          "pick_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pick Id"
+          },
+          "challenger_version": {
+            "type": "string",
+            "title": "Challenger Version"
+          },
+          "issued_at": {
+            "type": "string",
+            "title": "Issued At"
+          },
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "bullish",
+              "bearish",
+              "neutral"
+            ],
+            "title": "Direction"
+          },
+          "entry": {
+            "type": "number",
+            "title": "Entry"
+          },
+          "stop": {
+            "type": "number",
+            "title": "Stop"
+          },
+          "target": {
+            "type": "number",
+            "title": "Target"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "risk_factors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Risk Factors",
+            "default": []
+          },
+          "holding_period_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holding Period Days"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "spark": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Spark",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "shadow_id",
+          "challenger_version",
+          "issued_at",
+          "horizon_type",
+          "symbol",
+          "direction",
+          "entry",
+          "stop",
+          "target",
+          "confidence"
+        ],
+        "title": "GeminiPickSummary",
+        "description": "Gemini（challenger LLM）判定の一覧表示用行（🆕 P25）.\n\n`shadow_predictions` を `prediction_ledger`（Claude/Anthropic の公式ピック）とは別に、\n単独の一覧として表示するための型。`pick_id` は同じ候補を判定した公式ピックへの\n参照であり、あくまで比較表示用（昇格・確度較正には一切関与しない、CLAUDE.md）。"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3492,6 +4237,14 @@
           "change_pct": {
             "type": "number",
             "title": "Change Pct"
+          },
+          "spark": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Spark",
+            "default": []
           }
         },
         "type": "object",
@@ -4074,6 +4827,14 @@
             ],
             "title": "Change Pct"
           },
+          "spark": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Spark",
+            "default": []
+          },
           "reasoning_tags": {
             "items": {
               "type": "string"
@@ -4638,6 +5399,112 @@
         "title": "SectorConcentrationWarning",
         "description": "特定セクターへ評価額が集中している警告."
       },
+      "SellHistoryEntry": {
+        "properties": {
+          "sell_id": {
+            "type": "string",
+            "title": "Sell Id"
+          },
+          "holding_id": {
+            "type": "string",
+            "title": "Holding Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "avg_cost": {
+            "type": "number",
+            "title": "Avg Cost"
+          },
+          "sell_price": {
+            "type": "number",
+            "title": "Sell Price"
+          },
+          "realized_pnl": {
+            "type": "number",
+            "title": "Realized Pnl"
+          },
+          "sold_at": {
+            "type": "string",
+            "title": "Sold At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sell_id",
+          "holding_id",
+          "symbol",
+          "quantity",
+          "avg_cost",
+          "sell_price",
+          "realized_pnl",
+          "sold_at"
+        ],
+        "title": "SellHistoryEntry",
+        "description": "売却履歴の1行（🆕 P26）."
+      },
+      "SellHoldingRequest": {
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "sell_price": {
+            "type": "number",
+            "title": "Sell Price"
+          },
+          "sold_at": {
+            "type": "string",
+            "title": "Sold At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "quantity",
+          "sell_price",
+          "sold_at"
+        ],
+        "title": "SellHoldingRequest",
+        "description": "`POST /api/portfolio/holdings/{holding_id}/sell` のリクエストボディ（🆕 P26）.\n\n`quantity` が保有株数と同数なら全量売却（ロット自体を削除）、それ未満なら一部売却\n（残り株数へ更新）として扱う。平均取得単価はロットの `avg_cost` をそのまま使う\n（売却時に別値を指定させると実現損益の計算根拠が崩れるため）。"
+      },
       "ShadowPredictionSummary": {
         "properties": {
           "shadow_id": {
@@ -4774,6 +5641,36 @@
         ],
         "title": "SubScores",
         "description": "4 分析のサブスコア（各 0〜100）."
+      },
+      "TickerInfo": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "TickerInfo",
+        "description": "銘柄の基本属性（コード・名称・業種）."
       },
       "TrainingRunRequest": {
         "properties": {
