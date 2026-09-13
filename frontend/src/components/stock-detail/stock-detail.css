@@ -35,6 +35,21 @@
   color: var(--color-text-primary);
 }
 
+.picked-ticker-engine-badge {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-xs);
+  margin-right: var(--spacing-xs);
+}
+
+.picked-tickers-list a.is-active .picked-ticker-engine-badge {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+}
+
 .stock-overview-symbol {
   font-family: var(--font-mono);
   font-size: var(--font-size-xl);
