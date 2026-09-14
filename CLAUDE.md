@@ -76,6 +76,17 @@
 - ポートフォリオ判定は**承認制**: AI は提案チケットを生成するだけで自動約定しない。承認・却下・実約定報告は人間 / API 経由。**アプリはブローカー発注を一切行わない。**
 - 予算上限は安全装置であって目標ではない。自己保存を動機にしない。config・コードの自動適用はしない。
 
+## ローカル起動（「システム起動して」と言われたら）
+
+以下をすべて確認し、動いていないものだけ起動する（`.claude/launch.json` の `frontend`/`backend` エントリを優先活用）。「サーバー落ちた」等の類似の申告時も同じ手順で確認する。
+
+- **frontend (3001) / backend (8002)**: 未起動なら起動。
+- **Redis**: Dockerコンテナ `market-lens-redis`（ポート6379）。Celeryのブローカー兼結果バックエンド。停止していれば `docker start market-lens-redis`。
+- **celery worker**: `.venv/Scripts/celery.exe -A backend.celery_app worker --pool=solo --loglevel=info` をバックグラウンド起動（Windows では `--pool=solo` 必須）。ピック生成・保有監視等のタスクを裏で実行するため常時稼働させる。
+- **kb_creator ベクトル検索API（ポート8077）**: 別リポジトリ `C:\Users\charg\myWorkspace\obsidian-knowledge-base-creator` が提供する外部サービス。`services/vault/knowledge_search_client.py` の接続先で、**未起動だとナレッジ検索が全銘柄で接続失敗・タイムアウトを繰り返し、ピック生成が大幅に遅延する**（2026-09-14 に実際に発生）。同リポジトリの `tasks/start_vector_api.ps1` 等で起動、または Docker の Qdrant コンテナ含めて確認する。
+
+**celery-beat は「システム起動して」の対象に含めない（自動起動しない）**: 初回起動時、実行履歴がないため全定期タスク（ピック生成・学習バッチ・ドリフト検知・昇格評価等）を「未実行」とみなして一斉発火し、当日分ピックの二重生成や重い学習バッチの暴走を招く（2026-09-14 に実際に発生し、即座に停止して事なきを得た）。beat の起動が必要な場合は、この副作用をユーザーに説明した上で明示的な許可を取ってから行う。
+
 ## 検証・Git
 
 - 開発環境は **Windows / PowerShell**（コマンド連結は `;`、`&&` 不可）。Python は `.venv/Scripts/python.exe`（Python 3.11）。
