@@ -1,13 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { SellHoldingModal } from '@/components/portfolio/SellHoldingModal';
 import { sellHolding } from '@/lib/api/portfolio';
 import type { PortfolioHolding } from '@/lib/api/portfolio';
+import { fetchQuote } from '@/lib/api/stock';
 
 jest.mock('@/lib/api/portfolio');
+jest.mock('@/lib/api/stock');
 
 const mockSellHolding = sellHolding as jest.MockedFunction<typeof sellHolding>;
+const mockFetchQuote = fetchQuote as jest.MockedFunction<typeof fetchQuote>;
 
 const HOLDING: PortfolioHolding = {
   holding_id: 'h1',
@@ -25,6 +28,11 @@ const HOLDING: PortfolioHolding = {
 };
 
 describe('SellHoldingModal', () => {
+  beforeEach(() => {
+    // 既定では最新値が取れない状況を再現し、holding.current_price へのフォールバックを固定する。
+    mockFetchQuote.mockRejectedValue(new Error('network error'));
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -35,6 +43,15 @@ describe('SellHoldingModal', () => {
     expect(screen.getByText(/保有株数 100 株/)).toBeInTheDocument();
     expect(screen.getByLabelText('売却価格（円）')).toHaveValue(3000);
     expect(screen.getByLabelText('売却株数')).toHaveValue(100);
+  });
+
+  it('開いた時点の最新値が取得できた場合はそれを売却価格の初期値として上書きする', async () => {
+    mockFetchQuote.mockResolvedValue({ symbol: '7203', price: 3250, prev_close: 3200, change_pct: 1.56 });
+
+    render(<SellHoldingModal holding={HOLDING} onClose={jest.fn()} onSold={jest.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText('売却価格（円）')).toHaveValue(3250));
+    expect(screen.getByText(/現在値を初期値にしています/)).toBeInTheDocument();
   });
 
   it('全量売却するとsellHoldingを呼びonSold・onCloseが呼ばれる', async () => {

@@ -1,14 +1,20 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { sellHolding } from '@/lib/api/portfolio';
+import { fetchQuote } from '@/lib/api/stock';
 import { todayJst } from '@/lib/jstDate';
 import type { PortfolioHolding } from '@/lib/api/portfolio';
 import './portfolio.css';
 
 // 保有銘柄の売却ポップアップ（🆕 P26）。売却株数が保有株数と同じなら全量売却（ロット削除）、
 // それ未満なら一部売却として backend 側で扱う（`services/db/portfolio_db` 参照）。
+//
+// 売却価格は「その時点の最新株価」を初期値にする（ユーザー指示）。holding.current_price は
+// ポートフォリオ画面を開いた（＝一覧取得した）時点のスナップショットで、モーダルを開くまでの
+// 間に古くなりうるため、開くたびに /stock/{symbol}/quote で取り直す。取得失敗時のみ
+// holding.current_price にフォールバックする。
 
 export function SellHoldingModal({
   holding,
@@ -21,10 +27,25 @@ export function SellHoldingModal({
 }): ReactNode {
   const [quantity, setQuantity] = useState(String(holding.quantity));
   const [sellPrice, setSellPrice] = useState(holding.current_price ? String(Math.round(holding.current_price)) : '');
+  const [priceIsLatest, setPriceIsLatest] = useState(false);
   const [soldAt, setSoldAt] = useState(todayJst());
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchQuote(holding.symbol)
+      .then((quote) => {
+        if (cancelled || quote.price === null) return;
+        setSellPrice(String(Math.round(quote.price)));
+        setPriceIsLatest(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [holding.symbol]);
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
@@ -75,8 +96,21 @@ export function SellHoldingModal({
         </label>
         <label className="holding-form-field">
           売却価格（円）
-          <input type="number" min={0} step={0.01} value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} required />
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={sellPrice}
+            onChange={(e) => {
+              setSellPrice(e.target.value);
+              setPriceIsLatest(false);
+            }}
+            required
+          />
         </label>
+        {priceIsLatest && (
+          <p className="model-lab-as-of">現在値を初期値にしています。実際の約定単価に応じて書き換えてください。</p>
+        )}
         <label className="holding-form-field">
           売却日
           <input type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required />

@@ -16,9 +16,10 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.stock import OhlcBar
+from backend.models.stock import OhlcBar, Quote
 from backend.models.stocks import TickerInfo
 from backend.services.data.data_fetcher import fetch_stock_data, search_tickers
+from backend.services.data.quote_service import fetch_quote
 from backend.services.vault.brand_notes_service import get_raw_note_content
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
@@ -38,6 +39,16 @@ class StockNote(BaseModel):
     code: str
     note_title: str
     content: str
+
+
+@router.get("/{symbol}/quote", response_model=ApiResponse[Quote], summary="直近値取得（取引フォームの初期値用）")
+async def get_quote(symbol: str) -> ApiResponse[Quote]:
+    """指定銘柄の直近値を返す（ポートフォリオの買い/売りフォームが開いた時点の最新値を
+    初期値として提示するために使う。取得失敗時も price=null で返し、呼び出し元が
+    手入力にフォールバックできるようにする）."""
+    current, prev = await fetch_quote(symbol)
+    change_pct = (current - prev) / prev * 100 if current is not None and prev is not None and prev != 0 else None
+    return ApiResponse.ok(Quote(symbol=symbol, price=current, prev_close=prev, change_pct=change_pct))
 
 
 @router.get("/{symbol}/ohlc", response_model=ApiResponse[list[OhlcBar]], summary="日足 OHLC 取得")

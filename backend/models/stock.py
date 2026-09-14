@@ -16,3 +16,15 @@ class OhlcBar(BaseModel):
     low: float
     close: float
     volume: float
+
+
+class Quote(BaseModel):
+    """単一銘柄の直近値（🆕 P26、ポートフォリオの買い/売りフォームで取引時点の最新値を
+    初期値に使うための軽量エンドポイント用）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    price: float | None
+    prev_close: float | None
+    change_pct: float | None

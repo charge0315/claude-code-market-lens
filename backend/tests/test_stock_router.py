@@ -23,6 +23,42 @@ def _fake_df() -> pd.DataFrame:
     )
 
 
+async def test_get_quote_returns_price_and_change_pct(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_quote(symbol: str) -> tuple[float | None, float | None]:
+        assert symbol == "7203"
+        return 3025.0, 3000.0
+
+    monkeypatch.setattr(stock_router_module, "fetch_quote", fake_fetch_quote)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/quote")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["symbol"] == "7203"
+    assert body["data"]["price"] == 3025.0
+    assert body["data"]["prev_close"] == 3000.0
+    assert body["data"]["change_pct"] == pytest.approx((3025.0 - 3000.0) / 3000.0 * 100)
+
+
+async def test_get_quote_returns_null_fields_when_fetch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None]:
+        return None, None
+
+    monkeypatch.setattr(stock_router_module, "fetch_quote", fake_fetch_quote)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/9999/quote")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"] == {"symbol": "9999", "price": None, "prev_close": None, "change_pct": None}
+
+
 async def test_get_ohlc_returns_bars(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_fetch(_symbol: str, _period: str, _interval: str) -> pd.DataFrame:
         return _fake_df()

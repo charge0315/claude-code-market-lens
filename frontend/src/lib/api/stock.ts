@@ -17,6 +17,19 @@ export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo'): Promise<O
   return api.get<OhlcBar[]>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}`);
 }
 
+// 🆕 P26: ポートフォリオの買い/売りフォームが開いた時点の最新値を初期値にするための
+// 軽量エンドポイント。取得失敗時は price 等が null で返る（フォームは手入力にフォールバック）。
+export interface Quote {
+  symbol: string;
+  price: number | null;
+  prev_close: number | null;
+  change_pct: number | null;
+}
+
+export function fetchQuote(symbol: string): Promise<Quote> {
+  return api.get<Quote>(`/stock/${encodeURIComponent(symbol)}/quote`);
+}
+
 export interface StockNote {
   code: string;
   note_title: string;

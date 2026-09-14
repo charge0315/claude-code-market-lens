@@ -1,14 +1,22 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
 import { addHolding } from '@/lib/api/portfolio';
+import { fetchQuote } from '@/lib/api/stock';
 
 jest.mock('@/lib/api/portfolio');
+jest.mock('@/lib/api/stock');
 
 const mockAddHolding = addHolding as jest.MockedFunction<typeof addHolding>;
+const mockFetchQuote = fetchQuote as jest.MockedFunction<typeof fetchQuote>;
 
 describe('AddHoldingModal', () => {
+  beforeEach(() => {
+    // 既定では最新値が取れない状況を再現し、suggestedPrice へのフォールバックを固定する。
+    mockFetchQuote.mockRejectedValue(new Error('network error'));
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -18,6 +26,15 @@ describe('AddHoldingModal', () => {
 
     expect(screen.getByRole('heading', { name: 'ポートフォリオに追加: 7203（トヨタ自動車）' })).toBeInTheDocument();
     expect(screen.getByLabelText('取得単価（円）')).toHaveValue(3000);
+  });
+
+  it('最新値が取得できた場合はそれを取得単価の初期値として上書きする', async () => {
+    mockFetchQuote.mockResolvedValue({ symbol: '7203', price: 3120, prev_close: 3100, change_pct: 0.65 });
+
+    render(<AddHoldingModal symbol="7203" suggestedPrice={3000} onClose={jest.fn()} onAdded={jest.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText('取得単価（円）')).toHaveValue(3120));
+    expect(screen.getByText(/現在値を初期値にしています/)).toBeInTheDocument();
   });
 
   it('入力内容でaddHoldingを呼び、成功したらonAdded・onCloseを呼ぶ', async () => {
