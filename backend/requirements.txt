@@ -28,6 +28,12 @@ pandas==3.0.5
 yfinance==1.7.0
 PyYAML==6.0.3
 
+# pandas の推移依存。未固定だと CI（Python 3.13 マトリクス）で pip がより新しい numpy を
+# 解決することがあり、その型スタブが PEP 695 の `type` 文（Python 3.12+ 構文）を使うため
+# mypy の python_version=3.11（pyproject.toml）設定と衝突して構文エラーになる。全環境で
+# 同一バージョンに固定して解消する。
+numpy==2.4.6
+
 # 評価指標（P4）: Brier / ROC-AUC / isotonic 較正。
 scikit-learn==1.7.2
 joblib==1.6.0
