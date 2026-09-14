@@ -91,12 +91,10 @@ def test_notifications_ws_streams_newly_inserted_notification(
 
     with TestClient(app) as client, client.websocket_connect("/ws/notifications") as ws:
         conn = sqlite3.connect(migrated_db)
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO notifications (notification_id, run_date, ticker, kind, channel, body, created_at)
             VALUES ('n1', '2026-06-02', '7203', 'trim', 'in_app', '{}', '2099-01-01T00:00:00+09:00')
-            """
-        )
+            """)
         conn.commit()
         conn.close()
 

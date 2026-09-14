@@ -37,16 +37,12 @@ async def list_per_ticker_champion_metrics() -> list[dict[str, object]]:
     集計・val_metrics の JSON デコードによる品質分布の両方に使う。
     """
     async with get_db() as db:
-        result = await db.execute(
-            text(
-                """
+        result = await db.execute(text("""
                 SELECT mc.lane AS lane, mr.val_metrics AS val_metrics
                 FROM model_champions mc
                 JOIN model_registry mr ON mr.version = mc.champion_version
                 WHERE mc.lane LIKE '%:%'
-                """
-            )
-        )
+                """))
         return [dict(r._mapping) for r in result]
 
 

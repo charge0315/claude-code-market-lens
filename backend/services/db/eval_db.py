@@ -30,8 +30,7 @@ async def insert_eval_snapshot(
     """評価指標を 1 行追加する（同一指標の時系列は追記で成長曲線にする）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO eval_snapshots (
                     snapshot_id, computed_at, scope, model_version, metric_name,
                     metric_value, sample_n, horizon_days, confidence_bucket
@@ -39,8 +38,7 @@ async def insert_eval_snapshot(
                     :snapshot_id, :computed_at, :scope, :model_version, :metric_name,
                     :metric_value, :sample_n, :horizon_days, :confidence_bucket
                 )
-                """
-            ),
+                """),
             {
                 "snapshot_id": str(uuid.uuid4()),
                 "computed_at": computed_at or datetime.now(JST).isoformat(timespec="seconds"),
@@ -91,15 +89,13 @@ async def upsert_calibration_curve(
     """較正曲線を 1 行追加する（同一 scope の時系列は追記）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO calibration_curves (
                     curve_id, computed_at, scope, horizon_days, direction, points, brier, is_calibrated
                 ) VALUES (
                     :curve_id, :computed_at, :scope, :horizon_days, :direction, :points, :brier, :is_calibrated
                 )
-                """
-            ),
+                """),
             {
                 "curve_id": str(uuid.uuid4()),
                 "computed_at": computed_at or datetime.now(JST).isoformat(timespec="seconds"),

@@ -30,8 +30,7 @@ async def insert_signal(
     signal_id = str(uuid.uuid4())
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO portfolio_signals (
                     signal_id, symbol, evaluated_at, action, entry, stop, target,
                     confidence, rationale, status, fill_report
@@ -39,8 +38,7 @@ async def insert_signal(
                     :signal_id, :symbol, :evaluated_at, :action, :entry, :stop, :target,
                     :confidence, :rationale, 'proposed', NULL
                 )
-                """
-            ),
+                """),
             {
                 "signal_id": signal_id,
                 "symbol": symbol,
@@ -106,12 +104,10 @@ async def set_fill_report(signal_id: str, fill_report_json: str) -> bool:
     """実約定結果を記録し `status="executed"` にする。対象行が無ければ False."""
     async with get_db() as db:
         result = await db.execute(
-            text(
-                """
+            text("""
                 UPDATE portfolio_signals SET status = 'executed', fill_report = :fill_report
                 WHERE signal_id = :signal_id
-                """
-            ),
+                """),
             {"signal_id": signal_id, "fill_report": fill_report_json},
         )
         return result.rowcount > 0

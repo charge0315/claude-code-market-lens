@@ -24,12 +24,10 @@ async def insert_holding(*, symbol: str, quantity: int, avg_cost: float, acquire
     now = datetime.now(JST).isoformat(timespec="seconds")
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO portfolios (holding_id, symbol, quantity, avg_cost, acquired_at, created_at, updated_at)
                 VALUES (:holding_id, :symbol, :quantity, :avg_cost, :acquired_at, :created_at, :updated_at)
-                """
-            ),
+                """),
             {
                 "holding_id": holding_id,
                 "symbol": symbol,
@@ -65,12 +63,10 @@ async def update_holding(holding_id: str, *, quantity: int, avg_cost: float) -> 
     now = datetime.now(JST).isoformat(timespec="seconds")
     async with get_db() as db:
         result = await db.execute(
-            text(
-                """
+            text("""
                 UPDATE portfolios SET quantity = :quantity, avg_cost = :avg_cost, updated_at = :updated_at
                 WHERE holding_id = :holding_id
-                """
-            ),
+                """),
             {"holding_id": holding_id, "quantity": quantity, "avg_cost": avg_cost, "updated_at": now},
         )
         return result.rowcount > 0
@@ -101,8 +97,7 @@ async def insert_sell_history(
     now = datetime.now(JST).isoformat(timespec="seconds")
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO portfolio_sell_history (
                     sell_id, holding_id, symbol, quantity, avg_cost, sell_price,
                     realized_pnl, sold_at, note, created_at
@@ -110,8 +105,7 @@ async def insert_sell_history(
                     :sell_id, :holding_id, :symbol, :quantity, :avg_cost, :sell_price,
                     :realized_pnl, :sold_at, :note, :created_at
                 )
-                """
-            ),
+                """),
             {
                 "sell_id": sell_id,
                 "holding_id": holding_id,

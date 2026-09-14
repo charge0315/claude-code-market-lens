@@ -30,8 +30,7 @@ async def insert_shadow(
     shadow_id = str(uuid.uuid4())
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO portfolio_signal_shadows (
                     shadow_id, signal_id, challenger_version, action, entry, stop, target,
                     confidence, reasoning, created_at
@@ -39,8 +38,7 @@ async def insert_shadow(
                     :shadow_id, :signal_id, :challenger_version, :action, :entry, :stop, :target,
                     :confidence, :reasoning, :created_at
                 )
-                """
-            ),
+                """),
             {
                 "shadow_id": shadow_id,
                 "signal_id": signal_id,

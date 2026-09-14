@@ -45,8 +45,7 @@ async def insert_shadow_prediction(
     """1件の challenger 判定（Gemini 等）を1行追加する（INSERT-only）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO shadow_predictions (
                     shadow_id, pick_id, run_id, challenger_version, symbol, horizon_type,
                     issued_at, direction, entry, stop, target, confidence_raw, confidence, payload
@@ -54,8 +53,7 @@ async def insert_shadow_prediction(
                     :shadow_id, :pick_id, :run_id, :challenger_version, :symbol, :horizon_type,
                     :issued_at, :direction, :entry, :stop, :target, :confidence_raw, :confidence, :payload
                 )
-                """
-            ),
+                """),
             {
                 "shadow_id": str(uuid.uuid4()),
                 "pick_id": pick_id,

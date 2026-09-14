@@ -15,15 +15,13 @@ from sqlalchemy import text
 from backend.services.db.database import get_db
 from backend.services.jst_time import JST
 
-_INSERT = text(
-    """
+_INSERT = text("""
     INSERT OR REPLACE INTO trend_snapshots (
         snapshot_at, status, model, trends, signal_count, source_summary, created_at
     ) VALUES (
         :snapshot_at, :status, :model, :trends, :signal_count, :source_summary, :created_at
     )
-    """
-)
+    """)
 
 _LATEST = text("SELECT * FROM trend_snapshots ORDER BY snapshot_at DESC LIMIT 1")
 

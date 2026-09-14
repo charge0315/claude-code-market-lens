@@ -27,8 +27,7 @@ async def insert_drift_snapshot(
     """1 特徴量分の PSI 計測結果を追加する."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO drift_snapshots (
                     drift_id, computed_at, feature_name, psi, baseline_window, current_window,
                     drift_flag, triggered_retrain
@@ -36,8 +35,7 @@ async def insert_drift_snapshot(
                     :drift_id, :computed_at, :feature_name, :psi, :baseline_window, :current_window,
                     :drift_flag, :triggered_retrain
                 )
-                """
-            ),
+                """),
             {
                 "drift_id": str(uuid.uuid4()),
                 "computed_at": computed_at or datetime.now(JST).isoformat(timespec="seconds"),

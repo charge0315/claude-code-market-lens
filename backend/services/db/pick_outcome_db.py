@@ -12,8 +12,7 @@ from sqlalchemy import text
 
 from backend.services.db.database import get_db
 
-_UPSERT = text(
-    """
+_UPSERT = text("""
     INSERT INTO pick_outcomes (
         outcome_id, pick_id, horizon_days, resolved_at, realized_return, win,
         hit_stop, hit_target, first_hit, mfe, mae, benchmark_return, excess_return,
@@ -36,8 +35,7 @@ _UPSERT = text(
         excess_return = excluded.excess_return,
         confidence_bucket = excluded.confidence_bucket,
         direction = excluded.direction
-    """
-)
+    """)
 
 
 async def upsert_outcome(
@@ -85,16 +83,14 @@ async def list_unresolved_picks(*, issued_before: str, limit: int = 50) -> list[
     """まだ決着行を 1 つも持たず、issued_at が `issued_before` より前のピック（本番のみ）を返す."""
     async with get_db() as db:
         result = await db.execute(
-            text(
-                """
+            text("""
                 SELECT p.* FROM prediction_ledger p
                 WHERE p.is_shadow = 0
                   AND p.issued_at < :issued_before
                   AND NOT EXISTS (SELECT 1 FROM pick_outcomes o WHERE o.pick_id = p.pick_id)
                 ORDER BY p.issued_at ASC
                 LIMIT :limit
-                """
-            ),
+                """),
             {"issued_before": issued_before, "limit": limit},
         )
         return [dict(r._mapping) for r in result]
@@ -118,8 +114,7 @@ async def list_resolved_for_eval(*, horizon_days: int, since: str | None = None)
         params["since"] = since
     async with get_db() as db:
         result = await db.execute(
-            text(
-                f"""
+            text(f"""
                 SELECT
                     p.pick_id, p.horizon_type, p.issued_at, p.symbol, p.direction AS pick_direction,
                     p.composite_score, p.confidence, p.confidence_raw, p.confidence_bucket, p.model_version,
@@ -130,8 +125,7 @@ async def list_resolved_for_eval(*, horizon_days: int, since: str | None = None)
                 JOIN prediction_ledger p ON p.pick_id = o.pick_id
                 WHERE o.horizon_days = :horizon_days {clause}
                 ORDER BY p.issued_at ASC
-                """  # noqa: S608 - clause は定数リテラルのみ、値は全てバインド  # nosec B608
-            ),
+                """),  # noqa: S608 - clause は定数リテラルのみ、値は全てバインド  # nosec B608
             params,
         )
         return [dict(r._mapping) for r in result]

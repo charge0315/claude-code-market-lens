@@ -25,12 +25,10 @@ async def insert_notification(*, ticker: str, kind: str, body: str, run_date: st
     try:
         async with get_db() as db:
             await db.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO notifications (notification_id, run_date, ticker, kind, body, created_at)
                     VALUES (:notification_id, :run_date, :ticker, :kind, :body, :created_at)
-                    """
-                ),
+                    """),
                 {
                     "notification_id": notification_id,
                     "run_date": run_date or today_jst(),
@@ -87,15 +85,13 @@ async def upsert_subscription(*, endpoint: str, p256dh: str, auth: str, user_age
     now = datetime.now(JST).isoformat(timespec="seconds")
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at, user_agent, revoked)
                 VALUES (:endpoint, :p256dh, :auth, :created_at, :user_agent, 0)
                 ON CONFLICT(endpoint) DO UPDATE SET
                     p256dh = excluded.p256dh, auth = excluded.auth,
                     user_agent = excluded.user_agent, revoked = 0
-                """
-            ),
+                """),
             {"endpoint": endpoint, "p256dh": p256dh, "auth": auth, "created_at": now, "user_agent": user_agent},
         )
 

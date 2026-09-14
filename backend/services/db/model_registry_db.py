@@ -29,8 +29,7 @@ async def upsert_model(
     """モデル（ここでは recommender+LLM の構成スナップショット）を登録 / 更新する."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO model_registry (
                     version, model_type, ticker, objective, trained_at, artifact_path,
                     val_metrics, feature_list
@@ -41,8 +40,7 @@ async def upsert_model(
                 ON CONFLICT (version) DO UPDATE SET
                     val_metrics = excluded.val_metrics,
                     feature_list = excluded.feature_list
-                """
-            ),
+                """),
             {
                 "version": version,
                 "model_type": model_type,
@@ -88,16 +86,14 @@ async def set_champion(lane: str, version: str, *, promoted_by: str = "manual") 
     """系統の champion を差し替える（`model_registry` に存在するバージョンのみ許可、FK 制約）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO model_champions (lane, champion_version, promoted_at, promoted_by)
                 VALUES (:lane, :version, :promoted_at, :promoted_by)
                 ON CONFLICT (lane) DO UPDATE SET
                     champion_version = excluded.champion_version,
                     promoted_at = excluded.promoted_at,
                     promoted_by = excluded.promoted_by
-                """
-            ),
+                """),
             {
                 "lane": lane,
                 "version": version,
@@ -131,8 +127,7 @@ async def insert_promotion(
     """昇格ゲートの判定結果を 1 行追加する（`applied=0` で作成、適用は別 API）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO model_promotions (
                     promotion_id, lane, challenger_version, champion_version, evaluated_at,
                     holdout_delta, calib_regressed, paper_perf_delta, paper_days, verdict,
@@ -142,8 +137,7 @@ async def insert_promotion(
                     :holdout_delta, :calib_regressed, :paper_perf_delta, :paper_days, :verdict,
                     0, :rationale
                 )
-                """
-            ),
+                """),
             {
                 "promotion_id": promotion_id,
                 "lane": lane,

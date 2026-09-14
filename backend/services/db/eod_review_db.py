@@ -31,16 +31,14 @@ async def upsert_eod_review(
     """1 日分を作成または上書きする（`force` 再生成用）."""
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO eod_reviews (review_date, summary, learned_heuristics, created_at)
                 VALUES (:review_date, :summary, :learned_heuristics, :created_at)
                 ON CONFLICT(review_date) DO UPDATE SET
                     summary = excluded.summary,
                     learned_heuristics = excluded.learned_heuristics,
                     created_at = excluded.created_at
-                """
-            ),
+                """),
             {
                 "review_date": review_date,
                 "summary": summary,

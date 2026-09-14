@@ -31,12 +31,10 @@ async def insert_training_batch_run(
     """
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO training_batch_runs (run_date, ticker, model_type, status, error, data_source, created_at)
                 VALUES (:run_date, :ticker, :model_type, :status, :error, :data_source, :created_at)
-                """
-            ),
+                """),
             {
                 "run_date": run_date,
                 "ticker": ticker,
@@ -75,14 +73,12 @@ async def get_latest_trained_at_by_ticker(model_type: str) -> dict[str, str]:
     """
     async with get_db() as db:
         result = await db.execute(
-            text(
-                """
+            text("""
                 SELECT ticker, MAX(trained_at) AS latest_trained_at
                 FROM model_registry
                 WHERE model_type = :model_type
                 GROUP BY ticker
-                """
-            ),
+                """),
             {"model_type": model_type},
         )
         return {str(r[0]): str(r[1]) for r in result}
@@ -96,9 +92,7 @@ async def get_latest_data_source_by_model_type() -> dict[str, dict[str, int]]:
     モデルラボの「カバレッジ（データソース別）」表示用）。
     """
     async with get_db() as db:
-        result = await db.execute(
-            text(
-                """
+        result = await db.execute(text("""
                 WITH latest AS (
                     SELECT
                         model_type,
@@ -111,9 +105,7 @@ async def get_latest_data_source_by_model_type() -> dict[str, dict[str, int]]:
                 FROM latest
                 WHERE rn = 1
                 GROUP BY model_type, data_source
-                """
-            )
-        )
+                """))
         breakdown: dict[str, dict[str, int]] = {}
         for model_type, data_source, n in result:
             breakdown.setdefault(str(model_type), {})[str(data_source)] = int(n)

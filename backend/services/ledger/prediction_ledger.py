@@ -42,8 +42,7 @@ def new_run_id() -> str:
     return str(uuid.uuid4())
 
 
-_INSERT = text(
-    """
+_INSERT = text("""
     INSERT INTO prediction_ledger (
         pick_id, run_id, issued_at, horizon_type, symbol, direction,
         entry, stop, target,
@@ -59,8 +58,7 @@ _INSERT = text(
         :feature_snapshot, :rationale_struct, :rationale_text, :model_version, :source_contributions,
         :is_shadow, :created_at
     )
-    """
-)
+    """)
 
 
 async def insert_pick(entry: LedgerEntry) -> None:

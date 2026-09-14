@@ -44,8 +44,7 @@ async def insert_trace_event(
     """
     async with get_db() as db:
         await db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO inference_traces (
                     trace_id, run_id, pick_id, symbol, horizon_type, started_at, finished_at,
                     status, stage, stage_status, stage_seq, payload, event_at
@@ -53,8 +52,7 @@ async def insert_trace_event(
                     :trace_id, :run_id, :pick_id, :symbol, :horizon_type, :started_at, :finished_at,
                     :status, :stage, :stage_status, :stage_seq, :payload, :event_at
                 )
-                """
-            ),
+                """),
             {
                 "trace_id": str(uuid.uuid4()),
                 "run_id": run_id,

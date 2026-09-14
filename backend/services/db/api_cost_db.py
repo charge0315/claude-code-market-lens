@@ -11,8 +11,7 @@ from sqlalchemy import text
 
 from backend.services.db.database import get_db
 
-_UPSERT = text(
-    """
+_UPSERT = text("""
     INSERT INTO api_costs (
         log_date, feature, model, call_count,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
@@ -30,18 +29,15 @@ _UPSERT = text(
         cache_write_tokens = api_costs.cache_write_tokens + excluded.cache_write_tokens,
         est_cost_usd = api_costs.est_cost_usd + excluded.est_cost_usd,
         pricing_known = excluded.pricing_known
-    """
-)
+    """)
 
-_ROWS_SINCE = text(
-    """
+_ROWS_SINCE = text("""
     SELECT log_date, feature, model, call_count, input_tokens, output_tokens,
            cache_read_tokens, cache_write_tokens, est_cost_usd, pricing_known
     FROM api_costs
     WHERE log_date >= :since
     ORDER BY log_date ASC, feature ASC
-    """
-)
+    """)
 
 
 async def insert_api_cost_log(
