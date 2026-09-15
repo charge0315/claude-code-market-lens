@@ -3,13 +3,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { fetchGeminiPicks, fetchPicks, type GeminiPickSummary, type PickSummary } from '@/lib/api/picks';
+import { fetchPortfolio } from '@/lib/api/portfolio';
+import { todayJst } from '@/lib/jstDate';
 import './stock-detail.css';
 
 // ピックされた銘柄の一覧（🆕 Claude/Gemini 別々に選択可能、P25 の続き）。
 // クリックで `?symbol=` を切り替え、下のチャート・4分析内訳・AI推論トレースを
 // その銘柄のものに切り替える。同一銘柄が両エンジンでピックされていれば両方表示する。
+// 🆕 表示対象は「当日ピックされた銘柄」と「ポートフォリオ登録済み銘柄」のみに絞る
+// （過去分の全ピックを出すと一覧が肥大化し、当日の判断材料として使いづらいため）。
 
-type Engine = 'claude' | 'gemini';
+type Engine = 'claude' | 'gemini' | 'portfolio';
 
 interface TickerEntry {
   symbol: string;
@@ -31,29 +35,36 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const today = todayJst();
     Promise.all([
-      fetchPicks('mid_term', { limit: 50 }),
-      fetchPicks('short_term', { limit: 50 }),
-      fetchGeminiPicks('mid_term', { limit: 50 }),
-      fetchGeminiPicks('short_term', { limit: 50 }),
+      fetchPicks('mid_term', { date: today, limit: 50 }),
+      fetchPicks('short_term', { date: today, limit: 50 }),
+      fetchGeminiPicks('mid_term', { date: today, limit: 50 }),
+      fetchGeminiPicks('short_term', { date: today, limit: 50 }),
+      fetchPortfolio(),
     ])
-      .then(([claudeMid, claudeShort, geminiMid, geminiShort]) => {
+      .then(([claudeMid, claudeShort, geminiMid, geminiShort, portfolio]) => {
         const claude = dedupeBySymbolKeepingLatest<PickSummary>([...claudeMid, ...claudeShort]).map(
           (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'claude' }),
         );
         const gemini = dedupeBySymbolKeepingLatest<GeminiPickSummary>([...geminiMid, ...geminiShort]).map(
           (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'gemini' }),
         );
-        setEntries([...claude, ...gemini]);
+        // 当日ピック済み（Claude/Gemini どちらか）の銘柄は保有欄で重複表示しない。
+        const pickedSymbols = new Set([...claude, ...gemini].map((e) => e.symbol));
+        const holdings = dedupeBySymbolKeepingLatest(portfolio.holdings)
+          .filter((h) => !pickedSymbols.has(h.symbol))
+          .map((h): TickerEntry => ({ symbol: h.symbol, companyName: h.company_name, engine: 'portfolio' }));
+        setEntries([...claude, ...gemini, ...holdings]);
       })
       .catch(() => setError('ピック銘柄一覧の取得に失敗しました'));
   }, []);
 
   if (error) return <p className="signal-queue-error">{error}</p>;
-  if (entries.length === 0) return <p className="signal-queue-empty">ピックされた銘柄はまだありません</p>;
+  if (entries.length === 0) return <p className="signal-queue-empty">本日のピック・保有銘柄はまだありません</p>;
 
   return (
-    <ul className="picked-tickers-list" aria-label="ピックされた銘柄一覧">
+    <ul className="picked-tickers-list" aria-label="本日のピック・保有銘柄一覧">
       {entries.map((e) => (
         <li key={`${e.engine}-${e.symbol}`}>
           <Link
@@ -61,7 +72,9 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
             className={e.symbol === selectedSymbol ? 'is-active' : undefined}
             aria-current={e.symbol === selectedSymbol ? 'true' : undefined}
           >
-            <span className="picked-ticker-engine-badge">{e.engine === 'claude' ? 'Claude' : 'Gemini'}</span>
+            <span className="picked-ticker-engine-badge">
+              {e.engine === 'claude' ? 'Claude' : e.engine === 'gemini' ? 'Gemini' : '保有'}
+            </span>
             {e.symbol}
             {e.companyName && `（${e.companyName}）`}
           </Link>

@@ -3,11 +3,48 @@ import { axe } from 'jest-axe';
 import { PickedTickersList } from '@/components/stock-detail/PickedTickersList';
 import { fetchGeminiPicks, fetchPicks } from '@/lib/api/picks';
 import type { GeminiPickSummary, PickSummary } from '@/lib/api/picks';
+import { fetchPortfolio } from '@/lib/api/portfolio';
+import type { PortfolioHolding, PortfolioSummary } from '@/lib/api/portfolio';
+import { todayJst } from '@/lib/jstDate';
 
 jest.mock('@/lib/api/picks');
+jest.mock('@/lib/api/portfolio');
 
 const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
 const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
+const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
+
+function holding(overrides: Partial<PortfolioHolding>): PortfolioHolding {
+  return {
+    holding_id: 'h1',
+    symbol: '6758',
+    company_name: 'ソニーグループ',
+    sector: null,
+    quantity: 100,
+    avg_cost: 1000,
+    current_price: null,
+    current_value: null,
+    cost_basis: 100000,
+    gain_loss: null,
+    return_pct: null,
+    acquired_at: '2026-01-01',
+    ...overrides,
+  };
+}
+
+function portfolioSummary(holdings: PortfolioHolding[]): PortfolioSummary {
+  return {
+    total_value: 0,
+    total_cost: 0,
+    total_gain_loss: 0,
+    total_return_pct: 0,
+    day_gain_loss: null,
+    holdings,
+    sector_allocations: [],
+    holding_count: holdings.length,
+    updated_at: '2026-09-15T00:00:00+09:00',
+  };
+}
 
 function pick(overrides: Partial<PickSummary>): PickSummary {
   return {
@@ -62,18 +99,54 @@ function geminiPick(overrides: Partial<GeminiPickSummary>): GeminiPickSummary {
 describe('PickedTickersList', () => {
   beforeEach(() => {
     mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchPortfolio.mockResolvedValue(portfolioSummary([]));
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('ピックが無ければ案内文を出す', async () => {
+  it('ピック・保有銘柄が無ければ案内文を出す', async () => {
     mockFetchPicks.mockResolvedValue([]);
 
     render(<PickedTickersList selectedSymbol={null} />);
 
-    expect(await screen.findByText('ピックされた銘柄はまだありません')).toBeInTheDocument();
+    expect(await screen.findByText('本日のピック・保有銘柄はまだありません')).toBeInTheDocument();
+  });
+
+  it('当日日付をピックAPIへ渡す（過去分は含めない）', async () => {
+    mockFetchPicks.mockResolvedValue([]);
+
+    render(<PickedTickersList selectedSymbol={null} />);
+
+    await screen.findByText('本日のピック・保有銘柄はまだありません');
+    const today = todayJst();
+    expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { date: today, limit: 50 });
+    expect(mockFetchPicks).toHaveBeenCalledWith('short_term', { date: today, limit: 50 });
+    expect(mockFetchGeminiPicks).toHaveBeenCalledWith('mid_term', { date: today, limit: 50 });
+    expect(mockFetchGeminiPicks).toHaveBeenCalledWith('short_term', { date: today, limit: 50 });
+  });
+
+  it('当日ピックに含まれないポートフォリオ保有銘柄は「保有」バッジで表示する', async () => {
+    mockFetchPicks.mockResolvedValue([]);
+    mockFetchPortfolio.mockResolvedValue(portfolioSummary([holding({ symbol: '6758', company_name: 'ソニーグループ' })]));
+
+    render(<PickedTickersList selectedSymbol={null} />);
+
+    const link = await screen.findByRole('link', { name: '保有 6758（ソニーグループ）' });
+    expect(link).toHaveAttribute('href', '/stock-detail?symbol=6758');
+  });
+
+  it('当日ピック済みの銘柄はポートフォリオ保有でも重複表示しない', async () => {
+    mockFetchPicks.mockImplementation((horizonType) =>
+      Promise.resolve(horizonType === 'mid_term' ? [pick({ symbol: '7203', company_name: 'トヨタ自動車' })] : []),
+    );
+    mockFetchPortfolio.mockResolvedValue(portfolioSummary([holding({ symbol: '7203', company_name: 'トヨタ自動車' })]));
+
+    render(<PickedTickersList selectedSymbol={null} />);
+
+    expect(await screen.findByRole('link', { name: 'Claude 7203（トヨタ自動車）' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '保有 7203（トヨタ自動車）' })).not.toBeInTheDocument();
   });
 
   it('中長期・短期の銘柄を統合し、エンジンバッジ+銘柄コード+社名でリンク表示する', async () => {
