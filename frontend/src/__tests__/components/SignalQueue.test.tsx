@@ -25,12 +25,12 @@ function makeSignal(overrides: Partial<PortfolioSignal> = {}): PortfolioSignal {
     rationale: 'RSIが70を超過し過熱感がある',
     status: 'proposed',
     fill_report: null,
-    gemini_shadow: null,
+    shadow_signals: [],
     ...overrides,
   };
 }
 
-function makeGeminiShadow(overrides: Partial<PortfolioSignalShadow> = {}): PortfolioSignalShadow {
+function makeShadowSignal(overrides: Partial<PortfolioSignalShadow> = {}): PortfolioSignalShadow {
   return {
     shadow_id: 'sh1',
     signal_id: 's1',
@@ -143,17 +143,33 @@ describe('SignalQueue', () => {
     expect(await screen.findByText('約定報告済み')).toBeInTheDocument();
   });
 
-  it('Gemini shadow 判定があれば Claude の判定と併記する', async () => {
-    mockFetchSignals.mockResolvedValue([makeSignal({ gemini_shadow: makeGeminiShadow() })]);
+  it('shadow 判定があれば公式判定と併記する', async () => {
+    mockFetchSignals.mockResolvedValue([makeSignal({ shadow_signals: [makeShadowSignal()] })]);
 
     render(<SignalQueue />);
 
-    expect(await screen.findByText('Claude')).toBeInTheDocument();
+    expect(await screen.findByText('公式判定')).toBeInTheDocument();
     expect(screen.getByText('Gemini（比較）')).toBeInTheDocument();
     expect(screen.getByText('テクニカル指標は中立圏で推移')).toBeInTheDocument();
   });
 
-  it('Gemini shadow 判定が無ければ Claude の判定のみ表示する', async () => {
+  it('複数の shadow プロバイダを併用していれば全件併記する', async () => {
+    mockFetchSignals.mockResolvedValue([
+      makeSignal({
+        shadow_signals: [
+          makeShadowSignal({ shadow_id: 'sh1', challenger_version: 'gemini:test' }),
+          makeShadowSignal({ shadow_id: 'sh2', challenger_version: 'openai:test' }),
+        ],
+      }),
+    ]);
+
+    render(<SignalQueue />);
+
+    expect(await screen.findByText('Gemini（比較）')).toBeInTheDocument();
+    expect(screen.getByText('ChatGPT（比較）')).toBeInTheDocument();
+  });
+
+  it('shadow 判定が無ければ公式判定のみ表示する', async () => {
     mockFetchSignals.mockResolvedValue([makeSignal()]);
 
     render(<SignalQueue />);

@@ -1,4 +1,4 @@
-"""`portfolio_signal_shadow_db`（AI 売買タイミング判定の Gemini 併記）の読み書きの検証."""
+"""`portfolio_signal_shadow_db`（AI 売買タイミング判定のシャドウ併記、複数プロバイダ併用可）の読み書きの検証."""
 
 from __future__ import annotations
 
@@ -37,11 +37,12 @@ async def test_insert_shadow_and_fetch_by_signal_id(migrated_db: Path) -> None:
 
     shadows = await get_shadows_for_signals([signal_id])
     assert signal_id in shadows
-    row = shadows[signal_id]
-    assert row["shadow_id"] == shadow_id
-    assert row["action"] == "hold"
-    assert row["entry"] is None
-    assert row["reasoning"] == "Gemini側の根拠"
+    rows = shadows[signal_id]
+    assert len(rows) == 1
+    assert rows[0]["shadow_id"] == shadow_id
+    assert rows[0]["action"] == "hold"
+    assert rows[0]["entry"] is None
+    assert rows[0]["reasoning"] == "Gemini側の根拠"
 
 
 async def test_insert_shadow_with_entry_for_add_action(migrated_db: Path) -> None:
@@ -61,7 +62,7 @@ async def test_insert_shadow_with_entry_for_add_action(migrated_db: Path) -> Non
     )
 
     shadows = await get_shadows_for_signals([signal_id])
-    assert shadows[signal_id]["entry"] == 1045.0
+    assert shadows[signal_id][0]["entry"] == 1045.0
 
 
 async def test_get_shadows_for_signals_batches_multiple_ids(migrated_db: Path) -> None:
@@ -90,5 +91,35 @@ async def test_get_shadows_for_signals_batches_multiple_ids(migrated_db: Path) -
 
     shadows = await get_shadows_for_signals([first, second])
     assert set(shadows.keys()) == {first, second}
-    assert shadows[first]["reasoning"] == "1件目"
-    assert shadows[second]["reasoning"] == "2件目"
+    assert shadows[first][0]["reasoning"] == "1件目"
+    assert shadows[second][0]["reasoning"] == "2件目"
+
+
+async def test_insert_shadow_allows_multiple_providers_per_signal(migrated_db: Path) -> None:
+    """🆕 マルチLLM併用: 同一 signal_id に複数プロバイダの shadow を併記できる."""
+    signal_id = await insert_signal(
+        symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+
+    await insert_shadow(
+        signal_id=signal_id,
+        challenger_version="gemini:test",
+        action="hold",
+        stop=910.0,
+        target=1080.0,
+        confidence=55.0,
+        reasoning="Gemini側の根拠",
+    )
+    await insert_shadow(
+        signal_id=signal_id,
+        challenger_version="openai:test",
+        action="trim",
+        stop=905.0,
+        target=1090.0,
+        confidence=50.0,
+        reasoning="OpenAI側の根拠",
+    )
+
+    shadows = await get_shadows_for_signals([signal_id])
+    versions = {row["challenger_version"] for row in shadows[signal_id]}
+    assert versions == {"gemini:test", "openai:test"}

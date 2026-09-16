@@ -3,9 +3,10 @@
 Market Lens `backend/services/trend/analyzer.py` から移植（import パスのみ変更:
 `services.data_fetcher` → `services.data.data_fetcher`）。
 
-LLM 呼び出しは `anthropic_client.propose_trends`（forced tool-use、api_cost 記録つき）。
+LLM 呼び出しは `llm.registry.resolve_feature_provider("trend_analyzer")` が解決した
+プロバイダの `propose_trends`（forced structured output、api_cost 記録つき）。
 `related_tickers` の証券コードは ticker master で検証し、無効なものは落とす。
-Anthropic キー未設定時は LLM を呼ばず `_MOCK_TREND_SEEDS`（事前構造化済み）を返す。
+プロバイダ未設定時は LLM を呼ばず `_MOCK_TREND_SEEDS`（事前構造化済み）を返す。
 """
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ from datetime import datetime
 from typing import cast
 
 from backend.models.trend_tracking import ImpactHorizon, LifecycleStage, RelatedTicker, Trend
-from backend.services.anthropic_client import anthropic_client
 from backend.services.data import data_fetcher
 from backend.services.jst_time import JST
+from backend.services.llm.registry import resolve_feature_provider
 
 logger = logging.getLogger(__name__)
 
@@ -116,21 +117,22 @@ def _coerce_trends(raw: object, valid: dict[str, str], now_iso: str, date_key: s
 
 
 async def analyze(headlines: list[str], sector_notes: list[str]) -> list[Trend]:
-    """収集シグナルを LLM で構造化トレンドへ変換する（キー未設定時はモック）."""
+    """収集シグナルを LLM で構造化トレンドへ変換する（プロバイダ未設定時はモック）."""
     now = datetime.now(JST)
     now_iso = now.isoformat(timespec="seconds")
     date_key = now.strftime("%Y%m%d")
 
-    if not anthropic_client.is_configured:
+    provider = resolve_feature_provider("trend_analyzer")
+    if not provider.is_configured:
         return mock_trends(now_iso, date_key)
 
     prompt = _build_prompt(headlines, sector_notes)
-    raw = await anthropic_client.propose_trends(prompt=prompt)
+    raw = await provider.propose_trends(prompt=prompt)
     valid = await _valid_codes_async()
     return _coerce_trends(raw.get("trends"), valid, now_iso, date_key)
 
 
-# 事前構造化済みのモックトレンド（Anthropic キー未設定時）。`collector._MOCK_SIGNALS` と対。
+# 事前構造化済みのモックトレンド（プロバイダ未設定時）。`collector._MOCK_SIGNALS` と対。
 _MOCK_TREND_SEEDS: tuple[dict[str, object], ...] = (
     {
         "theme_name": "次世代半導体パッケージング",

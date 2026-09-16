@@ -11,17 +11,16 @@ P7a のコミットログ参照）。3 値ブラケットの検証・クラン�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from backend.config import settings
 from backend.models.portfolio import PortfolioHolding
-from backend.services.anthropic_client import anthropic_client
-from backend.services.anthropic_errors import AnthropicError
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.db.portfolio_signal_db import insert_signal
 from backend.services.db.portfolio_signal_shadow_db import insert_shadow
-from backend.services.gemini_client import gemini_client
-from backend.services.gemini_errors import GeminiError
+from backend.services.llm.errors import LLMError
+from backend.services.llm.provider import LLMProvider
+from backend.services.llm.registry import resolve_feature_provider, resolve_shadow_providers
 from backend.services.notify.notification_service import notify_signal
 from backend.services.picks.bracket import Bracket, finalize_bracket
 from backend.services.portfolio.portfolio_service import build_portfolio
@@ -56,26 +55,31 @@ def _finalize_signal_bracket(
     return finalize_bracket(current_price, atr, current_price, raw_stop, raw_target)
 
 
-async def _record_gemini_shadow_signal(
-    *, signal_id: str, holding: PortfolioHolding, prompt: str, current_price: float, atr: float | None
+async def _record_one_shadow_signal(
+    provider: LLMProvider,
+    *,
+    signal_id: str,
+    holding: PortfolioHolding,
+    prompt: str,
+    current_price: float,
+    atr: float | None,
 ) -> None:
-    """Gemini に Claude と同一プロンプトで判定させ、比較参考用に記録する（🆕、フェイルソフト）.
+    """1 プロバイダぶんの shadow 判定を実行し `portfolio_signal_shadows` へ記録する（フェイルソフト）.
 
-    AI ピックの `record_gemini_shadow_judgment`（`services/inference/orchestrator.py`）と同じ
-    設計思想。承認・却下・実約定の判定フローには一切関与しない表示専用の記録のため、
-    失敗しても本体の判定（`portfolio_signals` への記録）には影響させない。
+    AI ピックの `record_shadow_judgments`（`services/inference/orchestrator.py`）と同じ設計思想。
+    承認・却下・実約定の判定フローには一切関与しない表示専用の記録のため、失敗しても本体の判定
+    （`portfolio_signals` への記録）には影響させない。
     """
-    if not gemini_client.is_configured:
-        return
+    pid = provider.provider_id
     try:
-        raw = await gemini_client.propose_portfolio_signal(symbol=holding.symbol, prompt=prompt)
-    except GeminiError as e:
-        logger.warning("ポートフォリオ判定の Gemini shadow 呼び出しに失敗: %s (%s)", holding.symbol, e)
+        raw = await provider.propose_portfolio_signal(symbol=holding.symbol, prompt=prompt)
+    except LLMError as e:
+        logger.warning("ポートフォリオ判定の %s shadow 呼び出しに失敗: %s (%s)", pid, holding.symbol, e)
         return
 
     raw_action = raw.get("action")
     if not isinstance(raw_action, str) or raw_action not in _VALID_ACTIONS:
-        logger.warning("ポートフォリオ判定 Gemini shadow: 不正な action です: %s (%s)", holding.symbol, raw_action)
+        logger.warning("ポートフォリオ判定 %s shadow: 不正な action です: %s (%s)", pid, holding.symbol, raw_action)
         return
     action = raw_action
 
@@ -84,18 +88,18 @@ async def _record_gemini_shadow_signal(
     confidence = _num(raw.get("confidence"))
     raw_entry = _num(raw.get("entry")) if action == "add" else current_price
     if raw_stop is None or raw_target is None or confidence is None or raw_entry is None:
-        logger.warning("ポートフォリオ判定 Gemini shadow: 応答の数値形式が不正です: %s", holding.symbol)
+        logger.warning("ポートフォリオ判定 %s shadow: 応答の数値形式が不正です: %s", pid, holding.symbol)
         return
 
     bracket, reason = _finalize_signal_bracket(action, current_price, atr, raw_entry, raw_stop, raw_target)
     if bracket is None:
-        logger.info("ポートフォリオ判定 Gemini shadow 却下（3値不整合）: %s (%s)", holding.symbol, reason)
+        logger.info("ポートフォリオ判定 %s shadow 却下（3値不整合）: %s (%s)", pid, holding.symbol, reason)
         return
 
     try:
         await insert_shadow(
             signal_id=signal_id,
-            challenger_version=f"gemini:{settings.gemini_model}",
+            challenger_version=f"{pid}:{provider.model_id}",
             action=action,
             entry=round(bracket.entry, 2) if action == "add" else None,
             stop=round(bracket.stop, 2),
@@ -104,7 +108,26 @@ async def _record_gemini_shadow_signal(
             reasoning=str(raw.get("reasoning") or "定量分析に基づく判定"),
         )
     except Exception:  # noqa: BLE001 — 表示専用の challenger 記録。失敗しても本体は継続する
-        logger.warning("ポートフォリオ判定 Gemini shadow の記録に失敗しました: %s", holding.symbol, exc_info=True)
+        logger.warning("ポートフォリオ判定 %s shadow の記録に失敗しました: %s", pid, holding.symbol, exc_info=True)
+
+
+async def _record_shadow_signals(
+    *, signal_id: str, holding: PortfolioHolding, prompt: str, current_price: float, atr: float | None
+) -> None:
+    """設定された shadow プロバイダ群（0〜複数、`LLM_SHADOW_PROVIDERS_PORTFOLIO_SIGNAL`）に、
+    公式パイプラインと同一のプロンプトを判定させ、比較参考用に記録する.
+    """
+    providers = resolve_shadow_providers("portfolio_signal")
+    if not providers:
+        return
+    await asyncio.gather(
+        *(
+            _record_one_shadow_signal(
+                p, signal_id=signal_id, holding=holding, prompt=prompt, current_price=current_price, atr=atr
+            )
+            for p in providers
+        )
+    )
 
 
 async def evaluate_holding(holding: PortfolioHolding) -> str | None:
@@ -131,8 +154,10 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
         sector=holding.sector,
     )
     try:
-        raw = await anthropic_client.propose_portfolio_signal(symbol=holding.symbol, prompt=prompt)
-    except AnthropicError as e:
+        raw = await resolve_feature_provider("portfolio_signal").propose_portfolio_signal(
+            symbol=holding.symbol, prompt=prompt
+        )
+    except LLMError as e:
         logger.warning("ポートフォリオ判定の LLM 呼び出しに失敗: %s (%s)", holding.symbol, e)
         return None
 
@@ -177,7 +202,7 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
         rationale=rationale,
         entry=entry,
     )
-    await _record_gemini_shadow_signal(
+    await _record_shadow_signals(
         signal_id=signal_id, holding=holding, prompt=prompt, current_price=holding.current_price, atr=atr
     )
     return signal_id

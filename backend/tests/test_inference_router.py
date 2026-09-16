@@ -15,7 +15,9 @@ from backend.tests.test_pick_pipeline import WiredState, _FakeLLM, _rec
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     state = WiredState()
-    monkeypatch.setattr(orch, "anthropic_client", _FakeLLM(state))
+    monkeypatch.setattr(orch, "resolve_feature_provider", lambda _feature: _FakeLLM(state))
+    # shadow プロバイダ無し（実 API への意図しないアクセスを防ぐ）。
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [])
 
     async def fake_brand(_code: str) -> None:
         return None

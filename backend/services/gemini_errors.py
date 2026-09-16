@@ -10,9 +10,10 @@ Gemini は Anthropic 公式パイプラインと異なり表示専用の shadow 
 from __future__ import annotations
 
 from backend.services.circuit_breaker import CircuitOpenError
+from backend.services.llm.errors import LLMError
 
 
-class GeminiError(Exception):
+class GeminiError(LLMError):
     """Gemini クライアントの基底例外."""
 
 

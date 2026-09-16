@@ -26,14 +26,14 @@ from datetime import datetime
 from typing import cast
 
 from backend.models.inference import InferenceOutcome
-from backend.services.anthropic_client import anthropic_client
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
 from backend.services.data.trend.context import render_trend_context
-from backend.services.inference.orchestrator import record_gemini_shadow_judgment, run_inference
+from backend.services.inference.orchestrator import record_shadow_judgments, run_inference
 from backend.services.jst_time import JST
 from backend.services.learning.panel_feature_service import get_cached_panel_context
 from backend.services.ledger import prediction_ledger as pl
+from backend.services.llm.registry import resolve_feature_provider
 from backend.services.registry.model_registry import bootstrap_champion_if_missing, ensure_registered
 from backend.services.scoring.fundamental_analyzer import get_fundamental_with_vault_fallback
 from backend.services.scoring.ml_score_provider import (
@@ -130,7 +130,8 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     await ensure_registered(MODEL_VERSION, lane=horizon_type)
     await bootstrap_champion_if_missing(horizon_type, MODEL_VERSION)
 
-    if not anthropic_client.is_configured:
+    stock_pick_provider = resolve_feature_provider("stock_pick")
+    if not stock_pick_provider.is_configured:
         return PickRunResult(
             run_id=run_id,
             horizon_type=horizon,
@@ -138,7 +139,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             status="not_configured",
             picks=[],
             rejected=[],
-            message="ANTHROPIC_API_KEY が未設定のためピックを生成できません",
+            message=f"{stock_pick_provider.provider_id} の API キーが未設定のためピックを生成できません",
         )
 
     codes = await _candidate_pool(horizon_type, cfg["pool_limit"])
@@ -214,10 +215,10 @@ async def run_picks(horizon_type: str) -> PickRunResult:
 
     if picks:
         await pl.insert_picks(picks)
-        # 🆕 P12: Gemini shadow 判定は `shadow_predictions.pick_id` が `prediction_ledger` への
-        # FK のため、台帳確定（`insert_picks`）の後でのみ呼べる。未設定・失敗時は無視（フェイルソフト）。
+        # shadow 判定は `shadow_predictions.pick_id` が `prediction_ledger` への FK のため、
+        # 台帳確定（`insert_picks`）の後でのみ呼べる。未設定・失敗時は無視（フェイルソフト）。
         for accepted in accepted_outcomes:
-            await record_gemini_shadow_judgment(accepted)
+            await record_shadow_judgments(accepted)
 
     summaries = [
         PickSummary(

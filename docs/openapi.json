@@ -1847,7 +1847,7 @@
           "portfolio"
         ],
         "summary": "AI 売買タイミング判定一覧",
-        "description": "判定履歴（承認キュー）を新しい順で返す（🆕 Gemini shadow 判定があれば併記）.",
+        "description": "判定履歴（承認キュー）を新しい順で返す（shadow 判定があれば併記、複数プロバイダ併用可）.",
         "operationId": "get_signals_api_portfolio_signals_get",
         "parameters": [
           {
@@ -2374,6 +2374,49 @@
         }
       }
     },
+    "/api/stock/{symbol}/quote": {
+      "get": {
+        "tags": [
+          "stock"
+        ],
+        "summary": "直近値取得（取引フォームの初期値用）",
+        "description": "指定銘柄の直近値を返す（ポートフォリオの買い/売りフォームが開いた時点の最新値を\n初期値として提示するために使う。取得失敗時も price=null で返し、呼び出し元が\n手入力にフォールバックできるようにする）.",
+        "operationId": "get_quote_api_stock__symbol__quote_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Quote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/stock/{symbol}/ohlc": {
       "get": {
         "tags": [
@@ -2561,6 +2604,68 @@
         }
       }
     },
+    "/api/settings/llm-providers": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "機能ごとのLLMプロバイダ設定（公式/シャドウ）の現在値",
+        "description": "機能ごとの現在の公式/シャドウプロバイダ設定と、選択可能なプロバイダ一覧を返す.",
+        "operationId": "get_llm_providers_api_settings_llm_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LLMProviderSettingsResponse_"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "1機能ぶんのLLMプロバイダ設定を更新（.envへ永続化。反映にはbackend/celeryの再起動が必要）",
+        "description": "指定機能の公式/シャドウプロバイダを更新する（`None` のフィールドは変更しない）.",
+        "operationId": "update_llm_providers_api_settings_llm_providers_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMProviderUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LLMProviderSettingsResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2684,6 +2789,17 @@
             ],
             "title": "Anthropic Api Key"
           },
+          "openai_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openai Api Key"
+          },
           "gemini_api_key": {
             "anyOf": [
               {
@@ -2798,6 +2914,50 @@
           "success"
         ],
         "title": "ApiResponse[EodReview]"
+      },
+      "ApiResponse_LLMProviderSettingsResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMProviderSettingsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[LLMProviderSettingsResponse]"
       },
       "ApiResponse_MarketSnapshot_": {
         "properties": {
@@ -3018,6 +3178,50 @@
           "success"
         ],
         "title": "ApiResponse[PortfolioSummary]"
+      },
+      "ApiResponse_Quote_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Quote]"
       },
       "ApiResponse_SellHistoryEntry_": {
         "properties": {
@@ -4011,6 +4215,54 @@
         "title": "EvaluatePromotionRequest",
         "description": "`POST /api/registry/promotions/evaluate` のリクエストボディ.\n\n`lane=\"ml_pool\"`（断面プール分類器、P5d）は held-out 検証指標で判定するため\n`horizon_days` を無視する（`evaluate_ml_pool_promotion` 参照）。"
       },
+      "FeatureProviderSetting": {
+        "properties": {
+          "feature": {
+            "type": "string",
+            "enum": [
+              "stock_pick",
+              "portfolio_signal",
+              "eod_review",
+              "trend_analyzer"
+            ],
+            "title": "Feature"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "primary_provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "gemini"
+            ],
+            "title": "Primary Provider"
+          },
+          "shadow_providers": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "anthropic",
+                "openai",
+                "gemini"
+              ]
+            },
+            "type": "array",
+            "title": "Shadow Providers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature",
+          "label",
+          "primary_provider",
+          "shadow_providers"
+        ],
+        "title": "FeatureProviderSetting",
+        "description": "1機能ぶんの現在の公式/シャドウプロバイダ設定."
+      },
       "GeminiPickSummary": {
         "properties": {
           "shadow_id": {
@@ -4256,6 +4508,120 @@
         ],
         "title": "IndexQuote",
         "description": "1 指数分の現在値・前日比."
+      },
+      "LLMProviderOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "gemini"
+            ],
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "configured"
+        ],
+        "title": "LLMProviderOption",
+        "description": "選択肢として提示する1プロバイダ（APIキー設定状況つき）."
+      },
+      "LLMProviderSettingsResponse": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureProviderSetting"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "available_providers": {
+            "items": {
+              "$ref": "#/components/schemas/LLMProviderOption"
+            },
+            "type": "array",
+            "title": "Available Providers"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "features",
+          "available_providers"
+        ],
+        "title": "LLMProviderSettingsResponse",
+        "description": "`GET/PATCH /api/settings/llm-providers` の応答."
+      },
+      "LLMProviderUpdateRequest": {
+        "properties": {
+          "feature": {
+            "type": "string",
+            "enum": [
+              "stock_pick",
+              "portfolio_signal",
+              "eod_review",
+              "trend_analyzer"
+            ],
+            "title": "Feature"
+          },
+          "primary_provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "anthropic",
+                  "openai",
+                  "gemini"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Provider"
+          },
+          "shadow_providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "anthropic",
+                    "openai",
+                    "gemini"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shadow Providers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature"
+        ],
+        "title": "LLMProviderUpdateRequest",
+        "description": "`PATCH /api/settings/llm-providers` のリクエストボディ（1機能ぶんの更新）.\n\n各フィールドは `None` なら変更しない。"
       },
       "LivenessResponse": {
         "properties": {
@@ -5093,15 +5459,12 @@
             ],
             "title": "Fill Report"
           },
-          "gemini_shadow": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PortfolioSignalShadow"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "shadow_signals": {
+            "items": {
+              "$ref": "#/components/schemas/PortfolioSignalShadow"
+            },
+            "type": "array",
+            "title": "Shadow Signals"
           }
         },
         "type": "object",
@@ -5188,7 +5551,7 @@
           "created_at"
         ],
         "title": "PortfolioSignalShadow",
-        "description": "AI 売買タイミング判定の Gemini（challenger）版（🆕、比較参考用）.\n\nClaude（公式）と同一のプロンプトを Gemini にも判定させ、`portfolio_signals` の承認・\n却下・実約定判定には一切関与しない表示専用の比較材料として記録する\n（`shadow_predictions` と同じ設計思想、CLAUDE.md「継続学習の教師信号は自分の実測値のみ」）。"
+        "description": "AI 売買タイミング判定のシャドウ（challenger）版（比較参考用）.\n\n公式プロバイダと同一のプロンプトを他プロバイダ（Gemini/OpenAI 等、複数併用可）にも\n判定させ、`portfolio_signals` の承認・却下・実約定判定には一切関与しない表示専用の\n比較材料として記録する（`shadow_predictions` と同じ設計思想、\nCLAUDE.md「継続学習の教師信号は自分の実測値のみ」）。"
       },
       "PortfolioSummary": {
         "properties": {
@@ -5324,6 +5687,56 @@
         ],
         "title": "QualityDistribution",
         "description": "銘柄別モデルの現行 champion における品質指標の生値（🆕 P15、ヒストグラム用）.\n\nビン分けはフロントエンド側で行う（値は skill/rmse の生リストのみ）。"
+      },
+      "Quote": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "prev_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Close"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "price",
+          "prev_close",
+          "change_pct"
+        ],
+        "title": "Quote",
+        "description": "単一銘柄の直近値（🆕 P26、ポートフォリオの買い/売りフォームで取引時点の最新値を\n初期値に使うための軽量エンドポイント用）."
       },
       "RejectedPick": {
         "properties": {

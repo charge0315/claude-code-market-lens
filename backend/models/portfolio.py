@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PortfolioSignalAction = Literal["hold", "trim", "stop_loss", "add"]
 PortfolioSignalStatus = Literal["proposed", "approved", "rejected", "executed"]
@@ -148,11 +148,12 @@ class PortfolioSummary(BaseModel):
 
 
 class PortfolioSignalShadow(BaseModel):
-    """AI 売買タイミング判定の Gemini（challenger）版（🆕、比較参考用）.
+    """AI 売買タイミング判定のシャドウ（challenger）版（比較参考用）.
 
-    Claude（公式）と同一のプロンプトを Gemini にも判定させ、`portfolio_signals` の承認・
-    却下・実約定判定には一切関与しない表示専用の比較材料として記録する
-    （`shadow_predictions` と同じ設計思想、CLAUDE.md「継続学習の教師信号は自分の実測値のみ」）。
+    公式プロバイダと同一のプロンプトを他プロバイダ（Gemini/OpenAI 等、複数併用可）にも
+    判定させ、`portfolio_signals` の承認・却下・実約定判定には一切関与しない表示専用の
+    比較材料として記録する（`shadow_predictions` と同じ設計思想、
+    CLAUDE.md「継続学習の教師信号は自分の実測値のみ」）。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -189,8 +190,8 @@ class PortfolioSignal(BaseModel):
     rationale: str
     status: PortfolioSignalStatus
     fill_report: str | None = None  # JSON 文字列（ReportFillRequest の内容）
-    # 🆕 Gemini（challenger）の同一判定（比較参考用、無ければ None）。
-    gemini_shadow: PortfolioSignalShadow | None = None
+    # シャドウ（challenger）プロバイダ群の同一判定（比較参考用、複数併用可・無ければ空リスト）。
+    shadow_signals: list[PortfolioSignalShadow] = Field(default_factory=list)
 
 
 class ReportFillRequest(BaseModel):

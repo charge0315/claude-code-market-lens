@@ -30,6 +30,14 @@ const STATUS_LABELS: Record<PortfolioSignalStatus, string> = {
 
 const STATUS_TABS: ReadonlyArray<PortfolioSignalStatus | 'all'> = ['proposed', 'approved', 'rejected', 'executed', 'all'];
 
+// `challenger_version` は "<provider_id>:<model_id>" 形式（`services/llm/registry.py` 参照）。
+const SHADOW_PROVIDER_LABELS: Record<string, string> = { anthropic: 'Claude', openai: 'ChatGPT', gemini: 'Gemini' };
+
+function shadowProviderLabel(challengerVersion: string): string {
+  const providerId = challengerVersion.split(':')[0];
+  return SHADOW_PROVIDER_LABELS[providerId] ?? providerId;
+}
+
 function formatYen(value: number | null): string {
   return value === null ? '—' : `¥${Math.round(value).toLocaleString('ja-JP')}`;
 }
@@ -166,7 +174,7 @@ export function SignalQueue(): ReactNode {
             <li key={signal.signal_id} className="signal-card">
               <div className="signal-card-header">
                 <span className="signal-card-symbol">{signal.symbol}</span>
-                <span className="signal-card-engine-badge">Claude</span>
+                <span className="signal-card-engine-badge">公式判定</span>
                 <span className={`signal-card-action signal-card-action--${signal.action}`}>
                   {ACTION_LABELS[signal.action]}
                 </span>
@@ -194,37 +202,39 @@ export function SignalQueue(): ReactNode {
                 </div>
               </dl>
 
-              {signal.gemini_shadow && (
-                <div className="signal-card-shadow">
+              {signal.shadow_signals.map((shadow) => (
+                <div key={shadow.shadow_id} className="signal-card-shadow">
                   <div className="signal-card-header">
-                    <span className="signal-card-engine-badge signal-card-engine-badge--gemini">Gemini（比較）</span>
-                    <span className={`signal-card-action signal-card-action--${signal.gemini_shadow.action}`}>
-                      {ACTION_LABELS[signal.gemini_shadow.action]}
+                    <span className="signal-card-engine-badge signal-card-engine-badge--shadow">
+                      {shadowProviderLabel(shadow.challenger_version)}（比較）
+                    </span>
+                    <span className={`signal-card-action signal-card-action--${shadow.action}`}>
+                      {ACTION_LABELS[shadow.action]}
                     </span>
                   </div>
-                  <p className="signal-card-rationale">{signal.gemini_shadow.reasoning}</p>
+                  <p className="signal-card-rationale">{shadow.reasoning}</p>
                   <dl className="signal-card-bracket">
-                    {signal.gemini_shadow.entry !== null && (
+                    {shadow.entry !== null && (
                       <div>
                         <dt>買値目安</dt>
-                        <dd>{formatYen(signal.gemini_shadow.entry)}</dd>
+                        <dd>{formatYen(shadow.entry)}</dd>
                       </div>
                     )}
                     <div>
                       <dt>損切り</dt>
-                      <dd>{formatYen(signal.gemini_shadow.stop)}</dd>
+                      <dd>{formatYen(shadow.stop)}</dd>
                     </div>
                     <div>
                       <dt>利確目標</dt>
-                      <dd>{formatYen(signal.gemini_shadow.target)}</dd>
+                      <dd>{formatYen(shadow.target)}</dd>
                     </div>
                     <div>
                       <dt>確信度</dt>
-                      <dd>{signal.gemini_shadow.confidence.toFixed(0)}</dd>
+                      <dd>{shadow.confidence.toFixed(0)}</dd>
                     </div>
                   </dl>
                 </div>
-              )}
+              ))}
 
               {signal.status === 'proposed' && (
                 <div className="signal-card-actions">

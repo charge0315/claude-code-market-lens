@@ -11,7 +11,10 @@ from backend.services.data.trend import analyzer, collector, context, sync_servi
 
 
 class _FakeAnthropic:
-    """`is_configured` を素の属性で持つ AnthropicClient スタブ."""
+    """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
+
+    provider_id = "anthropic"
+    model_id = "test-model"
 
     def __init__(self, *, configured: bool) -> None:
         self.is_configured = configured
@@ -21,7 +24,10 @@ class _FakeAnthropic:
 
 
 def _set_anthropic(monkeypatch: pytest.MonkeyPatch, fake: _FakeAnthropic) -> None:
-    monkeypatch.setattr(analyzer, "anthropic_client", fake)
+    # `analyzer.py`/`sync_service.py` はそれぞれ `resolve_feature_provider` を個別に
+    # import しているため、両方のモジュール参照を差し替える必要がある。
+    monkeypatch.setattr(analyzer, "resolve_feature_provider", lambda _feature: fake)
+    monkeypatch.setattr(sync_service, "resolve_feature_provider", lambda _feature: fake)
 
 
 # --- analyzer ---

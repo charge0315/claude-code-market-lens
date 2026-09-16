@@ -23,9 +23,10 @@ _TREND = 55.0
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     state = WiredState()
-    monkeypatch.setattr(orch, "anthropic_client", _FakeLLM(state))
-    # 既定では Gemini 未設定として扱う（🆕 P12 の shadow 判定は明示的にテストする箇所でのみ有効化）。
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(configured=False))
+    monkeypatch.setattr(orch, "resolve_feature_provider", lambda _feature: _FakeLLM(state))
+    # 既定では shadow プロバイダ無し（Gemini 未設定相当）として扱う（shadow 判定は
+    # 明示的にテストする箇所でのみ `resolve_shadow_providers` を差し替えて有効化する）。
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [])
 
     async def fake_brand(_code: str) -> None:
         return None
@@ -205,7 +206,7 @@ async def test_related_daily_frontmatter_flows_into_prompt_without_body_text(
 
     monkeypatch.setattr(orch, "get_brand_note", fake_brand)
     monkeypatch.setattr(orch, "search_ticker_notes", fake_search)
-    monkeypatch.setattr(orch, "anthropic_client", _CapturingLLM())
+    monkeypatch.setattr(orch, "resolve_feature_provider", lambda _feature: _CapturingLLM())
 
     outcome = await orch.run_inference(
         symbol="7203",
@@ -259,12 +260,12 @@ async def test_list_recent_runs_returns_latest_stage_per_run(wired: WiredState, 
     assert matching[0]["status"] == "done"
 
 
-# --- 🆕 P12: Gemini shadow 判定（マルチLLM判定）---
+# --- shadow 判定（マルチLLM判定、複数プロバイダ併用可）---
 #
-# `record_gemini_shadow_judgment` は `shadow_predictions.pick_id` が `prediction_ledger` への
+# `record_shadow_judgments` は `shadow_predictions.pick_id` が `prediction_ledger` への
 # FK のため、`pipeline.run_picks` が `pl.insert_picks` で台帳確定した後にのみ呼べる
 # （`run_inference` 実行時点ではまだ pick_id が DB に存在しない）。テストも同じ順序
-# （`pl.insert_picks` → `record_gemini_shadow_judgment`）で呼ぶ。
+# （`pl.insert_picks` → `record_shadow_judgments`）で呼ぶ。
 
 
 async def _run_and_persist(state: WiredState) -> InferenceOutcome:
@@ -287,9 +288,9 @@ async def test_run_inference_returns_prompt_and_current_price_for_shadow_judgmen
 
 
 async def test_gemini_not_configured_records_no_shadow_prediction(wired: WiredState, migrated_db: Path) -> None:
-    """既定（`wired` fixture）は Gemini 未設定 → shadow_predictions へは何も記録されない."""
+    """既定（`wired` fixture）は shadow プロバイダ無し → shadow_predictions へは何も記録されない."""
     outcome = await _run_and_persist(wired)
-    await orch.record_gemini_shadow_judgment(outcome)
+    await orch.record_shadow_judgments(outcome)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -299,10 +300,10 @@ async def test_gemini_configured_records_shadow_prediction(
     wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 設定済み・正常応答 → 公式ピック確定後に shadow_predictions へ 1 行記録される."""
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini())
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini()])
 
     outcome = await _run_and_persist(wired)
-    await orch.record_gemini_shadow_judgment(outcome)
+    await orch.record_shadow_judgments(outcome)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert len(rows) == 1
@@ -320,10 +321,12 @@ async def test_gemini_error_does_not_affect_official_pick(
     wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 呼び出し失敗はフェイルソフト — 公式ピックの生成結果には一切影響しない."""
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(GeminiRateLimitError("stock_pick_gemini")))
+    monkeypatch.setattr(
+        orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(GeminiRateLimitError("stock_pick_gemini"))]
+    )
 
     outcome = await _run_and_persist(wired)
-    await orch.record_gemini_shadow_judgment(outcome)  # 例外を外へ伝播させないこと自体が検証対象
+    await orch.record_shadow_judgments(outcome)  # 例外を外へ伝播させないこと自体が検証対象
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -332,10 +335,12 @@ async def test_gemini_error_does_not_affect_official_pick(
 async def test_gemini_should_include_false_records_no_shadow_prediction(
     wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini({**_DEFAULT_GEMINI, "should_include": False}))
+    monkeypatch.setattr(
+        orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini({**_DEFAULT_GEMINI, "should_include": False})]
+    )
 
     outcome = await _run_and_persist(wired)
-    await orch.record_gemini_shadow_judgment(outcome)
+    await orch.record_shadow_judgments(outcome)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -347,10 +352,26 @@ async def test_gemini_invalid_bracket_records_no_shadow_prediction(
     """Gemini の3値がサーバ側検証（finalize_bracket）を通らない場合は記録しない（3値必須検証は
     公式パイプラインと共有する — CLAUDE.md）."""
     invalid = {**_DEFAULT_GEMINI, "buy_price": 1000.0, "stop_loss_price": 1010.0, "take_profit_price": 1050.0}
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(invalid))
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(invalid)])
 
     outcome = await _run_and_persist(wired)
-    await orch.record_gemini_shadow_judgment(outcome)
+    await orch.record_shadow_judgments(outcome)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
+
+
+async def test_multiple_shadow_providers_each_record_a_row(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 マルチLLM併用: 複数 shadow プロバイダを設定すると、それぞれが個別に記録される."""
+    openai_like = _FakeGemini({**_DEFAULT_GEMINI, "reasoning": "OpenAI 側の根拠"})
+    openai_like.provider_id = "openai"
+    openai_like.model_id = "gpt-5.1"
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(), openai_like])
+
+    outcome = await _run_and_persist(wired)
+    await orch.record_shadow_judgments(outcome)
+
+    rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
+    assert {r["challenger_version"] for r in rows} == {"gemini:gemini-2.5-pro", "openai:gpt-5.1"}

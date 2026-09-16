@@ -107,7 +107,7 @@
   padding: 0 var(--spacing-xs);
 }
 
-.signal-card-engine-badge--gemini {
+.signal-card-engine-badge--shadow {
   color: var(--color-accent-2, var(--color-text-muted));
   border-color: var(--color-accent-2, var(--color-border));
 }

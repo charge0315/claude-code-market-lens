@@ -180,11 +180,11 @@ async def get_sell_history() -> ApiResponse[list[SellHistoryEntry]]:
 async def get_signals(
     status: PortfolioSignalStatus | None = Query(default=None),
 ) -> ApiResponse[list[PortfolioSignal]]:
-    """判定履歴（承認キュー）を新しい順で返す（🆕 Gemini shadow 判定があれば併記）."""
+    """判定履歴（承認キュー）を新しい順で返す（shadow 判定があれば併記、複数プロバイダ併用可）."""
     rows = await list_signals(status=status)
     shadows = await get_shadows_for_signals([str(r["signal_id"]) for r in rows])
     return ApiResponse.ok(
-        [PortfolioSignal.model_validate({**r, "gemini_shadow": shadows.get(str(r["signal_id"]))}) for r in rows]
+        [PortfolioSignal.model_validate({**r, "shadow_signals": shadows.get(str(r["signal_id"]), [])}) for r in rows]
     )
 
 

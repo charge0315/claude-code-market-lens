@@ -71,3 +71,55 @@ async def test_patch_api_keys_rejects_newline_value(tmp_path: Path, monkeypatch:
         res = await client.patch("/api/settings/api-keys", json={"jquants_api_key": "bad\nvalue"})
 
     assert res.status_code == 400
+
+
+async def test_get_llm_providers_returns_features_and_available_providers() -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/settings/llm-providers")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["restart_required"] is False
+    features = {f["feature"]: f for f in body["data"]["features"]}
+    assert set(features) == {"stock_pick", "portfolio_signal", "eod_review", "trend_analyzer"}
+    provider_values = {p["value"] for p in body["data"]["available_providers"]}
+    assert provider_values == {"anthropic", "openai", "gemini"}
+
+
+async def test_patch_llm_providers_persists_and_reports_restart_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("FOO=bar\n", encoding="utf-8")
+    monkeypatch.setattr(config_store, "_ENV_PATH", env_path)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.patch(
+            "/api/settings/llm-providers",
+            json={"feature": "stock_pick", "primary_provider": "openai", "shadow_providers": ["anthropic", "gemini"]},
+        )
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["restart_required"] is True
+    features = {f["feature"]: f for f in body["data"]["features"]}
+    assert features["stock_pick"]["primary_provider"] == "openai"
+    assert features["stock_pick"]["shadow_providers"] == ["anthropic", "gemini"]
+    saved = env_path.read_text(encoding="utf-8").splitlines()
+    assert "LLM_PROVIDER_STOCK_PICK=openai" in saved
+    assert "LLM_SHADOW_PROVIDERS_STOCK_PICK=anthropic,gemini" in saved
+    # 他機能の設定は変更されない。
+    assert features["portfolio_signal"]["primary_provider"] == "anthropic"
+
+
+async def test_patch_llm_providers_without_fields_returns_400() -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.patch("/api/settings/llm-providers", json={"feature": "eod_review"})
+
+    assert res.status_code == 400

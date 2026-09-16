@@ -11,14 +11,16 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 _ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
 # フィールド名 → .env の変数名 / 画面表示ラベル。
 _MANAGED_KEYS: tuple[tuple[str, str, str], ...] = (
-    ("anthropic_api_key", "ANTHROPIC_API_KEY", "Anthropic API キー（Claude / 公式パイプライン）"),
-    ("gemini_api_key", "GEMINI_API_KEY", "Gemini API キー（マルチLLM判定、任意）"),
+    ("anthropic_api_key", "ANTHROPIC_API_KEY", "Anthropic API キー（Claude）"),
+    ("openai_api_key", "OPENAI_API_KEY", "OpenAI API キー（ChatGPT）"),
+    ("gemini_api_key", "GEMINI_API_KEY", "Gemini API キー"),
     ("jquants_api_key", "JQUANTS_API_KEY", "J-Quants API キー（東証公式データ補完）"),
 )
 
@@ -58,6 +60,82 @@ def _validate_value(value: str) -> None:
     """`.env` への行インジェクションを防ぐ最小限の検証."""
     if "\n" in value or "\r" in value:
         raise ValueError("APIキーに改行は含められません")
+
+
+# --- LLM プロバイダ選択（🆕、機能ごとの公式/シャドウ設定。`backend.config.Settings` の
+#     `llm_provider_*`/`llm_shadow_providers_*` と1対1対応、.env永続化・反映は再起動後）。
+_PROVIDER_LABELS: dict[str, str] = {
+    "anthropic": "Anthropic（Claude）",
+    "openai": "OpenAI（ChatGPT）",
+    "gemini": "Gemini",
+}
+_PROVIDER_KEY_ENV: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+_FEATURE_LABELS: dict[str, str] = {
+    "stock_pick": "AIピック判定",
+    "portfolio_signal": "ポートフォリオ売買判定",
+    "eod_review": "EODレビュー",
+    "trend_analyzer": "トレンド抽出",
+}
+# フィールド名 → (公式プロバイダの env 変数名, シャドウプロバイダ一覧の env 変数名, 既定公式, 既定シャドウ)。
+# 既定値は `backend/config.py` のフィールド default と一致させ、未設定時の実際の動作と揃える。
+_FEATURE_PROVIDER_ENV: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
+    "stock_pick": ("LLM_PROVIDER_STOCK_PICK", "LLM_SHADOW_PROVIDERS_STOCK_PICK", "anthropic", ("gemini",)),
+    "portfolio_signal": (
+        "LLM_PROVIDER_PORTFOLIO_SIGNAL",
+        "LLM_SHADOW_PROVIDERS_PORTFOLIO_SIGNAL",
+        "anthropic",
+        ("gemini",),
+    ),
+    "eod_review": ("LLM_PROVIDER_EOD_REVIEW", "LLM_SHADOW_PROVIDERS_EOD_REVIEW", "anthropic", ()),
+    "trend_analyzer": ("LLM_PROVIDER_TREND_ANALYZER", "LLM_SHADOW_PROVIDERS_TREND_ANALYZER", "anthropic", ()),
+}
+
+
+def get_llm_provider_options() -> list[dict[str, object]]:
+    """選択肢として提示する全プロバイダの一覧（APIキー設定状況つき）を返す."""
+    return [
+        {"value": provider, "label": label, "configured": bool(os.environ.get(_PROVIDER_KEY_ENV[provider], ""))}
+        for provider, label in _PROVIDER_LABELS.items()
+    ]
+
+
+def get_llm_provider_settings() -> list[dict[str, object]]:
+    """機能ごとの現在の公式/シャドウプロバイダ設定（.env 由来、未設定なら既定値）を返す."""
+    rows: list[dict[str, object]] = []
+    for feature, (primary_env, shadow_env, default_primary, default_shadow) in _FEATURE_PROVIDER_ENV.items():
+        primary = os.environ.get(primary_env) or default_primary
+        shadow_raw = os.environ.get(shadow_env)
+        shadow = (
+            [s.strip() for s in shadow_raw.split(",") if s.strip()] if shadow_raw is not None else list(default_shadow)
+        )
+        rows.append(
+            {
+                "feature": feature,
+                "label": _FEATURE_LABELS[feature],
+                "primary_provider": primary,
+                "shadow_providers": shadow,
+            }
+        )
+    return rows
+
+
+def env_updates_for_llm_provider(
+    feature: str, *, primary_provider: str | None, shadow_providers: Sequence[str] | None
+) -> dict[str, str]:
+    """指定機能の更新差分を .env 変数名 → 値の dict にして返す（`update_env_keys` にそのまま渡せる）."""
+    if feature not in _FEATURE_PROVIDER_ENV:
+        raise ValueError(f"未知の機能です: {feature}")
+    primary_env, shadow_env, _default_primary, _default_shadow = _FEATURE_PROVIDER_ENV[feature]
+    updates: dict[str, str] = {}
+    if primary_provider is not None:
+        updates[primary_env] = primary_provider
+    if shadow_providers is not None:
+        updates[shadow_env] = ",".join(shadow_providers)
+    return updates
 
 
 def update_env_keys(updates: dict[str, str]) -> None:

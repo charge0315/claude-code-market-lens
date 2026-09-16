@@ -34,7 +34,10 @@ _DEFAULT_GEMINI: dict[str, object] = {
 
 
 class _FakeGemini:
-    """`is_configured` を素の属性で持つ GeminiClient スタブ（`test_pick_pipeline._FakeGemini` と同じ形）."""
+    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）."""
+
+    provider_id = "gemini"
+    model_id = "gemini-2.5-pro"
 
     def __init__(self, response: object = None, *, configured: bool = True) -> None:
         self.is_configured = configured
@@ -66,6 +69,11 @@ def _holding(**overrides: object) -> PortfolioHolding:
 
 
 class _FakeLLM:
+    """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
+
+    provider_id = "anthropic"
+    model_id = "test-model"
+
     def __init__(self, response: object) -> None:
         self._response = response
 
@@ -73,6 +81,13 @@ class _FakeLLM:
         if isinstance(self._response, Exception):
             raise self._response
         return dict(self._response) if isinstance(self._response, dict) else dict(_DEFAULT_LLM)
+
+
+@pytest.fixture(autouse=True)
+def _stub_no_shadow_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既定では shadow プロバイダ無し（実 API への意図しないアクセスを防ぐ）。個別テストは
+    `_wire_shadow()` で上書きする。"""
+    monkeypatch.setattr(svc, "resolve_shadow_providers", lambda _feature: [])
 
 
 @pytest.fixture(autouse=True)
@@ -89,8 +104,16 @@ def _stub_price_data(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(svc, "get_stock_data", fake_get_stock_data)
 
 
+def _wire_official(monkeypatch: pytest.MonkeyPatch, response: object) -> None:
+    monkeypatch.setattr(svc, "resolve_feature_provider", lambda _feature: _FakeLLM(response))
+
+
+def _wire_shadow(monkeypatch: pytest.MonkeyPatch, *providers: object) -> None:
+    monkeypatch.setattr(svc, "resolve_shadow_providers", lambda _feature: list(providers))
+
+
 async def test_evaluate_holding_hold_action_persists_signal(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
+    _wire_official(monkeypatch, _DEFAULT_LLM)
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -103,7 +126,7 @@ async def test_evaluate_holding_hold_action_persists_signal(migrated_db: Path, m
 
 
 async def test_evaluate_holding_hold_action_does_not_notify(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
+    _wire_official(monkeypatch, _DEFAULT_LLM)
 
     await svc.evaluate_holding(_holding())
 
@@ -111,19 +134,16 @@ async def test_evaluate_holding_hold_action_does_not_notify(migrated_db: Path, m
 
 
 async def test_evaluate_holding_add_action_persists_entry(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        svc,
-        "anthropic_client",
-        _FakeLLM(
-            {
-                "action": "add",
-                "entry": 1055.0,
-                "stop_loss_price": 950.0,
-                "take_profit_price": 1200.0,
-                "confidence": 65.0,
-                "reasoning": "押し目買い増し",
-            }
-        ),
+    _wire_official(
+        monkeypatch,
+        {
+            "action": "add",
+            "entry": 1055.0,
+            "stop_loss_price": 950.0,
+            "take_profit_price": 1200.0,
+            "confidence": 65.0,
+            "reasoning": "押し目買い増し",
+        },
     )
 
     signal_id = await svc.evaluate_holding(_holding())
@@ -147,7 +167,7 @@ async def test_evaluate_holding_returns_none_when_current_price_missing(migrated
 
 
 async def test_evaluate_holding_returns_none_on_llm_error(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(AnthropicRateLimitError("portfolio_signal")))
+    _wire_official(monkeypatch, AnthropicRateLimitError("portfolio_signal"))
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -156,7 +176,7 @@ async def test_evaluate_holding_returns_none_on_llm_error(migrated_db: Path, mon
 
 
 async def test_evaluate_holding_rejects_invalid_action(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM({**_DEFAULT_LLM, "action": "sell_everything"}))
+    _wire_official(monkeypatch, {**_DEFAULT_LLM, "action": "sell_everything"})
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -165,7 +185,7 @@ async def test_evaluate_holding_rejects_invalid_action(migrated_db: Path, monkey
 
 
 async def test_evaluate_holding_rejects_malformed_numbers(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM({**_DEFAULT_LLM, "confidence": "not-a-number"}))
+    _wire_official(monkeypatch, {**_DEFAULT_LLM, "confidence": "not-a-number"})
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -177,11 +197,7 @@ async def test_evaluate_holding_rejects_inconsistent_bracket(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # stop >= current_price は finalize_bracket が拒否する不整合。
-    monkeypatch.setattr(
-        svc,
-        "anthropic_client",
-        _FakeLLM({**_DEFAULT_LLM, "stop_loss_price": 2000.0, "take_profit_price": 2500.0}),
-    )
+    _wire_official(monkeypatch, {**_DEFAULT_LLM, "stop_loss_price": 2000.0, "take_profit_price": 2500.0})
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -192,9 +208,9 @@ async def test_evaluate_holding_rejects_inconsistent_bracket(
 async def test_evaluate_holding_gemini_not_configured_records_no_shadow(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """既定（Gemini 未設定）では shadow 判定は記録されない（公式判定には影響しない）."""
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
-    monkeypatch.setattr(svc, "gemini_client", _FakeGemini(configured=False))
+    """既定（shadow プロバイダ無し）では shadow 判定は記録されない（公式判定には影響しない）."""
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    _wire_shadow(monkeypatch)
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -207,25 +223,44 @@ async def test_evaluate_holding_gemini_configured_records_shadow(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 設定済み・正常応答 → 公式判定と併せて shadow 判定が1件記録される."""
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
-    monkeypatch.setattr(svc, "gemini_client", _FakeGemini())
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    _wire_shadow(monkeypatch, _FakeGemini())
 
     signal_id = await svc.evaluate_holding(_holding())
 
     assert signal_id is not None
     shadows = await get_shadows_for_signals([signal_id])
     assert signal_id in shadows
-    shadow = shadows[signal_id]
+    assert len(shadows[signal_id]) == 1
+    shadow = shadows[signal_id][0]
     assert shadow["action"] == "hold"
     assert shadow["reasoning"] == "Gemini 側は中立と判定"
+
+
+async def test_evaluate_holding_multiple_shadow_providers_each_record_a_row(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 マルチLLM併用: 複数 shadow プロバイダを設定すると、それぞれが個別に記録される."""
+    openai_like = _FakeGemini({**_DEFAULT_GEMINI, "reasoning": "OpenAI 側は中立と判定"})
+    openai_like.provider_id = "openai"
+    openai_like.model_id = "gpt-5.1"
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    _wire_shadow(monkeypatch, _FakeGemini(), openai_like)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    shadows = await get_shadows_for_signals([signal_id])
+    versions = {row["challenger_version"] for row in shadows[signal_id]}
+    assert versions == {"gemini:gemini-2.5-pro", "openai:gpt-5.1"}
 
 
 async def test_evaluate_holding_gemini_error_still_persists_official_signal(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 呼び出し失敗はフェイルソフト — 公式判定の記録には一切影響しない."""
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
-    monkeypatch.setattr(svc, "gemini_client", _FakeGemini(GeminiRateLimitError("portfolio_signal_gemini")))
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    _wire_shadow(monkeypatch, _FakeGemini(GeminiRateLimitError("portfolio_signal_gemini")))
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -237,8 +272,8 @@ async def test_evaluate_holding_gemini_error_still_persists_official_signal(
 async def test_evaluate_holding_gemini_invalid_action_records_no_shadow(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
-    monkeypatch.setattr(svc, "gemini_client", _FakeGemini({**_DEFAULT_GEMINI, "action": "sell_everything"}))
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    _wire_shadow(monkeypatch, _FakeGemini({**_DEFAULT_GEMINI, "action": "sell_everything"}))
 
     signal_id = await svc.evaluate_holding(_holding())
 
@@ -248,7 +283,7 @@ async def test_evaluate_holding_gemini_invalid_action_records_no_shadow(
 
 
 async def test_run_portfolio_monitor_evaluates_all_holdings(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "anthropic_client", _FakeLLM(_DEFAULT_LLM))
+    _wire_official(monkeypatch, _DEFAULT_LLM)
 
     def fake_get_company_info(_symbol: str) -> dict[str, str | None]:
         return {"name": "A", "sector": "輸送用機器"}

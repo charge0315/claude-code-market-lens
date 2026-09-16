@@ -9,9 +9,10 @@ Market Lens `backend/services/anthropic_errors.py` から移植（変更なし�
 from __future__ import annotations
 
 from backend.services.circuit_breaker import CircuitOpenError
+from backend.services.llm.errors import LLMError
 
 
-class AnthropicError(Exception):
+class AnthropicError(LLMError):
     """Anthropic クライアントの基底例外."""
 
 

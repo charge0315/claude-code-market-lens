@@ -82,8 +82,10 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     """test_pick_pipeline の wired フィクスチャを再利用（同じ差し替えを行う）."""
     state = WiredState()
     fake_llm = _FakeLLM(state)
-    monkeypatch.setattr(pp, "anthropic_client", fake_llm)
-    monkeypatch.setattr(orch, "anthropic_client", fake_llm)
+    monkeypatch.setattr(pp, "resolve_feature_provider", lambda _feature: fake_llm)
+    monkeypatch.setattr(orch, "resolve_feature_provider", lambda _feature: fake_llm)
+    # shadow プロバイダ無し（実 API への意図しないアクセスを防ぐため明示的に空にする）。
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [])
 
     async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
         return _FakeRankings(list(state.codes))

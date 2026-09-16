@@ -2,8 +2,8 @@
 
 collect → subscore → synthesis → llm_overlay → bracket → verify の6ステージを、ステージ単位で
 `inference_traces` へ逐次記録する。各ステージは既存の移植済みサービス（recommender /
-anthropic_client / bracket / E1〜E3 ゲート / calibration）を呼ぶだけの薄いラッパで、
-新しいスコアリング・判定ロジックは持たない —
+llm.registry で解決した LLM プロバイダ / bracket / E1〜E3 ゲート / calibration）を呼ぶだけの
+薄いラッパで、新しいスコアリング・判定ロジックは持たない —
 `services/picks/pipeline.py` の旧・ショートリストループの本体をそのまま移設したもの。
 
 🔧 §3.1 の名目上の並び（collect→subscore→llm_overlay→synthesis→...）とは異なり、synthesis は
@@ -17,23 +17,22 @@ verify ステージへ集約した。
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
 from typing import cast
 
-from backend.config import settings
 from backend.models.inference import InferenceOutcome
 from backend.models.pick import Direction, HorizonType, LedgerEntry, RejectedPick, SubScores
-from backend.services.anthropic_client import anthropic_client
-from backend.services.anthropic_errors import AnthropicError
 from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_event
 from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
-from backend.services.gemini_client import gemini_client
-from backend.services.gemini_errors import GeminiError
 from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
+from backend.services.llm.errors import LLMError
+from backend.services.llm.provider import LLMProvider
+from backend.services.llm.registry import resolve_feature_provider, resolve_shadow_providers
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
@@ -118,28 +117,15 @@ class _Recorder:
         )
 
 
-async def record_gemini_shadow_judgment(outcome: InferenceOutcome) -> None:
-    """Gemini に公式パイプラインと同一のプロンプトを判定させ、`shadow_predictions` へ比較用に
-    記録する（🆕 P12、マルチLLM判定）.
-
-    `shadow_predictions.pick_id` は `prediction_ledger.pick_id` への FK（外部キー制約 ON）の
-    ため、呼び出しは **`pl.insert_picks` で台帳へ確定した後**（`pipeline.run_picks`）に限る
-    — `run_inference` 実行時点ではまだ `pick_id` が DB に存在しない。
-
-    表示専用の challenger 判定であり、失敗しても本体のピック生成には一切影響しない
-    （フェイルソフト）。`direction` はこのアーキテクチャでは常に quant 由来（`pick.direction`）
-    のため、Gemini の応答からは再導出しない。3 値は公式パイプラインと同じ
-    `finalize_bracket` を必ず通し、サーバ側検証をバイパスさせない（CLAUDE.md 3 値必須検証）。
-    """
+async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceOutcome) -> None:
+    """1 プロバイダぶんの shadow 判定を実行し `shadow_predictions` へ記録する（フェイルソフト）."""
     pick = outcome.pick
     if pick is None or outcome.llm_prompt is None or outcome.current_price is None:
         return
-    if not gemini_client.is_configured:
-        return
     try:
-        raw = await gemini_client.propose_stock_pick(ticker=pick.symbol, prompt=outcome.llm_prompt)
-    except GeminiError as e:
-        logger.warning("Gemini shadow 判定に失敗しました（%s）: %s", pick.symbol, e)
+        raw = await provider.propose_stock_pick(ticker=pick.symbol, prompt=outcome.llm_prompt)
+    except LLMError as e:
+        logger.warning("%s shadow 判定に失敗しました（%s）: %s", provider.provider_id, pick.symbol, e)
         return
 
     if not raw.get("should_include", True):
@@ -150,19 +136,21 @@ async def record_gemini_shadow_judgment(outcome: InferenceOutcome) -> None:
     raw_target = _num(raw.get("take_profit_price"))
     confidence_raw = _num(raw.get("confidence"))
     if raw_entry is None or raw_stop is None or raw_target is None or confidence_raw is None:
-        logger.warning("Gemini shadow 判定のレスポンス形式が不正です（%s）", pick.symbol)
+        logger.warning("%s shadow 判定のレスポンス形式が不正です（%s）", provider.provider_id, pick.symbol)
         return
 
     bracket, reason = finalize_bracket(outcome.current_price, outcome.atr, raw_entry, raw_stop, raw_target)
     if bracket is None:
-        logger.warning("Gemini shadow 判定のブラケット検証に失敗しました（%s）: %s", pick.symbol, reason)
+        logger.warning(
+            "%s shadow 判定のブラケット検証に失敗しました（%s）: %s", provider.provider_id, pick.symbol, reason
+        )
         return
 
     try:
         await insert_shadow_prediction(
             pick_id=pick.pick_id,
             run_id=outcome.run_id,
-            challenger_version=f"gemini:{settings.gemini_model}",
+            challenger_version=f"{provider.provider_id}:{provider.model_id}",
             symbol=pick.symbol,
             horizon_type=pick.horizon_type,
             direction=pick.direction,
@@ -178,7 +166,27 @@ async def record_gemini_shadow_judgment(outcome: InferenceOutcome) -> None:
             },
         )
     except Exception:  # noqa: BLE001 — 表示専用の challenger 記録。失敗しても本体は継続する
-        logger.warning("Gemini shadow 判定の記録に失敗しました（%s）", pick.symbol, exc_info=True)
+        logger.warning("%s shadow 判定の記録に失敗しました（%s）", provider.provider_id, pick.symbol, exc_info=True)
+
+
+async def record_shadow_judgments(outcome: InferenceOutcome) -> None:
+    """設定された shadow プロバイダ群（0〜複数、`LLM_SHADOW_PROVIDERS_STOCK_PICK`）に、
+    公式パイプラインと同一のプロンプトを判定させ、`shadow_predictions` へ比較用に記録する.
+
+    `shadow_predictions.pick_id` は `prediction_ledger.pick_id` への FK（外部キー制約 ON）の
+    ため、呼び出しは **`pl.insert_picks` で台帳へ確定した後**（`pipeline.run_picks`）に限る
+    — `run_inference` 実行時点ではまだ `pick_id` が DB に存在しない。
+
+    表示専用の challenger 判定であり、失敗しても本体のピック生成には一切影響しない
+    （フェイルソフト）。`direction` はこのアーキテクチャでは常に quant 由来（`pick.direction`）
+    のため、challenger の応答からは再導出しない。3 値は公式パイプラインと同じ
+    `finalize_bracket` を必ず通し、サーバ側検証をバイパスさせない（CLAUDE.md 3 値必須検証）。
+    複数プロバイダが設定されていれば並行して判定させる。
+    """
+    providers = resolve_shadow_providers("stock_pick")
+    if not providers:
+        return
+    await asyncio.gather(*(_record_one_shadow_judgment(p, outcome) for p in providers))
 
 
 async def run_inference(
@@ -252,8 +260,8 @@ async def run_inference(
         related_daily_frontmatter=related_daily or None,
     )
     try:
-        raw = await anthropic_client.propose_stock_pick(ticker=symbol, prompt=prompt)
-    except AnthropicError as e:
+        raw = await resolve_feature_provider("stock_pick").propose_stock_pick(ticker=symbol, prompt=prompt)
+    except LLMError as e:
         rejected = RejectedPick(symbol=symbol, status="llm_error", reason=str(e))
         await recorder.emit("llm_overlay", "failed", {"error": str(e)}, run_status="rejected")
         return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)

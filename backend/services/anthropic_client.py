@@ -36,6 +36,18 @@ from backend.services.anthropic_errors import (
     AnthropicTimeoutError,
 )
 from backend.services.circuit_breaker import CircuitBreaker
+from backend.services.llm.schemas import (
+    EOD_REVIEW_SCHEMA as _EOD_REVIEW_TOOL_SCHEMA,
+)
+from backend.services.llm.schemas import (
+    PORTFOLIO_SIGNAL_SCHEMA as _PORTFOLIO_SIGNAL_TOOL_SCHEMA,
+)
+from backend.services.llm.schemas import (
+    STOCK_PICK_SCHEMA as _TOOL_SCHEMA,
+)
+from backend.services.llm.schemas import (
+    TREND_SCHEMA as _TREND_TOOL_SCHEMA,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,165 +56,6 @@ JsonDict = dict[str, object]
 _MAX_TOKENS = 1024
 _CHAT_MAX_TOKENS = 4096
 _TREND_MAX_TOKENS = 4096
-
-# 単一ツールを tool_choice で強制し、自由記述の代わりに JSON スキーマ準拠の構造化出力
-# （買値・損切り価格・売値・確信度・根拠）を得る。
-_TOOL_SCHEMA: JsonDict = {
-    "name": "propose_stock_pick",
-    "description": "指定銘柄の分析結果に基づき、具体的な推奨買値・損切り価格・推奨売値と確信度・根拠を提案する。",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "should_include": {
-                "type": "boolean",
-                "description": "詳細分析の結果、おすすめ銘柄として提示すべきでないと判断した場合は false",
-            },
-            "buy_price": {"type": "number", "description": "推奨買値（円）"},
-            "stop_loss_price": {"type": "number", "description": "推奨損切り価格（円）。現在値より低い値。"},
-            "take_profit_price": {"type": "number", "description": "推奨売値/利確目標（円）。現在値より高い値。"},
-            "confidence": {"type": "number", "description": "この提案への確信度 0-100"},
-            "holding_period_days": {"type": "integer", "description": "想定保有期間（営業日）"},
-            "reasoning": {"type": "string", "description": "日本語での提案根拠（2〜4文）"},
-            "risk_factors": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "主なリスク要因（日本語、箇条書き）",
-            },
-        },
-        "required": [
-            "should_include",
-            "buy_price",
-            "stop_loss_price",
-            "take_profit_price",
-            "confidence",
-            "reasoning",
-        ],
-    },
-}
-
-# Trend Tracking Agent（`services/data/trend/analyzer.py`）が、収集したニュース見出し・
-# セクター騰落から「トレンドオントロジー」を forced tool-use で構造化取得する。
-_TREND_TOOL_SCHEMA: JsonDict = {
-    "name": "submit_trends",
-    "description": (
-        "収集された市場・技術・マクロのトピックから、投資判断に有用な構造化トレンドを抽出して提出する。"
-        "ノイズ（無関係な広告・重複・一般ニュース）は除外し、related_tickers の証券コードは"
-        "提示された有効コードのみを使うこと。"
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "trends": {
-                "type": "array",
-                "description": "抽出したトレンド（5〜10件目安）。有用なものが無ければ空配列。",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "theme_name": {"type": "string", "description": "テーマ名（日本語、簡潔に）"},
-                        "summary": {"type": "string", "description": "日本語の要約（1〜3文）"},
-                        "lifecycle_stage": {
-                            "type": "string",
-                            "enum": ["EMERGING", "EXPANDING", "PEAK", "DECLINING"],
-                        },
-                        "sentiment_score": {"type": "number", "description": "-1.0(極めて弱気)〜+1.0(極めて強気)"},
-                        "momentum_score": {"type": "number", "description": "0〜100（話題の急上昇度）"},
-                        "impact_horizon": {"type": "string", "enum": ["SHORT", "MID", "LONG"]},
-                        "related_tickers": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "ticker": {"type": "string", "description": "証券コード（有効コードのみ）"},
-                                    "name": {"type": "string"},
-                                    "correlation_rationale": {
-                                        "type": "string",
-                                        "description": "このトレンドと当該銘柄の関連の根拠（日本語、1文）",
-                                    },
-                                },
-                                "required": ["ticker", "correlation_rationale"],
-                            },
-                        },
-                        "keywords": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "関連キーワード（日本語、3〜6語）",
-                        },
-                    },
-                    "required": [
-                        "theme_name",
-                        "summary",
-                        "lifecycle_stage",
-                        "sentiment_score",
-                        "momentum_score",
-                        "impact_horizon",
-                    ],
-                },
-            },
-        },
-        "required": ["trends"],
-    },
-}
-
-
-# 保有 1 件について継続保有/一部利確/損切/買い増しを判定し、更新後の stop/target
-# （買い増し時は entry も）・確信度・根拠を forced tool-use で構造化取得する（🆕 P7b）。
-_PORTFOLIO_SIGNAL_TOOL_SCHEMA: JsonDict = {
-    "name": "propose_portfolio_signal",
-    "description": (
-        "保有銘柄1件の現状を分析し、継続保有(hold)/一部利確(trim)/損切(stop_loss)/買い増し(add)の"
-        "いずれかを判定して、更新後の損切り価格・利確目標・確信度・根拠を提案する。"
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "enum": ["hold", "trim", "stop_loss", "add"],
-                "description": "hold=継続保有 / trim=一部利確 / stop_loss=損切り / add=買い増し",
-            },
-            "entry": {
-                "type": "number",
-                "description": "買い増し時の推奨買値（円）。action=add のときのみ使用する。",
-            },
-            "stop_loss_price": {"type": "number", "description": "更新後の損切り価格（円）。現在値より低い値。"},
-            "take_profit_price": {"type": "number", "description": "更新後の利確目標（円）。現在値より高い値。"},
-            "confidence": {"type": "number", "description": "この判定への確信度 0-100"},
-            "reasoning": {"type": "string", "description": "日本語での判定根拠（2〜4文）"},
-        },
-        "required": ["action", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
-    },
-}
-
-
-# 当日の portfolio_signals 集計（承認/却下/実約定件数・action 内訳）と判定明細を踏まえ、
-# 翌営業日以降の判定精度向上に資する教訓を forced tool-use で構造化取得する（🆕 P7d）。
-_EOD_REVIEW_TOOL_SCHEMA: JsonDict = {
-    "name": "submit_eod_review",
-    "description": (
-        "本日のポートフォリオ判定（継続保有/一部利確/損切/買い増し）の集計と、人間による"
-        "承認・却下・実約定の結果を踏まえ、翌営業日以降の判定精度向上に資する教訓を提出する。"
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string", "description": "本日の総括（日本語、2〜4文）"},
-            "heuristics": {
-                "type": "array",
-                "description": "学習した教訓（0〜5件、有用なものが無ければ空配列）",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "heuristic": {"type": "string", "description": "教訓（日本語、1文）"},
-                        "evidence": {"type": "string", "description": "根拠となった判定の要約（日本語）"},
-                        "confidence": {"type": "number", "description": "この教訓への確信度 0.0-1.0"},
-                    },
-                    "required": ["heuristic"],
-                },
-            },
-        },
-        "required": ["summary", "heuristics"],
-    },
-}
 
 
 class AnthropicClient:
@@ -224,10 +77,17 @@ class AnthropicClient:
         self._sdk: AsyncAnthropic | None = None
         self._ready = True
 
+    provider_id = "anthropic"
+
     @property
     def is_configured(self) -> bool:
         """必要な環境変数が設定されているかを返す."""
         return bool(settings.anthropic_api_key)
+
+    @property
+    def model_id(self) -> str:
+        """`llm.provider.LLMProvider` プロトコル用: 現在使用中のモデルID."""
+        return settings.anthropic_model
 
     def _client(self) -> AsyncAnthropic:
         if self._sdk is None:

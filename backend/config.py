@@ -55,6 +55,39 @@ class Settings(BaseSettings):
     # 無効（`gemini_client.is_configured=False`）で、公式パイプラインには一切影響しない。
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL")
+    # OpenAI（ChatGPT）: マルチLLM対応（🆕）。他プロバイダと同じくキー未設定なら機能無効。
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-5.1", validation_alias="OPENAI_MODEL")
+
+    # --- LLM プロバイダ選択（🆕、機能ごとに公式/シャドウを個別設定可能） ---
+    # 「公式」= 実際の売買判定・ピック確定を左右するプロバイダ。既定は全て Anthropic
+    # （導入前と同じ挙動を維持）。`services/llm/registry.py` がこれを読んで解決する。
+    llm_provider_stock_pick: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_STOCK_PICK"
+    )
+    llm_provider_portfolio_signal: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_PORTFOLIO_SIGNAL"
+    )
+    llm_provider_eod_review: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_EOD_REVIEW"
+    )
+    llm_provider_trend_analyzer: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_TREND_ANALYZER"
+    )
+    # 「シャドウ」= 公式パイプラインと同一プロンプトを並行判定させ、比較表示のみに使う
+    # チャレンジャー（複数併用可）。既定は導入前の Gemini shadow 挙動と完全一致させる。
+    llm_shadow_providers_stock_pick: Annotated[list[str], NoDecode] = Field(
+        default=["gemini"], validation_alias="LLM_SHADOW_PROVIDERS_STOCK_PICK"
+    )
+    llm_shadow_providers_portfolio_signal: Annotated[list[str], NoDecode] = Field(
+        default=["gemini"], validation_alias="LLM_SHADOW_PROVIDERS_PORTFOLIO_SIGNAL"
+    )
+    llm_shadow_providers_eod_review: Annotated[list[str], NoDecode] = Field(
+        default=[], validation_alias="LLM_SHADOW_PROVIDERS_EOD_REVIEW"
+    )
+    llm_shadow_providers_trend_analyzer: Annotated[list[str], NoDecode] = Field(
+        default=[], validation_alias="LLM_SHADOW_PROVIDERS_TREND_ANALYZER"
+    )
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")
@@ -116,7 +149,14 @@ class Settings(BaseSettings):
     # --- LLM コスト安全装置（目標ではない。自動適用しない） ---
     llm_daily_cost_limit_usd: float = Field(default=5.0, validation_alias="LLM_DAILY_COST_LIMIT_USD", ge=0.0)
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator(
+        "cors_origins",
+        "llm_shadow_providers_stock_pick",
+        "llm_shadow_providers_portfolio_signal",
+        "llm_shadow_providers_eod_review",
+        "llm_shadow_providers_trend_analyzer",
+        mode="before",
+    )
     @classmethod
     def _split_csv(cls, v: object) -> object:
         """ "a,b" 形式のカンマ区切り env を list へ変換する（JSON 配列表記も許容）."""

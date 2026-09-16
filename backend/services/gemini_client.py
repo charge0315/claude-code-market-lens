@@ -1,16 +1,18 @@
-"""Google Gemini API 非同期クライアント（🆕 P12、マルチLLM判定）.
+"""Google Gemini API 非同期クライアント.
 
-Anthropic（公式パイプライン）と同じプロンプトを並行して Gemini にも投げ、根拠・確信度・
-買値/損切り価格/売値を「別視点の比較材料」として得るための challenger クライアント。
-`services/anthropic_client.py` と同じ forced structured-output パターンを踏襲するが、
-Gemini は公式 SDK ではなく REST を直接叩く（`knowledge_search_client.py`/`jquants_client.py`
-と同じ設計判断 — 依存を増やさず挙動を完全に把握できるようにするため）。
+公式プロバイダ（`llm.registry.resolve_feature_provider`）と同じプロンプトを並行して Gemini にも
+投げ、根拠・確信度・買値/損切り価格/売値を「別視点の比較材料」として得るための challenger
+クライアントとして使えるほか、機能ごとの設定次第では公式プロバイダそのものにもなり得る
+（`services/llm/registry.py` 参照）。`services/anthropic_client.py` と同じ forced
+structured-output パターンを踏襲するが、Gemini は公式 SDK ではなく REST を直接叩く
+（`knowledge_search_client.py`/`jquants_client.py` と同じ設計判断 — 依存を増やさず挙動を
+完全に把握できるようにするため）。
 
 環境変数 `GEMINI_API_KEY` を設定すると有効になる。未設定なら `is_configured=False` を返し、
-呼び出し元（`orchestrator._record_gemini_shadow_judgment`）がフェイルソフトできるようにする。
-この判定は `shadow_predictions` へ記録するだけの表示専用情報であり、Alpha Forge の
-「モデル昇格・確度較正・自動売買判定は Anthropic の公式パイプラインのみで決定する」という
-既存アーキテクチャには一切影響しない。
+呼び出し元がフェイルソフトできるようにする。シャドウ判定として使われる場合は
+`shadow_predictions`/`portfolio_signal_shadows` へ記録するだけの表示専用情報であり、
+「モデル昇格・確度較正・自動売買判定は（機能ごとに選択された）公式プロバイダのみで決定する」
+という既存アーキテクチャには一切影響しない。
 """
 
 from __future__ import annotations
@@ -33,6 +35,8 @@ from backend.services.gemini_errors import (
     GeminiServerError,
     GeminiTimeoutError,
 )
+from backend.services.llm.schemas import EOD_REVIEW_SCHEMA, PORTFOLIO_SIGNAL_SCHEMA, STOCK_PICK_SCHEMA, TREND_SCHEMA
+from backend.services.llm.schemas import to_gemini_response_schema as _to_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -41,48 +45,13 @@ JsonDict = dict[str, object]
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 _TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
 
-# Anthropic の _TOOL_SCHEMA（`anthropic_client.py`）と同じ項目を、Gemini の
-# responseSchema（OpenAPI サブセット、大文字型名が必須）で表現する。
-_STOCK_PICK_RESPONSE_SCHEMA: JsonDict = {
-    "type": "OBJECT",
-    "properties": {
-        "should_include": {
-            "type": "BOOLEAN",
-            "description": "詳細分析の結果、おすすめ銘柄として提示すべきでないと判断した場合は false",
-        },
-        "buy_price": {"type": "NUMBER", "description": "推奨買値（円）"},
-        "stop_loss_price": {"type": "NUMBER", "description": "推奨損切り価格（円）。現在値より低い値。"},
-        "take_profit_price": {"type": "NUMBER", "description": "推奨売値/利確目標（円）。現在値より高い値。"},
-        "confidence": {"type": "NUMBER", "description": "この提案への確信度 0-100"},
-        "holding_period_days": {"type": "INTEGER", "description": "想定保有期間（営業日）"},
-        "reasoning": {"type": "STRING", "description": "日本語での提案根拠（2〜4文）"},
-        "risk_factors": {
-            "type": "ARRAY",
-            "items": {"type": "STRING"},
-            "description": "主なリスク要因（日本語、箇条書き）",
-        },
-    },
-    "required": ["should_include", "buy_price", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
-}
-
-# `anthropic_client._PORTFOLIO_SIGNAL_TOOL_SCHEMA` と同じ項目を Gemini の responseSchema で
-# 表現する（🆕、保有銘柄の AI 売買タイミング判定を Claude と並行して challenger 判定させる）。
-_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA: JsonDict = {
-    "type": "OBJECT",
-    "properties": {
-        "action": {
-            "type": "STRING",
-            "enum": ["hold", "trim", "stop_loss", "add"],
-            "description": "hold=継続保有 / trim=一部利確 / stop_loss=損切り / add=買い増し",
-        },
-        "entry": {"type": "NUMBER", "description": "買い増し時の推奨買値（円）。action=add のときのみ使用する。"},
-        "stop_loss_price": {"type": "NUMBER", "description": "更新後の損切り価格（円）。現在値より低い値。"},
-        "take_profit_price": {"type": "NUMBER", "description": "更新後の利確目標（円）。現在値より高い値。"},
-        "confidence": {"type": "NUMBER", "description": "この判定への確信度 0-100"},
-        "reasoning": {"type": "STRING", "description": "日本語での判定根拠（2〜4文）"},
-    },
-    "required": ["action", "stop_loss_price", "take_profit_price", "confidence", "reasoning"],
-}
+# `llm/schemas.py` の共通スキーマ（Anthropic 形式）を Gemini の responseSchema
+# （OpenAPI サブセット、大文字型名が必須）へ変換する。以前は個別に手書き複製していたが、
+# 二重管理によるドリフトを避けるため `to_gemini_response_schema()` で機械変換に統一した。
+_STOCK_PICK_RESPONSE_SCHEMA: JsonDict = _to_gemini(STOCK_PICK_SCHEMA)
+_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA: JsonDict = _to_gemini(PORTFOLIO_SIGNAL_SCHEMA)
+_EOD_REVIEW_RESPONSE_SCHEMA: JsonDict = _to_gemini(EOD_REVIEW_SCHEMA)
+_TREND_RESPONSE_SCHEMA: JsonDict = _to_gemini(TREND_SCHEMA)
 
 
 class GeminiClient:
@@ -103,10 +72,17 @@ class GeminiClient:
         self._breaker = CircuitBreaker(open_error_factory=GeminiCircuitOpenError)
         self._ready = True
 
+    provider_id = "gemini"
+
     @property
     def is_configured(self) -> bool:
         """必要な環境変数が設定されているかを返す."""
         return bool(settings.gemini_api_key)
+
+    @property
+    def model_id(self) -> str:
+        """`llm.provider.LLMProvider` プロトコル用: 現在使用中のモデルID."""
+        return settings.gemini_model
 
     def _translate_and_record_failure(self, exc: Exception, context: str) -> GeminiError:
         """raw な httpx 例外を型付き例外へ翻訳する（`anthropic_client.py` と同じ方針）.
@@ -181,6 +157,28 @@ class GeminiClient:
             feature="portfolio_signal_gemini",
             model=settings.gemini_model,
             response_schema=_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA,
+            prompt=prompt,
+        )
+
+    async def propose_eod_review(self, *, prompt: str) -> JsonDict:
+        """forced structured-output で当日のポートフォリオ判定総括と学習教訓を取得する.
+
+        `llm.registry` により eod_review 機能の公式プロバイダとして選択された場合に使う
+        （`LLMProvider` プロトコル準拠のため、Anthopic 版と同じシグネチャで用意する）。
+        """
+        return await self._generate_structured(
+            feature="eod_review_gemini",
+            model=settings.gemini_model,
+            response_schema=_EOD_REVIEW_RESPONSE_SCHEMA,
+            prompt=prompt,
+        )
+
+    async def propose_trends(self, *, prompt: str) -> JsonDict:
+        """forced structured-output で構造化トレンド一覧（trends 配列）を取得する."""
+        return await self._generate_structured(
+            feature="trend_analyzer_gemini",
+            model=settings.gemini_model,
+            response_schema=_TREND_RESPONSE_SCHEMA,
             prompt=prompt,
         )
 

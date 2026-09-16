@@ -19,12 +19,12 @@ from typing import cast, get_args
 
 from pydantic import ValidationError
 
-from backend.config import settings
 from backend.models.trend_tracking import SnapshotStatus, Trend, TrendSnapshot
-from backend.services.anthropic_errors import AnthropicError
 from backend.services.data.trend import analyzer, collector
 from backend.services.db import trend_snapshot_db
 from backend.services.jst_time import JST
+from backend.services.llm.errors import LLMError
+from backend.services.llm.registry import resolve_feature_provider
 
 logger = logging.getLogger(__name__)
 
@@ -89,26 +89,27 @@ async def _build_and_persist() -> TrendSnapshot:
     now_iso = _now().isoformat(timespec="seconds")
     date_key = _now().strftime("%Y%m%d")
     signals = await collector.collect_signals()
+    provider = resolve_feature_provider("trend_analyzer")
 
     status: str
     message: str | None
-    if signals.is_mock and not analyzer.anthropic_client.is_configured:
+    if signals.is_mock and not provider.is_configured:
         trends = analyzer.mock_trends(now_iso, date_key)
         status = "mock"
-        message = "実データ・Anthropic キーともに未設定のため、モックのトレンドを表示しています。"
-    elif not analyzer.anthropic_client.is_configured:
+        message = "実データ・LLM プロバイダともに未設定のため、モックのトレンドを表示しています。"
+    elif not provider.is_configured:
         trends = analyzer.mock_trends(now_iso, date_key)
         status = "not_configured"
-        message = "Anthropic API キーが未設定のため、モックのトレンドを表示しています。"
+        message = f"{provider.provider_id} API キーが未設定のため、モックのトレンドを表示しています。"
     else:
         try:
             trends = await analyzer.analyze(signals.headlines, signals.sector_notes)
-        except AnthropicError as exc:
+        except LLMError as exc:
             logger.warning("トレンド同期: LLM 分析に失敗 (%s)", exc)
             return TrendSnapshot(
                 snapshot_at=now_iso,
                 status="llm_error",
-                model=settings.anthropic_model,
+                model=provider.model_id,
                 trends=[],
                 signal_count=signals.signal_count,
                 source_summary=signals.source_summary,
@@ -125,7 +126,7 @@ async def _build_and_persist() -> TrendSnapshot:
     await trend_snapshot_db.insert_trend_snapshot(
         snapshot_at=now_iso,
         status=status,
-        model=settings.anthropic_model,
+        model=provider.model_id,
         trends=[t.model_dump() for t in trends],
         signal_count=signals.signal_count,
         source_summary=signals.source_summary,
@@ -133,7 +134,7 @@ async def _build_and_persist() -> TrendSnapshot:
     return TrendSnapshot(
         snapshot_at=now_iso,
         status=_coerce_status(status),
-        model=settings.anthropic_model,
+        model=provider.model_id,
         trends=trends,
         signal_count=signals.signal_count,
         source_summary=signals.source_summary,
@@ -150,7 +151,7 @@ async def sync_trends(*, force: bool = False) -> TrendSnapshot:
             return _snapshot_from_row(latest)
         try:
             return await _build_and_persist()
-        except AnthropicError:
+        except LLMError:
             raise
         except Exception:  # noqa: BLE001 — 収集 / DB の想定外障害。既存があれば返す
             logger.warning("トレンド同期に失敗", exc_info=True)

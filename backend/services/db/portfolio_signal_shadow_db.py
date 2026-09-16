@@ -1,6 +1,7 @@
-"""`portfolio_signal_shadows`（AI 売買タイミング判定の Gemini 併記）の読み書き（SQLAlchemy async）.
+"""`portfolio_signal_shadows`（AI 売買タイミング判定のシャドウ併記）の読み書き（SQLAlchemy async）.
 
-`portfolio_signals` 1件につき Gemini 判定は高々1件（`signal_id` に UNIQUE インデックス）。
+`portfolio_signals` 1件につき、チャレンジャー（Gemini/OpenAI 等）ごとに高々1件
+（`signal_id`, `challenger_version` の複合 UNIQUE インデックス、🆕 マルチLLM併用対応）。
 表示専用の比較材料であり、承認・却下・実約定の判定フローには一切関与しない。
 """
 
@@ -55,8 +56,11 @@ async def insert_shadow(
     return shadow_id
 
 
-async def get_shadows_for_signals(signal_ids: list[str]) -> dict[str, dict[str, object]]:
-    """指定した `signal_id` 群に対応する Gemini 判定を `{signal_id: row}` で返す（無ければキー無し）."""
+async def get_shadows_for_signals(signal_ids: list[str]) -> dict[str, list[dict[str, object]]]:
+    """指定した `signal_id` 群に対応するシャドウ判定群を `{signal_id: [row, ...]}` で返す（🆕 複数併用可）.
+
+    紐づく shadow が無い `signal_id` はキー自体を持たない（値は空リストではない）。
+    """
     if not signal_ids:
         return {}
     placeholders = ", ".join(f":id{i}" for i in range(len(signal_ids)))
@@ -68,4 +72,8 @@ async def get_shadows_for_signals(signal_ids: list[str]) -> dict[str, dict[str, 
             ),
             params,
         )
-        return {str(r._mapping["signal_id"]): dict(r._mapping) for r in result}
+        rows = [dict(r._mapping) for r in result]
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["signal_id"]), []).append(row)
+    return grouped

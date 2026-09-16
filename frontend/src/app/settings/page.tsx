@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { ApiKeysPanel } from '@/components/settings/ApiKeysPanel';
+import { LLMProviderPanel } from '@/components/settings/LLMProviderPanel';
 
 export default function SettingsPage(): ReactNode {
   return (
@@ -15,6 +16,18 @@ export default function SettingsPage(): ReactNode {
           backend と celery worker / beat の再起動が必要です。
         </p>
         <ApiKeysPanel />
+      </section>
+
+      <section aria-labelledby="llm-providers-heading" style={{ marginTop: 'var(--spacing-xl)' }}>
+        <h2 id="llm-providers-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          LLM プロバイダ設定
+        </h2>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-lg)' }}>
+          機能ごとに、実際の判定を左右する「公式プロバイダ」と、同じ内容を並行判定させ比較表示する
+          だけの「シャドウプロバイダ」（複数併用可）を選べます。APIキーが未設定のプロバイダを選ぶと
+          その機能は動作しません。保存後の反映には backend と celery worker / beat の再起動が必要です。
+        </p>
+        <LLMProviderPanel />
       </section>
     </PageShell>
   );

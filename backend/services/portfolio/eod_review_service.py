@@ -11,7 +11,7 @@ Market Lens は LLM 呼び出し失敗（`AnthropicError`）を永続化せず�
 リトライを前提にする設計だが、この関数は celery-beat（16:31 JST 日次）からの無人実行が主経路
 のため、伝播させると失敗がログに残るだけで誰もリトライしない。そのため失敗時は定量集計のみの
 フォールバック summary で握りつぶし、必ず 1 件は保存する設計にした（`signal_service` が
-`AnthropicError` を握りつぶす方針と同じ）。
+`LLMError` を握りつぶす方針と同じ）。
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from backend.models.eod_review import EodReview, HeuristicItem
-from backend.services.anthropic_client import anthropic_client
-from backend.services.anthropic_errors import AnthropicError
 from backend.services.db.eod_review_db import get_eod_review, list_recent_eod_reviews, upsert_eod_review
 from backend.services.db.portfolio_signal_db import list_signals_for_date
 from backend.services.jst_time import JST, today_jst
+from backend.services.llm.errors import LLMError
+from backend.services.llm.registry import resolve_feature_provider
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +91,16 @@ async def _generate(
 ) -> tuple[str, list[HeuristicItem]]:
     if not signals:
         return "本日は判定がありませんでした。", []
-    if not anthropic_client.is_configured:
-        return (
-            f"Anthropic APIキーが未設定のため、定量集計のみ実施しました（{stats['evaluated_count']}件判定）。",
-            _coerce_heuristics(list(_MOCK_HEURISTICS)),
+    provider = resolve_feature_provider("eod_review")
+    if not provider.is_configured:
+        message = (
+            f"{provider.provider_id} APIキーが未設定のため、"
+            f"定量集計のみ実施しました（{stats['evaluated_count']}件判定）。"
         )
+        return message, _coerce_heuristics(list(_MOCK_HEURISTICS))
     try:
-        raw = await anthropic_client.propose_eod_review(prompt=_build_prompt(run_date, stats, signals))
-    except AnthropicError as e:
+        raw = await provider.propose_eod_review(prompt=_build_prompt(run_date, stats, signals))
+    except LLMError as e:
         logger.warning("EOD レビューの LLM 呼び出しに失敗: %s", e)
         return f"LLM 呼び出しに失敗したため、定量集計のみ実施しました（{stats['evaluated_count']}件判定）。", []
     summary = str(raw.get("summary", "")).strip() or "（要約なし）"

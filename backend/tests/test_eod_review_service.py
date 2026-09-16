@@ -12,6 +12,9 @@ from backend.services.portfolio import eod_review_service as svc
 
 
 class _FakeLLM:
+    provider_id = "anthropic"
+    model_id = "test-model"
+
     def __init__(self, response: dict[str, object] | Exception) -> None:
         self._response = response
 
@@ -42,11 +45,15 @@ async def test_run_eod_review_reuses_existing_without_force(migrated_db: Path, m
     class _ConfiguredFakeLLM(_FakeLLM):
         is_configured = True
 
-    monkeypatch.setattr(svc, "anthropic_client", _ConfiguredFakeLLM({"summary": "1回目", "heuristics": []}))
+    monkeypatch.setattr(
+        svc, "resolve_feature_provider", lambda _feature: _ConfiguredFakeLLM({"summary": "1回目", "heuristics": []})
+    )
     first = await svc.run_eod_review("2026-06-02")
 
     # 2回目は force=False のため LLM を呼ばず既存行をそのまま返すはず（呼ばれたら例外で気付く）。
-    monkeypatch.setattr(svc, "anthropic_client", _ConfiguredFakeLLM(RuntimeError("LLM should not be called")))
+    monkeypatch.setattr(
+        svc, "resolve_feature_provider", lambda _feature: _ConfiguredFakeLLM(RuntimeError("LLM should not be called"))
+    )
     second = await svc.run_eod_review("2026-06-02")
 
     assert first.summary == second.summary == "1回目"
@@ -67,10 +74,14 @@ async def test_run_eod_review_force_regenerates(migrated_db: Path, monkeypatch: 
     class _ConfiguredFakeLLM(_FakeLLM):
         is_configured = True
 
-    monkeypatch.setattr(svc, "anthropic_client", _ConfiguredFakeLLM({"summary": "1回目", "heuristics": []}))
+    monkeypatch.setattr(
+        svc, "resolve_feature_provider", lambda _feature: _ConfiguredFakeLLM({"summary": "1回目", "heuristics": []})
+    )
     first = await svc.run_eod_review("2026-06-02")
 
-    monkeypatch.setattr(svc, "anthropic_client", _ConfiguredFakeLLM({"summary": "2回目", "heuristics": []}))
+    monkeypatch.setattr(
+        svc, "resolve_feature_provider", lambda _feature: _ConfiguredFakeLLM({"summary": "2回目", "heuristics": []})
+    )
     second = await svc.run_eod_review("2026-06-02", force=True)
 
     assert first.summary == "1回目"
@@ -108,7 +119,9 @@ async def test_run_eod_review_falls_back_on_llm_error(migrated_db: Path, monkeyp
     class _ConfiguredFakeLLM(_FakeLLM):
         is_configured = True
 
-    monkeypatch.setattr(svc, "anthropic_client", _ConfiguredFakeLLM(AnthropicRateLimitError("eod_review")))
+    monkeypatch.setattr(
+        svc, "resolve_feature_provider", lambda _feature: _ConfiguredFakeLLM(AnthropicRateLimitError("eod_review"))
+    )
 
     review = await svc.run_eod_review("2026-06-02")
 

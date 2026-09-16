@@ -73,7 +73,10 @@ class WiredState:
 
 
 class _FakeLLM:
-    """`is_configured` を素の属性で持つ AnthropicClient スタブ."""
+    """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
+
+    provider_id = "anthropic"
+    model_id = "test-model"
 
     def __init__(self, state: WiredState) -> None:
         self._state = state
@@ -96,7 +99,10 @@ _DEFAULT_GEMINI: dict[str, object] = {
 
 
 class _FakeGemini:
-    """`is_configured` を素の属性で持つ GeminiClient スタブ（🆕 P12）."""
+    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）."""
+
+    provider_id = "gemini"
+    model_id = "gemini-2.5-pro"
 
     def __init__(self, response: object = None, *, configured: bool = True) -> None:
         self.is_configured = configured
@@ -114,11 +120,13 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
     state = WiredState()
     fake_llm = _FakeLLM(state)
     # pipeline は起動ゲート（is_configured チェック）、orchestrator は実呼び出し（propose_stock_pick）
-    # でそれぞれ `anthropic_client` を参照しているため、両モジュールの参照先を差し替える。
-    monkeypatch.setattr(pp, "anthropic_client", fake_llm)
-    monkeypatch.setattr(orch, "anthropic_client", fake_llm)
-    # 既定では Gemini 未設定として扱う（🆕 P12 の shadow 判定は明示的にテストする箇所でのみ有効化）。
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini(configured=False))
+    # でそれぞれ `resolve_feature_provider("stock_pick")` を参照しているため、両モジュールの
+    # 参照先（`llm.registry` から import した関数名）を差し替える。
+    monkeypatch.setattr(pp, "resolve_feature_provider", lambda _feature: fake_llm)
+    monkeypatch.setattr(orch, "resolve_feature_provider", lambda _feature: fake_llm)
+    # 既定では shadow プロバイダ無し（Gemini 未設定相当）として扱う（shadow 判定は
+    # 明示的にテストする箇所でのみ `resolve_shadow_providers` を差し替えて有効化する）。
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [])
 
     async def fake_get_rankings(limit: int) -> _FakeRankings:  # noqa: ARG001
         return _FakeRankings(list(state.codes))
@@ -171,7 +179,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
 async def test_not_configured(wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeLLM(wired)
     fake.is_configured = False
-    monkeypatch.setattr(pp, "anthropic_client", fake)
+    monkeypatch.setattr(pp, "resolve_feature_provider", lambda _feature: fake)
     result = await pp.run_picks("mid_term")
     assert result.status == "not_configured"
     assert result.picks == []
@@ -258,7 +266,7 @@ async def test_gemini_shadow_judgment_recorded_after_ledger_insert(
     （`shadow_predictions.pick_id` の FK 制約上、`pl.insert_picks` の後でのみ呼べる設計）。"""
     from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
 
-    monkeypatch.setattr(orch, "gemini_client", _FakeGemini())
+    monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini()])
 
     result = await pp.run_picks("mid_term")
     assert result.status == "ok"

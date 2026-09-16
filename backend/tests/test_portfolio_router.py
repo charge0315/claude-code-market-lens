@@ -212,7 +212,7 @@ async def test_signals_list_and_filter_by_status(migrated_db: Path) -> None:
         assert filtered.json()["data"] == []
 
 
-async def test_signals_list_includes_gemini_shadow_when_present(migrated_db: Path) -> None:
+async def test_signals_list_includes_shadow_signals_when_present(migrated_db: Path) -> None:
     signal_id = await insert_signal(
         symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
     )
@@ -225,6 +225,15 @@ async def test_signals_list_includes_gemini_shadow_when_present(migrated_db: Pat
         confidence=55.0,
         reasoning="Gemini側の根拠",
     )
+    await insert_shadow(
+        signal_id=signal_id,
+        challenger_version="openai:test",
+        action="trim",
+        stop=905.0,
+        target=1090.0,
+        confidence=50.0,
+        reasoning="OpenAI側の根拠",
+    )
     from backend.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -232,10 +241,10 @@ async def test_signals_list_includes_gemini_shadow_when_present(migrated_db: Pat
 
     data = res.json()["data"]
     assert len(data) == 1
-    shadow = data[0]["gemini_shadow"]
-    assert shadow is not None
-    assert shadow["signal_id"] == signal_id
-    assert shadow["reasoning"] == "Gemini側の根拠"
+    shadows = data[0]["shadow_signals"]
+    assert len(shadows) == 2
+    versions = {s["challenger_version"] for s in shadows}
+    assert versions == {"gemini:test", "openai:test"}
 
 
 async def test_signal_approve_then_report_fill_flow(migrated_db: Path) -> None:
@@ -319,7 +328,9 @@ async def test_signals_run_endpoint_evaluates_holdings(migrated_db: Path, monkey
                 "reasoning": "堅調",
             }
 
-    monkeypatch.setattr(ssvc, "anthropic_client", _FakeLLM())
+    monkeypatch.setattr(ssvc, "resolve_feature_provider", lambda _feature: _FakeLLM())
+    # shadow プロバイダ無し（実 API への意図しないアクセスを防ぐ）。
+    monkeypatch.setattr(ssvc, "resolve_shadow_providers", lambda _feature: [])
     await insert_holding(symbol="7203", quantity=100, avg_cost=1000.0, acquired_at="2026-01-15")
 
     from backend.main import app

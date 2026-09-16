@@ -1,0 +1,33 @@
+"""機能ごとのプロバイダ選択・併用を可能にする共通プロトコル.
+
+`AnthropicClient`/`OpenAIClient`/`GeminiClient` はいずれもこの Protocol を満たす（構造的部分型、
+継承は不要）。`registry.py` はこの Protocol の型でプロバイダを扱うことで、呼び出し側
+（`orchestrator.py`/`signal_service.py`/`eod_review_service.py`/`trend/analyzer.py`）が
+具象クライアントに直接依存しないようにする。
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from backend.services.llm.types import JsonDict
+
+
+class LLMProvider(Protocol):
+    """4 機能（stock_pick/portfolio_signal/eod_review/trend_analyzer）共通の LLM クライアント形状."""
+
+    provider_id: str
+
+    @property
+    def is_configured(self) -> bool: ...
+
+    @property
+    def model_id(self) -> str: ...
+
+    async def propose_stock_pick(self, *, ticker: str, prompt: str) -> JsonDict: ...
+
+    async def propose_portfolio_signal(self, *, symbol: str, prompt: str) -> JsonDict: ...
+
+    async def propose_eod_review(self, *, prompt: str) -> JsonDict: ...
+
+    async def propose_trends(self, *, prompt: str) -> JsonDict: ...

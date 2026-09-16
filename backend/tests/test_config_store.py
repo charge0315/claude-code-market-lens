@@ -87,3 +87,65 @@ def test_update_env_keys_rejects_newline(tmp_path: Path, monkeypatch: pytest.Mon
 def test_env_name_for_field_returns_none_for_unknown() -> None:
     assert config_store.env_name_for_field("unknown_field") is None
     assert config_store.env_name_for_field("gemini_api_key") == "GEMINI_API_KEY"
+
+
+def test_get_llm_provider_options_reflects_api_key_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    options = {o["value"]: o for o in config_store.get_llm_provider_options()}
+
+    assert options["anthropic"]["configured"] is True
+    assert options["openai"]["configured"] is False
+    assert options["gemini"]["configured"] is False
+
+
+def test_get_llm_provider_settings_defaults_match_current_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未設定時の既定値は導入前の挙動（公式=anthropic、shadow=stock_pick/portfolio_signalのみgemini）と一致する."""
+    for env_name in (
+        "LLM_PROVIDER_STOCK_PICK",
+        "LLM_PROVIDER_PORTFOLIO_SIGNAL",
+        "LLM_PROVIDER_EOD_REVIEW",
+        "LLM_PROVIDER_TREND_ANALYZER",
+        "LLM_SHADOW_PROVIDERS_STOCK_PICK",
+        "LLM_SHADOW_PROVIDERS_PORTFOLIO_SIGNAL",
+        "LLM_SHADOW_PROVIDERS_EOD_REVIEW",
+        "LLM_SHADOW_PROVIDERS_TREND_ANALYZER",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+    rows = {row["feature"]: row for row in config_store.get_llm_provider_settings()}
+
+    assert rows["stock_pick"]["primary_provider"] == "anthropic"
+    assert rows["stock_pick"]["shadow_providers"] == ["gemini"]
+    assert rows["portfolio_signal"]["shadow_providers"] == ["gemini"]
+    assert rows["eod_review"]["shadow_providers"] == []
+    assert rows["trend_analyzer"]["shadow_providers"] == []
+
+
+def test_get_llm_provider_settings_reads_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER_STOCK_PICK", "openai")
+    monkeypatch.setenv("LLM_SHADOW_PROVIDERS_STOCK_PICK", "anthropic,gemini")
+
+    rows = {row["feature"]: row for row in config_store.get_llm_provider_settings()}
+
+    assert rows["stock_pick"]["primary_provider"] == "openai"
+    assert rows["stock_pick"]["shadow_providers"] == ["anthropic", "gemini"]
+
+
+def test_env_updates_for_llm_provider_builds_correct_env_names() -> None:
+    updates = config_store.env_updates_for_llm_provider(
+        "eod_review", primary_provider="gemini", shadow_providers=["openai"]
+    )
+    assert updates == {"LLM_PROVIDER_EOD_REVIEW": "gemini", "LLM_SHADOW_PROVIDERS_EOD_REVIEW": "openai"}
+
+
+def test_env_updates_for_llm_provider_omits_none_fields() -> None:
+    updates = config_store.env_updates_for_llm_provider("stock_pick", primary_provider="openai", shadow_providers=None)
+    assert updates == {"LLM_PROVIDER_STOCK_PICK": "openai"}
+
+
+def test_env_updates_for_llm_provider_rejects_unknown_feature() -> None:
+    with pytest.raises(ValueError, match="未知の機能"):
+        config_store.env_updates_for_llm_provider("unknown", primary_provider="openai", shadow_providers=None)

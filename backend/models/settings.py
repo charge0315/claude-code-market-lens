@@ -8,6 +8,8 @@ GET では生値を絶対に返さない（末尾4文字のみのマスク表示
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 ApiKeyField = str
@@ -42,5 +44,54 @@ class ApiKeysUpdateRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     anthropic_api_key: str | None = Field(default=None)
+    openai_api_key: str | None = Field(default=None)
     gemini_api_key: str | None = Field(default=None)
     jquants_api_key: str | None = Field(default=None)
+
+
+LLMFeatureId = Literal["stock_pick", "portfolio_signal", "eod_review", "trend_analyzer"]
+LLMProviderId = Literal["anthropic", "openai", "gemini"]
+
+
+class LLMProviderOption(BaseModel):
+    """選択肢として提示する1プロバイダ（APIキー設定状況つき）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    value: LLMProviderId
+    label: str
+    configured: bool
+
+
+class FeatureProviderSetting(BaseModel):
+    """1機能ぶんの現在の公式/シャドウプロバイダ設定."""
+
+    model_config = ConfigDict(frozen=True)
+
+    feature: LLMFeatureId
+    label: str
+    primary_provider: LLMProviderId
+    shadow_providers: list[LLMProviderId]
+
+
+class LLMProviderSettingsResponse(BaseModel):
+    """`GET/PATCH /api/settings/llm-providers` の応答."""
+
+    model_config = ConfigDict(frozen=True)
+
+    features: list[FeatureProviderSetting]
+    available_providers: list[LLMProviderOption]
+    restart_required: bool = False
+
+
+class LLMProviderUpdateRequest(BaseModel):
+    """`PATCH /api/settings/llm-providers` のリクエストボディ（1機能ぶんの更新）.
+
+    各フィールドは `None` なら変更しない。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    feature: LLMFeatureId
+    primary_provider: LLMProviderId | None = Field(default=None)
+    shadow_providers: list[LLMProviderId] | None = Field(default=None)
