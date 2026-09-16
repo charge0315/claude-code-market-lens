@@ -14,28 +14,30 @@ import {
   sparkColor,
 } from '@/components/dashboard/pickDisplay';
 import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
-import { fetchGeminiPicks, type GeminiPickSummary, type HorizonType } from '@/lib/api/picks';
+import { fetchShadowPicks, type ShadowPickSummary, type HorizonType } from '@/lib/api/picks';
+import { challengerProviderLabel } from '@/lib/llmProviderLabels';
 import { todayJst } from '@/lib/jstDate';
 import './dashboard.css';
 
-// Gemini（challenger LLM）による判定の一覧（🆕 P25）。Claude（公式パイプライン、
-// PicksBoard）と同じ候補を、Claudeとは独立した「別視点の意見」として比較表示する。
-// あくまで比較参考用の表示であり、Gemini 単独では売買提案としての採否判定や台帳化は行わない
-// （実行主体は常に Claude/prediction_ledger、CLAUDE.md）。そのため手動更新ボタンは持たず、
-// ダッシュボードの「手動更新」（Claude側）に連動して生成される。
+// シャドウ（challenger LLM）による判定の一覧。公式パイプライン（PicksBoard）と同じ候補を、
+// 独立した「別視点の意見」として比較表示する。複数プロバイダを併用している場合は
+// プロバイダごとに別行として表示され、行ごとのバッジで判別できる。
+// あくまで比較参考用の表示であり、シャドウ単独では売買提案としての採否判定や台帳化は行わない
+// （実行主体は常に公式パイプライン/prediction_ledger、CLAUDE.md）。そのため手動更新ボタンは
+// 持たず、ダッシュボードの「手動更新」（公式パイプライン側）に連動して生成される。
 
-export function GeminiPicksBoard(): ReactNode {
+export function ShadowPicksBoard(): ReactNode {
   const [horizon, setHorizon] = useState<HorizonType>('mid_term');
-  const [picks, setPicks] = useState<GeminiPickSummary[]>([]);
+  const [picks, setPicks] = useState<ShadowPickSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [noteModalSymbol, setNoteModalSymbol] = useState<string | null>(null);
   const [officialPickId, setOfficialPickId] = useState<string | null>(null);
-  const [addHoldingPick, setAddHoldingPick] = useState<GeminiPickSummary | null>(null);
+  const [addHoldingPick, setAddHoldingPick] = useState<ShadowPickSummary | null>(null);
 
   const load = useCallback((h: HorizonType) => {
-    fetchGeminiPicks(h, { date: todayJst(), limit: 50 })
+    fetchShadowPicks(h, { date: todayJst(), limit: 50 })
       .then(setPicks)
-      .catch(() => setError('Geminiピック一覧の取得に失敗しました'));
+      .catch(() => setError('シャドウ判定一覧の取得に失敗しました'));
   }, []);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function GeminiPicksBoard(): ReactNode {
 
   const sortedPicks = [...picks].sort((a, b) => b.confidence - a.confidence);
 
-  const COLUMNS: ReadonlyArray<Column<GeminiPickSummary>> = [
+  const COLUMNS: ReadonlyArray<Column<ShadowPickSummary>> = [
     {
       key: 'symbol',
       header: '銘柄',
@@ -58,7 +60,7 @@ export function GeminiPicksBoard(): ReactNode {
             <Sparkline values={p.spark} color={sparkColor(p.spark)} />
           </span>
           <span className="pick-engine-badge" title={`このピックは ${p.challenger_version} が生成しました`}>
-            Gemini
+            {challengerProviderLabel(p.challenger_version)}
           </span>
         </span>
       ),
@@ -134,7 +136,7 @@ export function GeminiPicksBoard(): ReactNode {
           <span className="pick-action-group">
             {p.pick_id && (
               <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
-                Claude版と比較
+                公式版と比較
               </button>
             )}
             <button type="button" onClick={() => setAddHoldingPick(p)}>
@@ -170,18 +172,18 @@ export function GeminiPicksBoard(): ReactNode {
       </div>
 
       <p className="model-lab-as-of">
-        Gemini が Claude（公式パイプライン）と同じ候補を独立に判定した結果です。あくまで比較参考用で、
-        売買提案の採否・台帳化は行いません。Claude側の「手動更新」を押すと一緒に更新されます。
+        シャドウプロバイダが公式パイプラインと同じ候補を独立に判定した結果です。あくまで比較参考用で、
+        売買提案の採否・台帳化は行いません。公式側の「手動更新」を押すと一緒に更新されます。
       </p>
 
       {error && <p className="signal-queue-error">{error}</p>}
 
       <DataTable
-        caption="Gemini（challenger LLM）による銘柄ピック一覧（比較参考用）"
+        caption="シャドウ（challenger LLM）による銘柄ピック一覧（比較参考用）"
         columns={COLUMNS}
         rows={sortedPicks}
         rowKey={(p) => p.shadow_id}
-        emptyMessage="本日のGemini判定はまだありません"
+        emptyMessage="本日のシャドウ判定はまだありません"
       />
 
       {noteModalSymbol && (
@@ -191,7 +193,7 @@ export function GeminiPicksBoard(): ReactNode {
       )}
 
       {officialPickId && (
-        <Modal title="Claude版のピック詳細" onClose={() => setOfficialPickId(null)} variant="panel">
+        <Modal title="公式版のピック詳細" onClose={() => setOfficialPickId(null)} variant="panel">
           <PickDetailPanel key={officialPickId} pickId={officialPickId} />
         </Modal>
       )}

@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { PickedTickersList } from '@/components/stock-detail/PickedTickersList';
-import { fetchGeminiPicks, fetchPicks } from '@/lib/api/picks';
-import type { GeminiPickSummary, PickSummary } from '@/lib/api/picks';
+import { fetchPicks, fetchShadowPicks } from '@/lib/api/picks';
+import type { PickSummary, ShadowPickSummary, HorizonType } from '@/lib/api/picks';
 import { fetchPortfolio } from '@/lib/api/portfolio';
 import type { PortfolioHolding, PortfolioSummary } from '@/lib/api/portfolio';
 import { todayJst } from '@/lib/jstDate';
@@ -11,7 +11,7 @@ jest.mock('@/lib/api/picks');
 jest.mock('@/lib/api/portfolio');
 
 const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
-const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
+const mockFetchShadowPicks = fetchShadowPicks as jest.MockedFunction<typeof fetchShadowPicks>;
 const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
 
 function holding(overrides: Partial<PortfolioHolding>): PortfolioHolding {
@@ -72,7 +72,7 @@ function pick(overrides: Partial<PickSummary>): PickSummary {
   };
 }
 
-function geminiPick(overrides: Partial<GeminiPickSummary>): GeminiPickSummary {
+function shadowPick(overrides: Partial<ShadowPickSummary>): ShadowPickSummary {
   return {
     shadow_id: 's1',
     pick_id: null,
@@ -98,7 +98,7 @@ function geminiPick(overrides: Partial<GeminiPickSummary>): GeminiPickSummary {
 
 describe('PickedTickersList', () => {
   beforeEach(() => {
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
     mockFetchPortfolio.mockResolvedValue(portfolioSummary([]));
   });
 
@@ -123,8 +123,8 @@ describe('PickedTickersList', () => {
     const today = todayJst();
     expect(mockFetchPicks).toHaveBeenCalledWith('mid_term', { date: today, limit: 50 });
     expect(mockFetchPicks).toHaveBeenCalledWith('short_term', { date: today, limit: 50 });
-    expect(mockFetchGeminiPicks).toHaveBeenCalledWith('mid_term', { date: today, limit: 50 });
-    expect(mockFetchGeminiPicks).toHaveBeenCalledWith('short_term', { date: today, limit: 50 });
+    expect(mockFetchShadowPicks).toHaveBeenCalledWith('mid_term', { date: today, limit: 50 });
+    expect(mockFetchShadowPicks).toHaveBeenCalledWith('short_term', { date: today, limit: 50 });
   });
 
   it('当日ピックに含まれないポートフォリオ保有銘柄は「保有」バッジで表示する', async () => {
@@ -138,19 +138,19 @@ describe('PickedTickersList', () => {
   });
 
   it('当日ピック済みの銘柄はポートフォリオ保有でも重複表示しない', async () => {
-    mockFetchPicks.mockImplementation((horizonType) =>
+    mockFetchPicks.mockImplementation((horizonType: HorizonType) =>
       Promise.resolve(horizonType === 'mid_term' ? [pick({ symbol: '7203', company_name: 'トヨタ自動車' })] : []),
     );
     mockFetchPortfolio.mockResolvedValue(portfolioSummary([holding({ symbol: '7203', company_name: 'トヨタ自動車' })]));
 
     render(<PickedTickersList selectedSymbol={null} />);
 
-    expect(await screen.findByRole('link', { name: 'Claude 7203（トヨタ自動車）' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: '公式 7203（トヨタ自動車）' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '保有 7203（トヨタ自動車）' })).not.toBeInTheDocument();
   });
 
   it('中長期・短期の銘柄を統合し、エンジンバッジ+銘柄コード+社名でリンク表示する', async () => {
-    mockFetchPicks.mockImplementation((horizonType) =>
+    mockFetchPicks.mockImplementation((horizonType: HorizonType) =>
       Promise.resolve(
         horizonType === 'mid_term'
           ? [pick({ symbol: '7203', company_name: 'トヨタ自動車' })]
@@ -160,10 +160,10 @@ describe('PickedTickersList', () => {
 
     render(<PickedTickersList selectedSymbol="7203" />);
 
-    const link7203 = await screen.findByRole('link', { name: 'Claude 7203（トヨタ自動車）' });
+    const link7203 = await screen.findByRole('link', { name: '公式 7203（トヨタ自動車）' });
     expect(link7203).toHaveAttribute('href', '/stock-detail?symbol=7203');
     expect(link7203).toHaveClass('is-active');
-    const link3441 = screen.getByRole('link', { name: 'Claude 3441（山王）' });
+    const link3441 = screen.getByRole('link', { name: '公式 3441（山王）' });
     expect(link3441).not.toHaveClass('is-active');
   });
 
@@ -172,17 +172,17 @@ describe('PickedTickersList', () => {
 
     render(<PickedTickersList selectedSymbol={null} />);
 
-    expect(await screen.findAllByRole('link', { name: 'Claude 7203（トヨタ自動車）' })).toHaveLength(1);
+    expect(await screen.findAllByRole('link', { name: '公式 7203（トヨタ自動車）' })).toHaveLength(1);
   });
 
-  it('Claude と Gemini の両方でピックされた銘柄はそれぞれ別に選択可能', async () => {
+  it('公式とシャドウの両方でピックされた銘柄はそれぞれ別に選択可能', async () => {
     mockFetchPicks.mockResolvedValue([pick({ symbol: '9984', company_name: 'ソフトバンクグループ' })]);
-    mockFetchGeminiPicks.mockResolvedValue([geminiPick({ symbol: '9984', company_name: 'ソフトバンクグループ' })]);
+    mockFetchShadowPicks.mockResolvedValue([shadowPick({ symbol: '9984', company_name: 'ソフトバンクグループ' })]);
 
     render(<PickedTickersList selectedSymbol={null} />);
 
-    expect(await screen.findByRole('link', { name: 'Claude 9984（ソフトバンクグループ）' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gemini 9984（ソフトバンクグループ）' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: '公式 9984（ソフトバンクグループ）' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'シャドウ 9984（ソフトバンクグループ）' })).toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {

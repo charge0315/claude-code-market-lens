@@ -1,19 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
-import { GeminiPicksBoard } from '@/components/dashboard/GeminiPicksBoard';
-import { fetchGeminiPicks, fetchPickDetail } from '@/lib/api/picks';
-import type { GeminiPickSummary, PickDetail } from '@/lib/api/picks';
+import { ShadowPicksBoard } from '@/components/dashboard/ShadowPicksBoard';
+import { fetchShadowPicks, fetchPickDetail } from '@/lib/api/picks';
+import type { ShadowPickSummary, PickDetail } from '@/lib/api/picks';
 import { fetchOhlc } from '@/lib/api/stock';
 
 jest.mock('@/lib/api/picks', () => ({
   ...jest.requireActual('@/lib/api/picks'),
-  fetchGeminiPicks: jest.fn(),
+  fetchShadowPicks: jest.fn(),
   fetchPickDetail: jest.fn(),
 }));
 jest.mock('@/lib/api/stock');
 
-const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
+const mockFetchShadowPicks = fetchShadowPicks as jest.MockedFunction<typeof fetchShadowPicks>;
 const mockFetchPickDetail = fetchPickDetail as jest.MockedFunction<typeof fetchPickDetail>;
 const mockFetchOhlc = fetchOhlc as jest.MockedFunction<typeof fetchOhlc>;
 
@@ -48,7 +48,7 @@ const PICK_DETAIL: PickDetail = {
   change_pct: 1.5,
 };
 
-const PICK: GeminiPickSummary = {
+const PICK: ShadowPickSummary = {
   shadow_id: 'shadow-1',
   pick_id: 'pick-1',
   challenger_version: 'gemini:gemini-2.5-pro',
@@ -69,15 +69,15 @@ const PICK: GeminiPickSummary = {
   spark: [3000, 3020, 3050],
 };
 
-describe('GeminiPicksBoard', () => {
+describe('ShadowPicksBoard', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('Gemini判定の一覧を表示する', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([PICK]);
+  it('シャドウ判定の一覧を表示する', async () => {
+    mockFetchShadowPicks.mockResolvedValue([PICK]);
 
-    render(<GeminiPicksBoard />);
+    render(<ShadowPicksBoard />);
 
     expect(await screen.findByText('7203（トヨタ自動車）')).toBeInTheDocument();
     expect(screen.getByText('強気')).toBeInTheDocument();
@@ -86,57 +86,70 @@ describe('GeminiPicksBoard', () => {
     expect(screen.getAllByText('Gemini')).not.toHaveLength(0);
   });
 
-  it('中長期/短期タブでホライズンを切り替えて再取得する', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([]);
-    const user = userEvent.setup();
+  it('複数プロバイダのシャドウ判定を行ごとのバッジで区別する', async () => {
+    mockFetchShadowPicks.mockResolvedValue([
+      PICK,
+      { ...PICK, shadow_id: 'shadow-2', symbol: '9984', challenger_version: 'openai:gpt-5.1' },
+    ]);
 
-    render(<GeminiPicksBoard />);
-    await waitFor(() => expect(mockFetchGeminiPicks).toHaveBeenCalledWith('mid_term', expect.objectContaining({})));
+    render(<ShadowPicksBoard />);
 
-    await user.click(screen.getByRole('button', { name: '短期' }));
-    await waitFor(() => expect(mockFetchGeminiPicks).toHaveBeenCalledWith('short_term', expect.objectContaining({})));
+    expect(await screen.findByText('7203（トヨタ自動車）')).toBeInTheDocument();
+    expect(screen.getAllByText('Gemini')).not.toHaveLength(0);
+    expect(screen.getAllByText('ChatGPT')).not.toHaveLength(0);
   });
 
-  it('pick_idがあれば「Claude版と比較」ボタンでピック詳細を開く', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([PICK]);
+  it('中長期/短期タブでホライズンを切り替えて再取得する', async () => {
+    mockFetchShadowPicks.mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    render(<ShadowPicksBoard />);
+    await waitFor(() => expect(mockFetchShadowPicks).toHaveBeenCalledWith('mid_term', expect.objectContaining({})));
+
+    await user.click(screen.getByRole('button', { name: '短期' }));
+    await waitFor(() => expect(mockFetchShadowPicks).toHaveBeenCalledWith('short_term', expect.objectContaining({})));
+  });
+
+  it('pick_idがあれば「公式版と比較」ボタンでピック詳細を開く', async () => {
+    mockFetchShadowPicks.mockResolvedValue([PICK]);
     mockFetchPickDetail.mockResolvedValue(PICK_DETAIL);
     const user = userEvent.setup();
 
-    render(<GeminiPicksBoard />);
+    render(<ShadowPicksBoard />);
     await screen.findByText('7203（トヨタ自動車）');
 
-    await user.click(screen.getByRole('button', { name: 'Claude版と比較' }));
-    expect(await screen.findByRole('heading', { name: 'Claude版のピック詳細' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '公式版と比較' }));
+    expect(await screen.findByRole('heading', { name: '公式版のピック詳細' })).toBeInTheDocument();
   });
 
   it('pick_idが無ければ比較ボタンを出さない', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([{ ...PICK, pick_id: null }]);
+    mockFetchShadowPicks.mockResolvedValue([{ ...PICK, pick_id: null }]);
 
-    render(<GeminiPicksBoard />);
+    render(<ShadowPicksBoard />);
     await screen.findByText('7203（トヨタ自動車）');
 
-    expect(screen.queryByRole('button', { name: 'Claude版と比較' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '公式版と比較' })).not.toBeInTheDocument();
   });
 
   it('ピックが無ければ空状態メッセージを出す', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
 
-    render(<GeminiPicksBoard />);
+    render(<ShadowPicksBoard />);
 
-    expect(await screen.findByText('本日のGemini判定はまだありません')).toBeInTheDocument();
+    expect(await screen.findByText('本日のシャドウ判定はまだありません')).toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {
-    mockFetchGeminiPicks.mockRejectedValue(new Error('boom'));
+    mockFetchShadowPicks.mockRejectedValue(new Error('boom'));
 
-    render(<GeminiPicksBoard />);
+    render(<ShadowPicksBoard />);
 
-    expect(await screen.findByText('Geminiピック一覧の取得に失敗しました')).toBeInTheDocument();
+    expect(await screen.findByText('シャドウ判定一覧の取得に失敗しました')).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {
-    mockFetchGeminiPicks.mockResolvedValue([PICK]);
-    const { container } = render(<GeminiPicksBoard />);
+    mockFetchShadowPicks.mockResolvedValue([PICK]);
+    const { container } = render(<ShadowPicksBoard />);
     await screen.findByText('7203（トヨタ自動車）');
 
     expect(await axe(container)).toHaveNoViolations();

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { fetchStockNote, type StockNote } from '@/lib/api/stock';
 import type { Direction } from '@/lib/api/picks';
 
-// Claude（公式）ピック・Gemini（比較）ピックの両テーブルで共用する表示ヘルパー（🆕 P25）。
+// 公式ピック・シャドウ（比較）ピックの両テーブルで共用する表示ヘルパー。
 
 export const DIRECTION_LABELS: Record<Direction, string> = {
   bullish: '強気',

@@ -2,18 +2,18 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { fetchGeminiPicks, fetchPicks, type GeminiPickSummary, type PickSummary } from '@/lib/api/picks';
+import { fetchPicks, fetchShadowPicks, type PickSummary, type ShadowPickSummary } from '@/lib/api/picks';
 import { fetchPortfolio } from '@/lib/api/portfolio';
 import { todayJst } from '@/lib/jstDate';
 import './stock-detail.css';
 
-// ピックされた銘柄の一覧（🆕 Claude/Gemini 別々に選択可能、P25 の続き）。
+// ピックされた銘柄の一覧（公式/シャドウを別々に選択可能）。
 // クリックで `?symbol=` を切り替え、下のチャート・4分析内訳・AI推論トレースを
 // その銘柄のものに切り替える。同一銘柄が両エンジンでピックされていれば両方表示する。
-// 🆕 表示対象は「当日ピックされた銘柄」と「ポートフォリオ登録済み銘柄」のみに絞る
+// 表示対象は「当日ピックされた銘柄」と「ポートフォリオ登録済み銘柄」のみに絞る
 // （過去分の全ピックを出すと一覧が肥大化し、当日の判断材料として使いづらいため）。
 
-type Engine = 'claude' | 'gemini' | 'portfolio';
+type Engine = 'official' | 'shadow' | 'portfolio';
 
 interface TickerEntry {
   symbol: string;
@@ -23,7 +23,7 @@ interface TickerEntry {
 
 function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): T[] {
   const bySymbol = new Map<string, T>();
-  // fetchPicks/fetchGeminiPicks は新しい順で返すため、先に見つかった方（＝新しい方）を残す。
+  // fetchPicks/fetchShadowPicks は新しい順で返すため、先に見つかった方（＝新しい方）を残す。
   for (const p of picks) {
     if (!bySymbol.has(p.symbol)) bySymbol.set(p.symbol, p);
   }
@@ -39,23 +39,23 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
     Promise.all([
       fetchPicks('mid_term', { date: today, limit: 50 }),
       fetchPicks('short_term', { date: today, limit: 50 }),
-      fetchGeminiPicks('mid_term', { date: today, limit: 50 }),
-      fetchGeminiPicks('short_term', { date: today, limit: 50 }),
+      fetchShadowPicks('mid_term', { date: today, limit: 50 }),
+      fetchShadowPicks('short_term', { date: today, limit: 50 }),
       fetchPortfolio(),
     ])
-      .then(([claudeMid, claudeShort, geminiMid, geminiShort, portfolio]) => {
-        const claude = dedupeBySymbolKeepingLatest<PickSummary>([...claudeMid, ...claudeShort]).map(
-          (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'claude' }),
+      .then(([officialMid, officialShort, shadowMid, shadowShort, portfolio]) => {
+        const official = dedupeBySymbolKeepingLatest<PickSummary>([...officialMid, ...officialShort]).map(
+          (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'official' }),
         );
-        const gemini = dedupeBySymbolKeepingLatest<GeminiPickSummary>([...geminiMid, ...geminiShort]).map(
-          (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'gemini' }),
+        const shadow = dedupeBySymbolKeepingLatest<ShadowPickSummary>([...shadowMid, ...shadowShort]).map(
+          (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'shadow' }),
         );
-        // 当日ピック済み（Claude/Gemini どちらか）の銘柄は保有欄で重複表示しない。
-        const pickedSymbols = new Set([...claude, ...gemini].map((e) => e.symbol));
+        // 当日ピック済み（公式/シャドウどちらか）の銘柄は保有欄で重複表示しない。
+        const pickedSymbols = new Set([...official, ...shadow].map((e) => e.symbol));
         const holdings = dedupeBySymbolKeepingLatest(portfolio.holdings)
           .filter((h) => !pickedSymbols.has(h.symbol))
           .map((h): TickerEntry => ({ symbol: h.symbol, companyName: h.company_name, engine: 'portfolio' }));
-        setEntries([...claude, ...gemini, ...holdings]);
+        setEntries([...official, ...shadow, ...holdings]);
       })
       .catch(() => setError('ピック銘柄一覧の取得に失敗しました'));
   }, []);
@@ -73,7 +73,7 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
             aria-current={e.symbol === selectedSymbol ? 'true' : undefined}
           >
             <span className="picked-ticker-engine-badge">
-              {e.engine === 'claude' ? 'Claude' : e.engine === 'gemini' ? 'Gemini' : '保有'}
+              {e.engine === 'official' ? '公式' : e.engine === 'shadow' ? 'シャドウ' : '保有'}
             </span>
             {e.symbol}
             {e.companyName && `（${e.companyName}）`}

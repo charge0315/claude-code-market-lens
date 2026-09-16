@@ -39,12 +39,13 @@ function sortPicks(picks: readonly PickSummary[], key: SortKey): PickSummary[] {
   return sorted;
 }
 
-// Claude（公式パイプライン）による、本日の AI 銘柄ピック（中長期 / 短期タブ）。
-// 確度順（backend が既にソート済み）で表示し、3 値（買値 / 損切値 / 売値）と根拠プレビューを
-// 必ず併記する（CLAUDE.md）。銘柄名クリックでナレッジベースノート（本文込み・UI表示専用）、
-// 根拠「詳細」ボタンでピック詳細（4分析内訳・寄与度・LLMリスク要因）をポップアップ表示する。
-// Gemini（challenger LLM）の判定は混在させず、別コンポーネント（GeminiPicksBoard）で表示する
-// （🆕 P25、ユーザー指示: エンジンごとに分けて表示）。
+// 公式パイプライン（機能ごとに選択されたLLMプロバイダ、`services/llm/registry.py` 参照）に
+// よる、本日の AI 銘柄ピック（中長期 / 短期タブ）。確度順（backend が既にソート済み）で表示し、
+// 3 値（買値 / 損切値 / 売値）と根拠プレビューを必ず併記する（CLAUDE.md）。銘柄名クリックで
+// ナレッジベースノート（本文込み・UI表示専用）、根拠「詳細」ボタンでピック詳細（4分析内訳・
+// 寄与度・LLMリスク要因）をポップアップ表示する。シャドウ（challenger LLM、複数併用可）の
+// 判定は混在させず、別コンポーネント（ShadowPicksBoard）で表示する
+// （ユーザー指示: エンジンごとに分けて表示）。
 
 const BUCKET_LABELS: Record<PickSummary['confidence_bucket'], string> = {
   high: '高',
@@ -104,11 +105,12 @@ export function PicksBoard(): ReactNode {
             </button>
             <Sparkline values={p.spark} color={sparkColor(p.spark)} />
           </span>
-          {/* 公式パイプラインは常に Anthropic（Claude）が生成する（未設定なら run_picks
-              自体が status='not_configured' で早期リターンし台帳化されない）。Gemini は
-              shadow_predictions への比較用判定のみで、ここには載らない。 */}
-          <span className="pick-engine-badge" title="このピックは Claude（Anthropic）が生成しました">
-            Claude
+          {/* 公式プロバイダは機能ごとに選択可能なため（`services/llm/registry.py`）、
+              個々のピックがどのプロバイダで生成されたかは永続化していない。ここでは
+              一律「公式」と表示する。シャドウ判定は shadow_predictions への比較用のみで、
+              ここには載らない。 */}
+          <span className="pick-engine-badge" title="このピックは公式プロバイダが生成しました">
+            公式
           </span>
         </span>
       ),

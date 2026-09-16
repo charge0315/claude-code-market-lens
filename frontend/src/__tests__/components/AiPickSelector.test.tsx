@@ -2,13 +2,13 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { AiPickSelector } from '@/components/portfolio/AiPickSelector';
-import { fetchGeminiPicks, fetchPicks } from '@/lib/api/picks';
-import type { GeminiPickSummary, PickSummary } from '@/lib/api/picks';
+import { fetchPicks, fetchShadowPicks } from '@/lib/api/picks';
+import type { PickSummary, ShadowPickSummary, HorizonType } from '@/lib/api/picks';
 
 jest.mock('@/lib/api/picks');
 
 const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
-const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
+const mockFetchShadowPicks = fetchShadowPicks as jest.MockedFunction<typeof fetchShadowPicks>;
 
 function pick(overrides: Partial<PickSummary>): PickSummary {
   return {
@@ -36,7 +36,7 @@ function pick(overrides: Partial<PickSummary>): PickSummary {
   };
 }
 
-function geminiPick(overrides: Partial<GeminiPickSummary>): GeminiPickSummary {
+function shadowPick(overrides: Partial<ShadowPickSummary>): ShadowPickSummary {
   return {
     shadow_id: 's1',
     pick_id: null,
@@ -65,23 +65,23 @@ describe('AiPickSelector', () => {
     jest.clearAllMocks();
   });
 
-  it('本日のClaude/Gemini両方のピックを選択肢として表示する', async () => {
-    mockFetchPicks.mockImplementation((horizonType) =>
+  it('本日の公式/シャドウ両方のピックを選択肢として表示する', async () => {
+    mockFetchPicks.mockImplementation((horizonType: HorizonType) =>
       Promise.resolve(horizonType === 'mid_term' ? [pick({ symbol: '7203' })] : []),
     );
-    mockFetchGeminiPicks.mockImplementation((horizonType) =>
-      Promise.resolve(horizonType === 'mid_term' ? [geminiPick({ symbol: '9984' })] : []),
+    mockFetchShadowPicks.mockImplementation((horizonType: HorizonType) =>
+      Promise.resolve(horizonType === 'mid_term' ? [shadowPick({ symbol: '9984' })] : []),
     );
 
     render(<AiPickSelector onSelect={jest.fn()} />);
 
-    expect(await screen.findByRole('button', { name: /Claude.*7203（トヨタ自動車）.*¥1,000/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Gemini.*9984（ソフトバンクグループ）.*¥2,000/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /公式.*7203（トヨタ自動車）.*¥1,000/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /シャドウ.*9984（ソフトバンクグループ）.*¥2,000/ })).toBeInTheDocument();
   });
 
   it('選択すると onSelect が entry 付きで呼ばれる', async () => {
     mockFetchPicks.mockResolvedValue([pick({ symbol: '7203', entry: 1234 })]);
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
     const onSelect = jest.fn();
     const user = userEvent.setup();
 
@@ -91,14 +91,14 @@ describe('AiPickSelector', () => {
     expect(onSelect).toHaveBeenCalledWith({
       symbol: '7203',
       companyName: 'トヨタ自動車',
-      engine: 'claude',
+      engine: 'official',
       entry: 1234,
     });
   });
 
   it('本日のピックが無ければ案内文を出す', async () => {
     mockFetchPicks.mockResolvedValue([]);
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
 
     render(<AiPickSelector onSelect={jest.fn()} />);
 
@@ -107,7 +107,7 @@ describe('AiPickSelector', () => {
 
   it('取得失敗でエラーメッセージを出す', async () => {
     mockFetchPicks.mockRejectedValue(new Error('boom'));
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
 
     render(<AiPickSelector onSelect={jest.fn()} />);
 
@@ -116,7 +116,7 @@ describe('AiPickSelector', () => {
 
   it('アクセシビリティ違反がない', async () => {
     mockFetchPicks.mockResolvedValue([pick({})]);
-    mockFetchGeminiPicks.mockResolvedValue([]);
+    mockFetchShadowPicks.mockResolvedValue([]);
 
     const { container } = render(<AiPickSelector onSelect={jest.fn()} />);
     await screen.findByRole('button');

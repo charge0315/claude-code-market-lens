@@ -134,7 +134,8 @@ describe('PickDetailPanel', () => {
     render(<PickDetailPanel pickId="pick-1" />);
 
     expect(await screen.findByText(/スコア 72.5/)).toBeInTheDocument();
-    expect(screen.getByText(/モデル v1/)).toBeInTheDocument();
+    expect(screen.getByText(/モデルバージョン/)).toBeInTheDocument();
+    expect(screen.getByText(/v1/)).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {

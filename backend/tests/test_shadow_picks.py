@@ -1,4 +1,4 @@
-"""`services/picks/gemini_picks.list_gemini_picks`（🆕 P25）の検証."""
+"""`services/picks/shadow_picks.list_shadow_picks` の検証."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from backend.models.pick import LedgerEntry, SubScores
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.ledger import prediction_ledger as pl
-from backend.services.picks import gemini_picks as gp
+from backend.services.picks import shadow_picks as sp
 
 
 async def _seed_pick(pick_id: str, symbol: str) -> None:
@@ -47,19 +47,19 @@ def _no_live_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_quote(_symbol: str) -> tuple[float | None, float | None, list[float]]:
         return None, None, []
 
-    monkeypatch.setattr(gp, "fetch_quote_with_spark", fake_fetch_quote)
+    monkeypatch.setattr(sp, "fetch_quote_with_spark", fake_fetch_quote)
 
 
-async def test_list_gemini_picks_returns_empty_when_no_rows(migrated_db: Path) -> None:
-    assert await gp.list_gemini_picks() == []
+async def test_list_shadow_picks_returns_empty_when_no_rows(migrated_db: Path) -> None:
+    assert await sp.list_shadow_picks() == []
 
 
-async def test_list_gemini_picks_maps_payload_fields(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_list_shadow_picks_maps_payload_fields(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch_quote(symbol: str) -> tuple[float | None, float | None, list[float]]:
         assert symbol == "7203"
         return 1020.0, 1000.0, [1000.0, 1010.0, 1020.0]
 
-    monkeypatch.setattr(gp, "fetch_quote_with_spark", fake_fetch_quote)
+    monkeypatch.setattr(sp, "fetch_quote_with_spark", fake_fetch_quote)
 
     await _seed_pick("pick-1", "7203")
     await insert_shadow_prediction(
@@ -78,7 +78,7 @@ async def test_list_gemini_picks_maps_payload_fields(migrated_db: Path, monkeypa
         issued_at="2026-09-13T08:30:00+09:00",
     )
 
-    picks = await gp.list_gemini_picks()
+    picks = await sp.list_shadow_picks()
     assert len(picks) == 1
     pick = picks[0]
     assert pick.pick_id == "pick-1"
@@ -94,7 +94,42 @@ async def test_list_gemini_picks_maps_payload_fields(migrated_db: Path, monkeypa
     assert pick.spark == [1000.0, 1010.0, 1020.0]
 
 
-async def test_list_gemini_picks_filters_by_horizon_type(migrated_db: Path) -> None:
+async def test_list_shadow_picks_includes_multiple_providers(migrated_db: Path) -> None:
+    """🆕 マルチLLM併用: 複数プロバイダの shadow 判定が別行としてそれぞれ返る."""
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-1",
+        challenger_version="gemini:gemini-2.5-pro",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1000.0,
+        stop=950.0,
+        target=1100.0,
+        confidence_raw=60.0,
+        confidence=60.0,
+        payload={},
+    )
+    await insert_shadow_prediction(
+        pick_id=None,
+        run_id="run-1",
+        challenger_version="openai:gpt-5.1",
+        symbol="7203",
+        horizon_type="mid_term",
+        direction="bullish",
+        entry=1002.0,
+        stop=955.0,
+        target=1090.0,
+        confidence_raw=58.0,
+        confidence=58.0,
+        payload={},
+    )
+
+    picks = await sp.list_shadow_picks()
+    assert {p.challenger_version for p in picks} == {"gemini:gemini-2.5-pro", "openai:gpt-5.1"}
+
+
+async def test_list_shadow_picks_filters_by_horizon_type(migrated_db: Path) -> None:
     await insert_shadow_prediction(
         pick_id=None,
         run_id="run-mid",
@@ -124,11 +159,11 @@ async def test_list_gemini_picks_filters_by_horizon_type(migrated_db: Path) -> N
         payload={},
     )
 
-    mid_only = await gp.list_gemini_picks(horizon_type="mid_term")
+    mid_only = await sp.list_shadow_picks(horizon_type="mid_term")
     assert {p.symbol for p in mid_only} == {"7203"}
 
 
-async def test_list_gemini_picks_handles_missing_optional_payload_fields(migrated_db: Path) -> None:
+async def test_list_shadow_picks_handles_missing_optional_payload_fields(migrated_db: Path) -> None:
     await insert_shadow_prediction(
         pick_id=None,
         run_id="run-1",
@@ -144,7 +179,7 @@ async def test_list_gemini_picks_handles_missing_optional_payload_fields(migrate
         payload={},
     )
 
-    picks = await gp.list_gemini_picks()
+    picks = await sp.list_shadow_picks()
     assert picks[0].reasoning is None
     assert picks[0].risk_factors == []
     assert picks[0].holding_period_days is None

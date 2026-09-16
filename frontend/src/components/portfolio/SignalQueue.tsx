@@ -9,6 +9,7 @@ import {
   type PortfolioSignal,
   type PortfolioSignalStatus,
 } from '@/lib/api/portfolio';
+import { challengerProviderLabel } from '@/lib/llmProviderLabels';
 import './portfolio.css';
 
 // AI 売買タイミング判定の承認キュー（HITL）。承認/却下/実約定報告はすべて人間が行う
@@ -29,14 +30,6 @@ const STATUS_LABELS: Record<PortfolioSignalStatus, string> = {
 };
 
 const STATUS_TABS: ReadonlyArray<PortfolioSignalStatus | 'all'> = ['proposed', 'approved', 'rejected', 'executed', 'all'];
-
-// `challenger_version` は "<provider_id>:<model_id>" 形式（`services/llm/registry.py` 参照）。
-const SHADOW_PROVIDER_LABELS: Record<string, string> = { anthropic: 'Claude', openai: 'ChatGPT', gemini: 'Gemini' };
-
-function shadowProviderLabel(challengerVersion: string): string {
-  const providerId = challengerVersion.split(':')[0];
-  return SHADOW_PROVIDER_LABELS[providerId] ?? providerId;
-}
 
 function formatYen(value: number | null): string {
   return value === null ? '—' : `¥${Math.round(value).toLocaleString('ja-JP')}`;
@@ -206,7 +199,7 @@ export function SignalQueue(): ReactNode {
                 <div key={shadow.shadow_id} className="signal-card-shadow">
                   <div className="signal-card-header">
                     <span className="signal-card-engine-badge signal-card-engine-badge--shadow">
-                      {shadowProviderLabel(shadow.challenger_version)}（比較）
+                      {challengerProviderLabel(shadow.challenger_version)}（比較）
                     </span>
                     <span className={`signal-card-action signal-card-action--${shadow.action}`}>
                       {ACTION_LABELS[shadow.action]}

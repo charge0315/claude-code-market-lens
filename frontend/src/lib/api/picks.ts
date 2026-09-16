@@ -71,8 +71,9 @@ export interface SubScores {
   sentiment: number;
 }
 
-// 🆕 P12: Gemini 等 challenger LLM の比較用判定（`shadow_predictions`）。表示専用で、
-// 昇格・確度較正には一切関与しない。
+// シャドウ（challenger LLM）の比較用判定（`shadow_predictions`）。表示専用で、
+// 昇格・確度較正には一切関与しない。複数プロバイダを併用している場合は同一ピックに
+// 対して複数件返る。
 export interface ShadowPrediction {
   shadow_id: string;
   challenger_version: string;
@@ -119,8 +120,9 @@ export function fetchPickDetail(pickId: string): Promise<PickDetail> {
   return api.get<PickDetail>(`/picks/${encodeURIComponent(pickId)}`);
 }
 
-// 🆕 P25: Gemini（challenger LLM）判定を Claude（公式パイプライン）とは別の一覧として表示する。
-export interface GeminiPickSummary {
+// シャドウ（challenger LLM）判定を公式パイプラインとは別の一覧として表示する
+// （複数プロバイダを併用している場合、プロバイダごとに別行として返る）。
+export interface ShadowPickSummary {
   shadow_id: string;
   pick_id: string | null;
   challenger_version: string;
@@ -141,13 +143,13 @@ export interface GeminiPickSummary {
   spark: number[];
 }
 
-export function fetchGeminiPicks(
+export function fetchShadowPicks(
   horizonType: HorizonType,
   params?: { date?: string; limit?: number },
-): Promise<GeminiPickSummary[]> {
+): Promise<ShadowPickSummary[]> {
   const q = new URLSearchParams();
   q.set('horizon_type', horizonType);
   if (params?.date) q.set('date', params.date);
   if (params?.limit) q.set('limit', String(params.limit));
-  return api.get<GeminiPickSummary[]>(`/picks/gemini?${q.toString()}`);
+  return api.get<ShadowPickSummary[]>(`/picks/shadow?${q.toString()}`);
 }

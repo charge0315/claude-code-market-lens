@@ -4,7 +4,7 @@ import { axe } from 'jest-axe';
 import { PortfolioOverview } from '@/components/portfolio/PortfolioOverview';
 import { fetchPortfolio, fetchSellHistory } from '@/lib/api/portfolio';
 import type { PortfolioSummary } from '@/lib/api/portfolio';
-import { fetchGeminiPicks, fetchPicks } from '@/lib/api/picks';
+import { fetchPicks, fetchShadowPicks } from '@/lib/api/picks';
 import type { PickSummary } from '@/lib/api/picks';
 import { fetchQuote } from '@/lib/api/stock';
 
@@ -15,13 +15,13 @@ jest.mock('@/lib/api/picks');
 const mockFetchPortfolio = fetchPortfolio as jest.MockedFunction<typeof fetchPortfolio>;
 const mockFetchSellHistory = fetchSellHistory as jest.MockedFunction<typeof fetchSellHistory>;
 const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
-const mockFetchGeminiPicks = fetchGeminiPicks as jest.MockedFunction<typeof fetchGeminiPicks>;
+const mockFetchShadowPicks = fetchShadowPicks as jest.MockedFunction<typeof fetchShadowPicks>;
 const mockFetchQuote = fetchQuote as jest.MockedFunction<typeof fetchQuote>;
 
 beforeEach(() => {
   mockFetchSellHistory.mockResolvedValue([]);
   mockFetchPicks.mockResolvedValue([]);
-  mockFetchGeminiPicks.mockResolvedValue([]);
+  mockFetchShadowPicks.mockResolvedValue([]);
   // AddHoldingModal/SellHoldingModal が開いた時点の最新値取得に使う。自動モックのままだと
   // 戻り値が undefined になり `.then` 呼び出しで例外になるため、既定の reject を与えておく
   // （個々のテストは suggestedPrice / holding.current_price へのフォールバックだけを見る）。

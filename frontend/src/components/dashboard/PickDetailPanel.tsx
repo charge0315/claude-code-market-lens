@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { PriceChart } from '@/components/stock-detail/PriceChart';
 import { fetchPickDetail, type Direction, type PickDetail, type SubScores } from '@/lib/api/picks';
+import { challengerDetailLabel } from '@/lib/llmProviderLabels';
 import './dashboard.css';
 
 // ピック詳細スライドインパネルの中身（🆕 P13、参照デザイン準拠）。
@@ -27,15 +28,6 @@ function directionColor(direction: Direction): string {
 
 function formatYen(value: number): string {
   return `¥${Math.round(value).toLocaleString('ja-JP')}`;
-}
-
-// shadow_predictions.challenger_version は `"gemini:<モデル名>"` 形式で保存される
-// （`orchestrator.py`）。ラベル用に「Gemini（モデル名）」の形へ整形する。
-function formatEngineLabel(challengerVersion: string): string {
-  const [engine, ...rest] = challengerVersion.split(':');
-  const model = rest.join(':');
-  if (engine.toLowerCase() === 'gemini' && model) return `Gemini（${model}）`;
-  return challengerVersion;
 }
 
 function deviationFromCurrent(value: number, currentPrice: number | null): string | null {
@@ -164,7 +156,7 @@ export function PickDetailPanel({ pickId }: { pickId: string }): ReactNode {
             {detail.shadow_predictions.map((shadow) => (
               <li key={shadow.shadow_id} className="pick-detail-shadow-item">
                 <p className="pick-detail-shadow-header">
-                  <span>{formatEngineLabel(shadow.challenger_version)}</span>
+                  <span>{challengerDetailLabel(shadow.challenger_version)}</span>
                   <span style={{ color: directionColor(shadow.direction) }}>
                     {DIRECTION_LABELS[shadow.direction]}（確度 {shadow.confidence.toFixed(0)}）
                   </span>
@@ -188,8 +180,8 @@ export function PickDetailPanel({ pickId }: { pickId: string }): ReactNode {
       )}
 
       <p className="pick-detail-footer">
-        スコア {detail.composite_score.toFixed(1)} / 抽出日時 {detail.issued_at.slice(0, 16).replace('T', ' ')} / 生成AI Claude
-        （モデル {detail.model_version}）
+        スコア {detail.composite_score.toFixed(1)} / 抽出日時 {detail.issued_at.slice(0, 16).replace('T', ' ')} / モデルバージョン{' '}
+        {detail.model_version}
       </p>
     </div>
   );

@@ -11,8 +11,8 @@ import { SellHoldingModal } from './SellHoldingModal';
 import './portfolio.css';
 
 // 🆕 P26: 保有一覧に、銘柄検索からの追加・売却・削除・売却履歴を追加した。
-// 🆕 ポートフォリオ画面自体からも本日の AI ピック（Claude/Gemini）を選んで追加できるようにした
-// （ダッシュボードの PicksBoard/GeminiPicksBoard の「ポートフォリオに追加」とは別経路、ユーザー指示）。
+// 🆕 ポートフォリオ画面自体からも本日の AI ピック（公式/シャドウ）を選んで追加できるようにした
+// （ダッシュボードの PicksBoard/ShadowPicksBoard の「ポートフォリオに追加」とは別経路、ユーザー指示）。
 
 interface AddTarget {
   symbol: string;

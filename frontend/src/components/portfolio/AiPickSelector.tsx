@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { fetchGeminiPicks, fetchPicks, type GeminiPickSummary, type PickSummary } from '@/lib/api/picks';
+import { fetchPicks, fetchShadowPicks, type PickSummary, type ShadowPickSummary } from '@/lib/api/picks';
 import { todayJst } from '@/lib/jstDate';
 import './portfolio.css';
 
-// 銘柄検索と並ぶもう一つの追加経路: 本日の AI ピック（Claude/Gemini 両方）から選んで
+// 銘柄検索と並ぶもう一つの追加経路: 本日の AI ピック（公式/シャドウ両方）から選んで
 // そのまま買い注文（保有追加）ポップアップを開けるようにする（ユーザー指示）。
 
-export type AiPickEngine = 'claude' | 'gemini';
+export type AiPickEngine = 'official' | 'shadow';
 
 export interface AiPickOption {
   symbol: string;
@@ -34,17 +34,17 @@ export function AiPickSelector({ onSelect }: { onSelect: (option: AiPickOption) 
     Promise.all([
       fetchPicks('mid_term', { date, limit: 50 }),
       fetchPicks('short_term', { date, limit: 50 }),
-      fetchGeminiPicks('mid_term', { date, limit: 50 }),
-      fetchGeminiPicks('short_term', { date, limit: 50 }),
+      fetchShadowPicks('mid_term', { date, limit: 50 }),
+      fetchShadowPicks('short_term', { date, limit: 50 }),
     ])
-      .then(([claudeMid, claudeShort, geminiMid, geminiShort]) => {
-        const claude = dedupeBySymbolKeepingLatest<PickSummary>([...claudeMid, ...claudeShort]).map(
-          (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'claude', entry: p.entry }),
+      .then(([officialMid, officialShort, shadowMid, shadowShort]) => {
+        const official = dedupeBySymbolKeepingLatest<PickSummary>([...officialMid, ...officialShort]).map(
+          (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'official', entry: p.entry }),
         );
-        const gemini = dedupeBySymbolKeepingLatest<GeminiPickSummary>([...geminiMid, ...geminiShort]).map(
-          (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'gemini', entry: p.entry }),
+        const shadow = dedupeBySymbolKeepingLatest<ShadowPickSummary>([...shadowMid, ...shadowShort]).map(
+          (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'shadow', entry: p.entry }),
         );
-        setOptions([...claude, ...gemini]);
+        setOptions([...official, ...shadow]);
       })
       .catch(() => setError('本日のAIピック一覧の取得に失敗しました'));
   }, []);
@@ -59,7 +59,7 @@ export function AiPickSelector({ onSelect }: { onSelect: (option: AiPickOption) 
           {options.map((o) => (
             <li key={`${o.engine}-${o.symbol}`}>
               <button type="button" onClick={() => onSelect(o)}>
-                <span className="ai-pick-selector-badge">{o.engine === 'claude' ? 'Claude' : 'Gemini'}</span>
+                <span className="ai-pick-selector-badge">{o.engine === 'official' ? '公式' : 'シャドウ'}</span>
                 <span>
                   {o.symbol}
                   {o.companyName && `（${o.companyName}）`}

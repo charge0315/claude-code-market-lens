@@ -86,12 +86,14 @@ class PickSummary(BaseModel):
     reasoning_tags: list[str] = []
 
 
-class GeminiPickSummary(BaseModel):
-    """Gemini（challenger LLM）判定の一覧表示用行（🆕 P25）.
+class ShadowPickSummary(BaseModel):
+    """シャドウ（challenger LLM）判定の一覧表示用行.
 
-    `shadow_predictions` を `prediction_ledger`（Claude/Anthropic の公式ピック）とは別に、
-    単独の一覧として表示するための型。`pick_id` は同じ候補を判定した公式ピックへの
-    参照であり、あくまで比較表示用（昇格・確度較正には一切関与しない、CLAUDE.md）。
+    `shadow_predictions` を `prediction_ledger`（公式パイプラインのピック）とは別に、
+    単独の一覧として表示するための型。`challenger_version`（`"<provider>:<model>"`形式、
+    `services/llm/registry.py` 参照）で複数プロバイダを併用していても区別できる。`pick_id` は
+    同じ候補を判定した公式ピックへの参照であり、あくまで比較表示用（昇格・確度較正には
+    一切関与しない、CLAUDE.md）。
     """
 
     model_config = ConfigDict(frozen=True)

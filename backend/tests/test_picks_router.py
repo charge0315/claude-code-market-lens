@@ -13,7 +13,7 @@ from backend.models.pick import LedgerEntry, PickRunResult, SubScores
 from backend.routers import picks as picks_router_module
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.ledger import prediction_ledger as pl
-from backend.services.picks import gemini_picks as gp
+from backend.services.picks import shadow_picks as sp
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def _no_live_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
         return None, None, []
 
     monkeypatch.setattr(pl, "fetch_quote_with_spark", fake_fetch_quote_with_spark)
-    monkeypatch.setattr(gp, "fetch_quote_with_spark", fake_fetch_quote_with_spark)
+    monkeypatch.setattr(sp, "fetch_quote_with_spark", fake_fetch_quote_with_spark)
     monkeypatch.setattr(picks_router_module, "fetch_quote", fake_fetch_quote)
 
 
@@ -95,7 +95,7 @@ async def test_list_mid_term_dedupes_repeated_runs_keeping_latest(client: AsyncC
     assert body["data"][0]["pick_id"] == "p2"
 
 
-async def test_list_gemini_returns_shadow_predictions(client: AsyncClient) -> None:
+async def test_list_shadow_returns_shadow_predictions(client: AsyncClient) -> None:
 
     await insert_shadow_prediction(
         pick_id=None,
@@ -112,7 +112,7 @@ async def test_list_gemini_returns_shadow_predictions(client: AsyncClient) -> No
         payload={"reasoning": "テスト根拠"},
     )
 
-    res = await client.get("/api/picks/gemini")
+    res = await client.get("/api/picks/shadow")
     assert res.status_code == 200
     body = res.json()
     assert body["success"] is True
@@ -123,7 +123,7 @@ async def test_list_gemini_returns_shadow_predictions(client: AsyncClient) -> No
     assert row["reasoning"] == "テスト根拠"
 
 
-async def test_list_gemini_filters_by_horizon_type(client: AsyncClient) -> None:
+async def test_list_shadow_filters_by_horizon_type(client: AsyncClient) -> None:
 
     await insert_shadow_prediction(
         pick_id=None,
@@ -154,7 +154,7 @@ async def test_list_gemini_filters_by_horizon_type(client: AsyncClient) -> None:
         payload={},
     )
 
-    res = await client.get("/api/picks/gemini", params={"horizon_type": "short_term"})
+    res = await client.get("/api/picks/shadow", params={"horizon_type": "short_term"})
     body = res.json()
     assert [r["symbol"] for r in body["data"]] == ["9984"]
 
