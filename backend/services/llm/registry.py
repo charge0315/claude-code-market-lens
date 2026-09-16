@@ -67,3 +67,35 @@ def resolve_shadow_providers(feature: FeatureId) -> list[LLMProvider]:
         if provider.is_configured:
             resolved.append(provider)
     return resolved
+
+
+# 機能×プロバイダごとのモデル上書きフィールド名（`backend/config.py` 参照）。
+_MODEL_OVERRIDE_FIELD: dict[tuple[FeatureId, ProviderId], str] = {
+    ("stock_pick", "anthropic"): "llm_model_stock_pick_anthropic",
+    ("stock_pick", "openai"): "llm_model_stock_pick_openai",
+    ("stock_pick", "gemini"): "llm_model_stock_pick_gemini",
+    ("portfolio_signal", "anthropic"): "llm_model_portfolio_signal_anthropic",
+    ("portfolio_signal", "openai"): "llm_model_portfolio_signal_openai",
+    ("portfolio_signal", "gemini"): "llm_model_portfolio_signal_gemini",
+    ("eod_review", "anthropic"): "llm_model_eod_review_anthropic",
+    ("eod_review", "openai"): "llm_model_eod_review_openai",
+    ("eod_review", "gemini"): "llm_model_eod_review_gemini",
+    ("trend_analyzer", "anthropic"): "llm_model_trend_analyzer_anthropic",
+    ("trend_analyzer", "openai"): "llm_model_trend_analyzer_openai",
+    ("trend_analyzer", "gemini"): "llm_model_trend_analyzer_gemini",
+}
+
+# プロバイダの既定モデル（機能×プロバイダの上書きが空文字のときのフォールバック先）。
+_PROVIDER_DEFAULT_MODEL_FIELD: dict[ProviderId, str] = {
+    "anthropic": "anthropic_model",
+    "openai": "openai_model",
+    "gemini": "gemini_model",
+}
+
+
+def resolve_model(feature: FeatureId, provider_id: ProviderId) -> str:
+    """指定機能×プロバイダで実際に使うモデルIDを返す（個別上書き優先、無ければプロバイダ既定値）."""
+    override = getattr(settings, _MODEL_OVERRIDE_FIELD[(feature, provider_id)])
+    if override:
+        return str(override)
+    return str(getattr(settings, _PROVIDER_DEFAULT_MODEL_FIELD[provider_id]))

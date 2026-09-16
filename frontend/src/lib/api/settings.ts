@@ -36,6 +36,8 @@ export interface LLMProviderOption {
   value: LLMProviderId;
   label: string;
   configured: boolean;
+  default_model: string;
+  model_presets: string[];
 }
 
 export interface FeatureProviderSetting {
@@ -43,6 +45,8 @@ export interface FeatureProviderSetting {
   label: string;
   primary_provider: LLMProviderId;
   shadow_providers: LLMProviderId[];
+  // プロバイダごとに実際に使われるモデル（機能×プロバイダの個別上書き、無ければプロバイダ既定値）。
+  models: Record<LLMProviderId, string>;
 }
 
 export interface LLMProviderSettingsResponse {
@@ -55,6 +59,8 @@ export interface LLMProviderUpdate {
   feature: LLMFeatureId;
   primary_provider?: LLMProviderId;
   shadow_providers?: LLMProviderId[];
+  // 変更したいプロバイダぶんのみ含める。空文字を指定するとプロバイダの既定モデルへ戻る。
+  models?: Partial<Record<LLMProviderId, string>>;
 }
 
 export function fetchLLMProviderSettings(): Promise<LLMProviderSettingsResponse> {

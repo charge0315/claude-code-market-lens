@@ -109,7 +109,7 @@ async def _build_and_persist() -> TrendSnapshot:
             return TrendSnapshot(
                 snapshot_at=now_iso,
                 status="llm_error",
-                model=provider.model_id,
+                model=provider.model_for("trend_analyzer"),
                 trends=[],
                 signal_count=signals.signal_count,
                 source_summary=signals.source_summary,
@@ -126,7 +126,7 @@ async def _build_and_persist() -> TrendSnapshot:
     await trend_snapshot_db.insert_trend_snapshot(
         snapshot_at=now_iso,
         status=status,
-        model=provider.model_id,
+        model=provider.model_for("trend_analyzer"),
         trends=[t.model_dump() for t in trends],
         signal_count=signals.signal_count,
         source_summary=signals.source_summary,
@@ -134,7 +134,7 @@ async def _build_and_persist() -> TrendSnapshot:
     return TrendSnapshot(
         snapshot_at=now_iso,
         status=_coerce_status(status),
-        model=provider.model_id,
+        model=provider.model_for("trend_analyzer"),
         trends=trends,
         signal_count=signals.signal_count,
         source_summary=signals.source_summary,

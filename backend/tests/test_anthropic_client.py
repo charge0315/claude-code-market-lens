@@ -101,6 +101,46 @@ async def test_propose_stock_pick_returns_tool_input(client: AnthropicClient, mo
     assert out == payload
 
 
+def test_model_for_falls_back_to_provider_default(client: AnthropicClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.llm import registry as reg
+
+    monkeypatch.setattr(reg, "settings", reg.settings.model_copy(update={"anthropic_model": "claude-sonnet-5"}))
+    assert client.model_for("stock_pick") == "claude-sonnet-5"
+
+
+def test_model_for_reflects_feature_override(client: AnthropicClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.llm import registry as reg
+
+    monkeypatch.setattr(
+        reg,
+        "settings",
+        reg.settings.model_copy(
+            update={"anthropic_model": "claude-sonnet-5", "llm_model_stock_pick_anthropic": "claude-opus-5"}
+        ),
+    )
+    assert client.model_for("stock_pick") == "claude-opus-5"
+    assert client.model_for("portfolio_signal") == "claude-sonnet-5"
+
+
+async def test_propose_stock_pick_sends_overridden_model(
+    client: AnthropicClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services.llm import registry as reg
+
+    monkeypatch.setattr(
+        reg, "settings", reg.settings.model_copy(update={"llm_model_stock_pick_anthropic": "claude-opus-5"})
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_create(**kw: object) -> _Resp:
+        captured.update(kw)
+        return _Resp([_ToolBlock({"should_include": True})])
+
+    _install_create(monkeypatch, client, fake_create)
+    await client.propose_stock_pick(ticker="7203", prompt="...")
+    assert captured["model"] == "claude-opus-5"
+
+
 async def test_missing_tool_block_raises_response_error(
     client: AnthropicClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -150,7 +150,7 @@ async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceO
         await insert_shadow_prediction(
             pick_id=pick.pick_id,
             run_id=outcome.run_id,
-            challenger_version=f"{provider.provider_id}:{provider.model_id}",
+            challenger_version=f"{provider.provider_id}:{provider.model_for('stock_pick')}",
             symbol=pick.symbol,
             horizon_type=pick.horizon_type,
             direction=pick.direction,

@@ -76,11 +76,13 @@ class _FakeLLM:
     """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
 
     provider_id = "anthropic"
-    model_id = "test-model"
 
     def __init__(self, state: WiredState) -> None:
         self._state = state
         self.is_configured = True
+
+    def model_for(self, feature: str) -> str:  # noqa: ARG002
+        return "test-model"
 
     async def propose_stock_pick(self, *, ticker: str, prompt: str) -> dict[str, object]:
         return await self._state.propose_stock_pick(ticker=ticker, prompt=prompt)
@@ -99,14 +101,21 @@ _DEFAULT_GEMINI: dict[str, object] = {
 
 
 class _FakeGemini:
-    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）."""
+    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）.
+
+    `provider_id`/`model` は複数プロバイダ併用テスト（例: OpenAI 役として流用する場合）で
+    インスタンス属性として上書きできるようにしてある。
+    """
 
     provider_id = "gemini"
-    model_id = "gemini-2.5-pro"
+    model = "gemini-2.5-pro"
 
     def __init__(self, response: object = None, *, configured: bool = True) -> None:
         self.is_configured = configured
         self._response = response if response is not None else dict(_DEFAULT_GEMINI)
+
+    def model_for(self, feature: str) -> str:  # noqa: ARG002
+        return self.model
 
     async def propose_stock_pick(self, *, ticker: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
         if isinstance(self._response, Exception):

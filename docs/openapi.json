@@ -2630,7 +2630,7 @@
           "settings"
         ],
         "summary": "1機能ぶんのLLMプロバイダ設定を更新（.envへ永続化。反映にはbackend/celeryの再起動が必要）",
-        "description": "指定機能の公式/シャドウプロバイダを更新する（`None` のフィールドは変更しない）.",
+        "description": "指定機能の公式/シャドウプロバイダ・使用モデルを更新する（`None` のフィールドは変更しない）.",
         "operationId": "update_llm_providers_api_settings_llm_providers_patch",
         "requestBody": {
           "content": {
@@ -4251,6 +4251,20 @@
             },
             "type": "array",
             "title": "Shadow Providers"
+          },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "anthropic",
+                "openai",
+                "gemini"
+              ]
+            },
+            "type": "object",
+            "title": "Models"
           }
         },
         "type": "object",
@@ -4258,10 +4272,11 @@
           "feature",
           "label",
           "primary_provider",
-          "shadow_providers"
+          "shadow_providers",
+          "models"
         ],
         "title": "FeatureProviderSetting",
-        "description": "1機能ぶんの現在の公式/シャドウプロバイダ設定."
+        "description": "1機能ぶんの現在の公式/シャドウプロバイダ設定と、プロバイダごとの使用モデル."
       },
       "HTTPValidationError": {
         "properties": {
@@ -4377,16 +4392,29 @@
           "configured": {
             "type": "boolean",
             "title": "Configured"
+          },
+          "default_model": {
+            "type": "string",
+            "title": "Default Model"
+          },
+          "model_presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Model Presets"
           }
         },
         "type": "object",
         "required": [
           "value",
           "label",
-          "configured"
+          "configured",
+          "default_model",
+          "model_presets"
         ],
         "title": "LLMProviderOption",
-        "description": "選択肢として提示する1プロバイダ（APIキー設定状況つき）."
+        "description": "選択肢として提示する1プロバイダ（APIキー設定状況・既定モデル・モデルプリセットつき）."
       },
       "LLMProviderSettingsResponse": {
         "properties": {
@@ -4464,6 +4492,27 @@
               }
             ],
             "title": "Shadow Providers"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "anthropic",
+                    "openai",
+                    "gemini"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models"
           }
         },
         "type": "object",
@@ -4471,7 +4520,7 @@
           "feature"
         ],
         "title": "LLMProviderUpdateRequest",
-        "description": "`PATCH /api/settings/llm-providers` のリクエストボディ（1機能ぶんの更新）.\n\n各フィールドは `None` なら変更しない。"
+        "description": "`PATCH /api/settings/llm-providers` のリクエストボディ（1機能ぶんの更新）.\n\n各フィールドは `None` なら変更しない。`models` は変更したいプロバイダぶんのみ含めればよい\n（例: `{\"anthropic\": \"claude-opus-5\"}`）。値を空文字にすると上書きを解除しプロバイダの\n既定モデルへ戻す。"
       },
       "LivenessResponse": {
         "properties": {

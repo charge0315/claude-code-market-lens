@@ -41,12 +41,16 @@ export function LLMProviderPanel(): ReactNode {
 
   const draftFor = (f: FeatureProviderSetting): FeatureProviderSetting => drafts[f.feature] ?? f;
 
+  const modelsEqual = (a: Record<LLMProviderId, string>, b: Record<LLMProviderId, string>): boolean =>
+    (Object.keys(a) as LLMProviderId[]).every((provider) => a[provider] === b[provider]);
+
   const isDirty = (f: FeatureProviderSetting): boolean => {
     const draft = drafts[f.feature];
     if (!draft) return false;
     return (
       draft.primary_provider !== f.primary_provider ||
-      draft.shadow_providers.join(',') !== f.shadow_providers.join(',')
+      draft.shadow_providers.join(',') !== f.shadow_providers.join(',') ||
+      !modelsEqual(draft.models, f.models)
     );
   };
 
@@ -58,6 +62,7 @@ export function LLMProviderPanel(): ReactNode {
       feature: feature.feature,
       primary_provider: draft.primary_provider,
       shadow_providers: draft.shadow_providers,
+      models: draft.models,
     })
       .then((res) => {
         setFeatures(res.features);
@@ -75,6 +80,38 @@ export function LLMProviderPanel(): ReactNode {
   const providerLabel = (value: LLMProviderId): string => providers.find((p) => p.value === value)?.label ?? value;
   const providerConfigured = (value: LLMProviderId): boolean =>
     providers.find((p) => p.value === value)?.configured ?? false;
+  const providerPresets = (value: LLMProviderId): string[] => providers.find((p) => p.value === value)?.model_presets ?? [];
+
+  const setModel = (feature: FeatureProviderSetting, draft: FeatureProviderSetting, provider: LLMProviderId, model: string): void => {
+    setDrafts((prev) => ({
+      ...prev,
+      [feature.feature]: { ...draft, models: { ...draft.models, [provider]: model } },
+    }));
+  };
+
+  const renderModelField = (feature: FeatureProviderSetting, draft: FeatureProviderSetting, provider: LLMProviderId): ReactNode => {
+    const datalistId = `model-presets-${feature.feature}-${provider}`;
+    return (
+      <div className="llm-provider-model-field">
+        <label htmlFor={`model-${feature.feature}-${provider}`} className="llm-provider-model-label">
+          {providerLabel(provider)} の使用モデル
+        </label>
+        <input
+          id={`model-${feature.feature}-${provider}`}
+          type="text"
+          list={datalistId}
+          className="llm-provider-model-input"
+          value={draft.models[provider] ?? ''}
+          onChange={(e) => setModel(feature, draft, provider, e.target.value)}
+        />
+        <datalist id={datalistId}>
+          {providerPresets(provider).map((preset) => (
+            <option key={preset} value={preset} />
+          ))}
+        </datalist>
+      </div>
+    );
+  };
 
   return (
     <div className="api-keys-panel">
@@ -121,6 +158,7 @@ export function LLMProviderPanel(): ReactNode {
                     {providerLabel(draft.primary_provider)} の API キーが未設定のため、この機能は動作しません。
                   </span>
                 )}
+                {renderModelField(f, draft, draft.primary_provider)}
               </div>
 
               <div className="llm-provider-field">
@@ -129,23 +167,26 @@ export function LLMProviderPanel(): ReactNode {
                   {providers
                     .filter((p) => p.value !== draft.primary_provider)
                     .map((p) => (
-                      <label key={p.value} className="llm-provider-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={draft.shadow_providers.includes(p.value)}
-                          onChange={() =>
-                            setDrafts((prevState) => ({
-                              ...prevState,
-                              [f.feature]: {
-                                ...draft,
-                                shadow_providers: toggleProvider(draft.shadow_providers, p.value),
-                              },
-                            }))
-                          }
-                        />
-                        {p.label}
-                        {!p.configured && <span className="llm-provider-warning-inline">未設定</span>}
-                      </label>
+                      <div key={p.value} className="llm-provider-shadow-row">
+                        <label className="llm-provider-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={draft.shadow_providers.includes(p.value)}
+                            onChange={() =>
+                              setDrafts((prevState) => ({
+                                ...prevState,
+                                [f.feature]: {
+                                  ...draft,
+                                  shadow_providers: toggleProvider(draft.shadow_providers, p.value),
+                                },
+                              }))
+                            }
+                          />
+                          {p.label}
+                          {!p.configured && <span className="llm-provider-warning-inline">未設定</span>}
+                        </label>
+                        {draft.shadow_providers.includes(p.value) && renderModelField(f, draft, p.value)}
+                      </div>
                     ))}
                 </div>
               </div>

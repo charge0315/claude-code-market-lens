@@ -36,6 +36,7 @@ from backend.services.anthropic_errors import (
     AnthropicTimeoutError,
 )
 from backend.services.circuit_breaker import CircuitBreaker
+from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA as _EOD_REVIEW_TOOL_SCHEMA,
 )
@@ -48,6 +49,7 @@ from backend.services.llm.schemas import (
 from backend.services.llm.schemas import (
     TREND_SCHEMA as _TREND_TOOL_SCHEMA,
 )
+from backend.services.llm.types import FeatureId
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +86,9 @@ class AnthropicClient:
         """必要な環境変数が設定されているかを返す."""
         return bool(settings.anthropic_api_key)
 
-    @property
-    def model_id(self) -> str:
-        """`llm.provider.LLMProvider` プロトコル用: 現在使用中のモデルID."""
-        return settings.anthropic_model
+    def model_for(self, feature: FeatureId) -> str:
+        """`llm.provider.LLMProvider` プロトコル用: 指定機能で実際に使うモデルID."""
+        return resolve_model(feature, "anthropic")
 
     def _client(self) -> AsyncAnthropic:
         if self._sdk is None:
@@ -152,7 +153,7 @@ class AnthropicClient:
         """forced tool-use で 1 銘柄分の買値・損切り価格・売値提案を取得する（3 値必須）."""
         return await self._forced_tool_call(
             feature="stock_pick",
-            model=settings.anthropic_model,
+            model=resolve_model("stock_pick", "anthropic"),
             tool_schema=_TOOL_SCHEMA,
             max_tokens=_MAX_TOKENS,
             prompt=prompt,
@@ -162,7 +163,7 @@ class AnthropicClient:
         """forced tool-use で保有 1 件の継続保有/一部利確/損切/買い増し判定を取得する."""
         return await self._forced_tool_call(
             feature="portfolio_signal",
-            model=settings.anthropic_model,
+            model=resolve_model("portfolio_signal", "anthropic"),
             tool_schema=_PORTFOLIO_SIGNAL_TOOL_SCHEMA,
             max_tokens=_MAX_TOKENS,
             prompt=prompt,
@@ -172,7 +173,7 @@ class AnthropicClient:
         """forced tool-use で当日のポートフォリオ判定総括と学習教訓を取得する."""
         return await self._forced_tool_call(
             feature="eod_review",
-            model=settings.anthropic_model,
+            model=resolve_model("eod_review", "anthropic"),
             tool_schema=_EOD_REVIEW_TOOL_SCHEMA,
             max_tokens=_MAX_TOKENS,
             prompt=prompt,
@@ -182,7 +183,7 @@ class AnthropicClient:
         """forced tool-use で構造化トレンド一覧（trends 配列）を取得する."""
         return await self._forced_tool_call(
             feature="trend_analyzer",
-            model=settings.anthropic_model,
+            model=resolve_model("trend_analyzer", "anthropic"),
             tool_schema=_TREND_TOOL_SCHEMA,
             max_tokens=_TREND_MAX_TOKENS,
             prompt=prompt,

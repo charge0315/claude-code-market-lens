@@ -367,7 +367,7 @@ async def test_multiple_shadow_providers_each_record_a_row(
     """🆕 マルチLLM併用: 複数 shadow プロバイダを設定すると、それぞれが個別に記録される."""
     openai_like = _FakeGemini({**_DEFAULT_GEMINI, "reasoning": "OpenAI 側の根拠"})
     openai_like.provider_id = "openai"
-    openai_like.model_id = "gpt-5.1"
+    openai_like.model = "gpt-5.1"
     monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(), openai_like])
 
     outcome = await _run_and_persist(wired)

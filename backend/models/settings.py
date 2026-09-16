@@ -54,17 +54,19 @@ LLMProviderId = Literal["anthropic", "openai", "gemini"]
 
 
 class LLMProviderOption(BaseModel):
-    """選択肢として提示する1プロバイダ（APIキー設定状況つき）."""
+    """選択肢として提示する1プロバイダ（APIキー設定状況・既定モデル・モデルプリセットつき）."""
 
     model_config = ConfigDict(frozen=True)
 
     value: LLMProviderId
     label: str
     configured: bool
+    default_model: str
+    model_presets: list[str]
 
 
 class FeatureProviderSetting(BaseModel):
-    """1機能ぶんの現在の公式/シャドウプロバイダ設定."""
+    """1機能ぶんの現在の公式/シャドウプロバイダ設定と、プロバイダごとの使用モデル."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -72,6 +74,8 @@ class FeatureProviderSetting(BaseModel):
     label: str
     primary_provider: LLMProviderId
     shadow_providers: list[LLMProviderId]
+    # プロバイダごとに実際に使われるモデル（機能×プロバイダの個別上書き、無ければプロバイダ既定値）。
+    models: dict[LLMProviderId, str]
 
 
 class LLMProviderSettingsResponse(BaseModel):
@@ -87,7 +91,9 @@ class LLMProviderSettingsResponse(BaseModel):
 class LLMProviderUpdateRequest(BaseModel):
     """`PATCH /api/settings/llm-providers` のリクエストボディ（1機能ぶんの更新）.
 
-    各フィールドは `None` なら変更しない。
+    各フィールドは `None` なら変更しない。`models` は変更したいプロバイダぶんのみ含めればよい
+    （例: `{"anthropic": "claude-opus-5"}`）。値を空文字にすると上書きを解除しプロバイダの
+    既定モデルへ戻す。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -95,3 +101,4 @@ class LLMProviderUpdateRequest(BaseModel):
     feature: LLMFeatureId
     primary_provider: LLMProviderId | None = Field(default=None)
     shadow_providers: list[LLMProviderId] | None = Field(default=None)
+    models: dict[LLMProviderId, str] | None = Field(default=None)

@@ -34,14 +34,20 @@ _DEFAULT_GEMINI: dict[str, object] = {
 
 
 class _FakeGemini:
-    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）."""
+    """`llm.provider.LLMProvider` 互換の GeminiClient スタブ（shadow 判定用）.
+
+    `provider_id`/`model` はインスタンス属性として上書きできる（複数プロバイダ併用テスト用）。
+    """
 
     provider_id = "gemini"
-    model_id = "gemini-2.5-pro"
+    model = "gemini-2.5-pro"
 
     def __init__(self, response: object = None, *, configured: bool = True) -> None:
         self.is_configured = configured
         self._response = response if response is not None else dict(_DEFAULT_GEMINI)
+
+    def model_for(self, feature: str) -> str:  # noqa: ARG002
+        return self.model
 
     async def propose_portfolio_signal(self, *, symbol: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
         if isinstance(self._response, Exception):
@@ -72,7 +78,6 @@ class _FakeLLM:
     """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
 
     provider_id = "anthropic"
-    model_id = "test-model"
 
     def __init__(self, response: object) -> None:
         self._response = response
@@ -243,7 +248,7 @@ async def test_evaluate_holding_multiple_shadow_providers_each_record_a_row(
     """🆕 マルチLLM併用: 複数 shadow プロバイダを設定すると、それぞれが個別に記録される."""
     openai_like = _FakeGemini({**_DEFAULT_GEMINI, "reasoning": "OpenAI 側は中立と判定"})
     openai_like.provider_id = "openai"
-    openai_like.model_id = "gpt-5.1"
+    openai_like.model = "gpt-5.1"
     _wire_official(monkeypatch, _DEFAULT_LLM)
     _wire_shadow(monkeypatch, _FakeGemini(), openai_like)
 

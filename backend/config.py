@@ -88,6 +88,24 @@ class Settings(BaseSettings):
     llm_shadow_providers_trend_analyzer: Annotated[list[str], NoDecode] = Field(
         default=[], validation_alias="LLM_SHADOW_PROVIDERS_TREND_ANALYZER"
     )
+    # 機能×プロバイダごとのモデル上書き（🆕、空文字＝上書き無し。その場合はプロバイダの
+    # 既定モデル（`anthropic_model`/`openai_model`/`gemini_model`）にフォールバックする、
+    # `services/llm/registry.py` の `resolve_model()` 参照）。ある機能で同じプロバイダを
+    # 公式・シャドウ両方で使っていても、モデルは共通（機能×プロバイダで1つ）。
+    llm_model_stock_pick_anthropic: str = Field(default="", validation_alias="LLM_MODEL_STOCK_PICK_ANTHROPIC")
+    llm_model_stock_pick_openai: str = Field(default="", validation_alias="LLM_MODEL_STOCK_PICK_OPENAI")
+    llm_model_stock_pick_gemini: str = Field(default="", validation_alias="LLM_MODEL_STOCK_PICK_GEMINI")
+    llm_model_portfolio_signal_anthropic: str = Field(
+        default="", validation_alias="LLM_MODEL_PORTFOLIO_SIGNAL_ANTHROPIC"
+    )
+    llm_model_portfolio_signal_openai: str = Field(default="", validation_alias="LLM_MODEL_PORTFOLIO_SIGNAL_OPENAI")
+    llm_model_portfolio_signal_gemini: str = Field(default="", validation_alias="LLM_MODEL_PORTFOLIO_SIGNAL_GEMINI")
+    llm_model_eod_review_anthropic: str = Field(default="", validation_alias="LLM_MODEL_EOD_REVIEW_ANTHROPIC")
+    llm_model_eod_review_openai: str = Field(default="", validation_alias="LLM_MODEL_EOD_REVIEW_OPENAI")
+    llm_model_eod_review_gemini: str = Field(default="", validation_alias="LLM_MODEL_EOD_REVIEW_GEMINI")
+    llm_model_trend_analyzer_anthropic: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_ANTHROPIC")
+    llm_model_trend_analyzer_openai: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_OPENAI")
+    llm_model_trend_analyzer_gemini: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_GEMINI")
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")

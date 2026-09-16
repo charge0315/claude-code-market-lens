@@ -35,8 +35,10 @@ from backend.services.gemini_errors import (
     GeminiServerError,
     GeminiTimeoutError,
 )
+from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import EOD_REVIEW_SCHEMA, PORTFOLIO_SIGNAL_SCHEMA, STOCK_PICK_SCHEMA, TREND_SCHEMA
 from backend.services.llm.schemas import to_gemini_response_schema as _to_gemini
+from backend.services.llm.types import FeatureId
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +81,9 @@ class GeminiClient:
         """必要な環境変数が設定されているかを返す."""
         return bool(settings.gemini_api_key)
 
-    @property
-    def model_id(self) -> str:
-        """`llm.provider.LLMProvider` プロトコル用: 現在使用中のモデルID."""
-        return settings.gemini_model
+    def model_for(self, feature: FeatureId) -> str:
+        """`llm.provider.LLMProvider` プロトコル用: 指定機能で実際に使うモデルID."""
+        return resolve_model(feature, "gemini")
 
     def _translate_and_record_failure(self, exc: Exception, context: str) -> GeminiError:
         """raw な httpx 例外を型付き例外へ翻訳する（`anthropic_client.py` と同じ方針）.
@@ -144,7 +145,7 @@ class GeminiClient:
         """forced structured-output で 1 銘柄分の買値・損切り価格・売値提案を取得する（3 値必須）."""
         return await self._generate_structured(
             feature="stock_pick_gemini",
-            model=settings.gemini_model,
+            model=resolve_model("stock_pick", "gemini"),
             response_schema=_STOCK_PICK_RESPONSE_SCHEMA,
             prompt=prompt,
         )
@@ -155,7 +156,7 @@ class GeminiClient:
         """forced structured-output で保有 1 件の継続保有/一部利確/損切/買い増し判定を取得する."""
         return await self._generate_structured(
             feature="portfolio_signal_gemini",
-            model=settings.gemini_model,
+            model=resolve_model("portfolio_signal", "gemini"),
             response_schema=_PORTFOLIO_SIGNAL_RESPONSE_SCHEMA,
             prompt=prompt,
         )
@@ -168,7 +169,7 @@ class GeminiClient:
         """
         return await self._generate_structured(
             feature="eod_review_gemini",
-            model=settings.gemini_model,
+            model=resolve_model("eod_review", "gemini"),
             response_schema=_EOD_REVIEW_RESPONSE_SCHEMA,
             prompt=prompt,
         )
@@ -177,7 +178,7 @@ class GeminiClient:
         """forced structured-output で構造化トレンド一覧（trends 配列）を取得する."""
         return await self._generate_structured(
             feature="trend_analyzer_gemini",
-            model=settings.gemini_model,
+            model=resolve_model("trend_analyzer", "gemini"),
             response_schema=_TREND_RESPONSE_SCHEMA,
             prompt=prompt,
         )

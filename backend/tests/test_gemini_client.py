@@ -86,6 +86,20 @@ def test_is_configured_reflects_key(client: GeminiClient, monkeypatch: pytest.Mo
     assert client.is_configured is True
 
 
+def test_model_for_reflects_feature_override(client: GeminiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.llm import registry as reg
+
+    monkeypatch.setattr(
+        reg,
+        "settings",
+        reg.settings.model_copy(
+            update={"gemini_model": "gemini-2.5-pro", "llm_model_stock_pick_gemini": "gemini-2.5-flash"}
+        ),
+    )
+    assert client.model_for("stock_pick") == "gemini-2.5-flash"
+    assert client.model_for("portfolio_signal") == "gemini-2.5-pro"
+
+
 async def test_propose_stock_pick_parses_structured_json(client: GeminiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {
         "should_include": True,

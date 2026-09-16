@@ -25,6 +25,7 @@ from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services import api_cost
 from backend.services.circuit_breaker import CircuitBreaker
+from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA,
     PORTFOLIO_SIGNAL_SCHEMA,
@@ -32,6 +33,7 @@ from backend.services.llm.schemas import (
     TREND_SCHEMA,
 )
 from backend.services.llm.schemas import to_openai_strict_schema as _strict
+from backend.services.llm.types import FeatureId
 from backend.services.openai_errors import (
     OpenAIAuthError,
     OpenAICircuitOpenError,
@@ -82,10 +84,9 @@ class OpenAIClient:
         """必要な環境変数が設定されているかを返す."""
         return bool(settings.openai_api_key)
 
-    @property
-    def model_id(self) -> str:
-        """`llm.provider.LLMProvider` プロトコル用: 現在使用中のモデルID."""
-        return settings.openai_model
+    def model_for(self, feature: FeatureId) -> str:
+        """`llm.provider.LLMProvider` プロトコル用: 指定機能で実際に使うモデルID."""
+        return resolve_model(feature, "openai")
 
     def _client(self) -> AsyncOpenAI:
         if self._sdk is None:
@@ -156,7 +157,7 @@ class OpenAIClient:
         """forced structured-output で 1 銘柄分の買値・損切り価格・売値提案を取得する（3 値必須）."""
         return await self._structured_response(
             feature="stock_pick_openai",
-            model=settings.openai_model,
+            model=resolve_model("stock_pick", "openai"),
             schema_name="propose_stock_pick",
             schema=_STOCK_PICK_STRICT_SCHEMA,
             max_tokens=_MAX_TOKENS,
@@ -167,7 +168,7 @@ class OpenAIClient:
         """forced structured-output で保有 1 件の継続保有/一部利確/損切/買い増し判定を取得する."""
         return await self._structured_response(
             feature="portfolio_signal_openai",
-            model=settings.openai_model,
+            model=resolve_model("portfolio_signal", "openai"),
             schema_name="propose_portfolio_signal",
             schema=_PORTFOLIO_SIGNAL_STRICT_SCHEMA,
             max_tokens=_MAX_TOKENS,
@@ -178,7 +179,7 @@ class OpenAIClient:
         """forced structured-output で当日のポートフォリオ判定総括と学習教訓を取得する."""
         return await self._structured_response(
             feature="eod_review_openai",
-            model=settings.openai_model,
+            model=resolve_model("eod_review", "openai"),
             schema_name="submit_eod_review",
             schema=_EOD_REVIEW_STRICT_SCHEMA,
             max_tokens=_MAX_TOKENS,
@@ -189,7 +190,7 @@ class OpenAIClient:
         """forced structured-output で構造化トレンド一覧（trends 配列）を取得する."""
         return await self._structured_response(
             feature="trend_analyzer_openai",
-            model=settings.openai_model,
+            model=resolve_model("trend_analyzer", "openai"),
             schema_name="submit_trends",
             schema=_TREND_STRICT_SCHEMA,
             max_tokens=_TREND_MAX_TOKENS,

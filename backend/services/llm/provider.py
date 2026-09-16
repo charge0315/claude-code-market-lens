@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from backend.services.llm.types import JsonDict
+from backend.services.llm.types import FeatureId, JsonDict
 
 
 class LLMProvider(Protocol):
@@ -21,8 +21,9 @@ class LLMProvider(Protocol):
     @property
     def is_configured(self) -> bool: ...
 
-    @property
-    def model_id(self) -> str: ...
+    def model_for(self, feature: FeatureId) -> str:
+        """指定機能で実際に使うモデルID（機能×プロバイダの個別設定 or プロバイダ既定値）を返す."""
+        ...
 
     async def propose_stock_pick(self, *, ticker: str, prompt: str) -> JsonDict: ...
 

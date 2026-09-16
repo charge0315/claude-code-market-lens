@@ -74,6 +74,19 @@ _PROVIDER_KEY_ENV: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "gemini": "GEMINI_API_KEY",
 }
+# プロバイダの既定モデル env 変数名と `backend/config.py` のフィールド default（フォールバック値）。
+_PROVIDER_DEFAULT_MODEL_ENV: dict[str, tuple[str, str]] = {
+    "anthropic": ("ANTHROPIC_MODEL", "claude-sonnet-5"),
+    "openai": ("OPENAI_MODEL", "gpt-5.1"),
+    "gemini": ("GEMINI_MODEL", "gemini-2.5-pro"),
+}
+# 設定画面のモデル選択欄に出す代表的なモデル（プリセット、自由入力も併用可）。
+# モデル名は頻繁に更新されるため、ここに無いモデルも自由入力で指定できる。
+_PROVIDER_MODEL_PRESETS: dict[str, list[str]] = {
+    "anthropic": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"],
+    "openai": ["gpt-5.1"],
+    "gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
+}
 _FEATURE_LABELS: dict[str, str] = {
     "stock_pick": "AIピック判定",
     "portfolio_signal": "ポートフォリオ売買判定",
@@ -94,11 +107,45 @@ _FEATURE_PROVIDER_ENV: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "trend_analyzer": ("LLM_PROVIDER_TREND_ANALYZER", "LLM_SHADOW_PROVIDERS_TREND_ANALYZER", "anthropic", ()),
 }
 
+# 機能×プロバイダごとのモデル上書き env 変数名（`backend/config.py` の `llm_model_*` と1対1対応）。
+_MODEL_OVERRIDE_ENV: dict[tuple[str, str], str] = {
+    ("stock_pick", "anthropic"): "LLM_MODEL_STOCK_PICK_ANTHROPIC",
+    ("stock_pick", "openai"): "LLM_MODEL_STOCK_PICK_OPENAI",
+    ("stock_pick", "gemini"): "LLM_MODEL_STOCK_PICK_GEMINI",
+    ("portfolio_signal", "anthropic"): "LLM_MODEL_PORTFOLIO_SIGNAL_ANTHROPIC",
+    ("portfolio_signal", "openai"): "LLM_MODEL_PORTFOLIO_SIGNAL_OPENAI",
+    ("portfolio_signal", "gemini"): "LLM_MODEL_PORTFOLIO_SIGNAL_GEMINI",
+    ("eod_review", "anthropic"): "LLM_MODEL_EOD_REVIEW_ANTHROPIC",
+    ("eod_review", "openai"): "LLM_MODEL_EOD_REVIEW_OPENAI",
+    ("eod_review", "gemini"): "LLM_MODEL_EOD_REVIEW_GEMINI",
+    ("trend_analyzer", "anthropic"): "LLM_MODEL_TREND_ANALYZER_ANTHROPIC",
+    ("trend_analyzer", "openai"): "LLM_MODEL_TREND_ANALYZER_OPENAI",
+    ("trend_analyzer", "gemini"): "LLM_MODEL_TREND_ANALYZER_GEMINI",
+}
+
+
+def _resolve_model(feature: str, provider: str) -> str:
+    """機能×プロバイダで実際に使われるモデル（上書き優先、無ければプロバイダ既定値）を返す."""
+    override = os.environ.get(_MODEL_OVERRIDE_ENV[(feature, provider)])
+    return override or _provider_default_model(provider)
+
+
+def _provider_default_model(provider: str) -> str:
+    """プロバイダの現在の既定モデル（.env 由来、未設定なら config.py のフィールド default）を返す."""
+    env_name, fallback = _PROVIDER_DEFAULT_MODEL_ENV[provider]
+    return os.environ.get(env_name) or fallback
+
 
 def get_llm_provider_options() -> list[dict[str, object]]:
-    """選択肢として提示する全プロバイダの一覧（APIキー設定状況つき）を返す."""
+    """選択肢として提示する全プロバイダの一覧（APIキー設定状況・既定モデル・プリセットつき）を返す."""
     return [
-        {"value": provider, "label": label, "configured": bool(os.environ.get(_PROVIDER_KEY_ENV[provider], ""))}
+        {
+            "value": provider,
+            "label": label,
+            "configured": bool(os.environ.get(_PROVIDER_KEY_ENV[provider], "")),
+            "default_model": _provider_default_model(provider),
+            "model_presets": list(_PROVIDER_MODEL_PRESETS[provider]),
+        }
         for provider, label in _PROVIDER_LABELS.items()
     ]
 
@@ -118,15 +165,25 @@ def get_llm_provider_settings() -> list[dict[str, object]]:
                 "label": _FEATURE_LABELS[feature],
                 "primary_provider": primary,
                 "shadow_providers": shadow,
+                "models": {provider: _resolve_model(feature, provider) for provider in _PROVIDER_LABELS},
             }
         )
     return rows
 
 
 def env_updates_for_llm_provider(
-    feature: str, *, primary_provider: str | None, shadow_providers: Sequence[str] | None
+    feature: str,
+    *,
+    primary_provider: str | None,
+    shadow_providers: Sequence[str] | None,
+    models: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """指定機能の更新差分を .env 変数名 → 値の dict にして返す（`update_env_keys` にそのまま渡せる）."""
+    """指定機能の更新差分を .env 変数名 → 値の dict にして返す（`update_env_keys` にそのまま渡せる）.
+
+    `models` は provider_id → 希望モデル文字列。プロバイダの既定モデルと同じ値を指定した場合も
+    明示的な上書きとして保存する（将来プロバイダの既定モデルを変更しても、この機能の挙動を
+    変えたくない、というのが自然な期待のため）。空文字を指定すると上書きを解除し既定へ戻す。
+    """
     if feature not in _FEATURE_PROVIDER_ENV:
         raise ValueError(f"未知の機能です: {feature}")
     primary_env, shadow_env, _default_primary, _default_shadow = _FEATURE_PROVIDER_ENV[feature]
@@ -135,6 +192,11 @@ def env_updates_for_llm_provider(
         updates[primary_env] = primary_provider
     if shadow_providers is not None:
         updates[shadow_env] = ",".join(shadow_providers)
+    if models is not None:
+        for provider, model in models.items():
+            if (feature, provider) not in _MODEL_OVERRIDE_ENV:
+                raise ValueError(f"未知のプロバイダです: {provider}")
+            updates[_MODEL_OVERRIDE_ENV[(feature, provider)]] = model
     return updates
 
 

@@ -14,10 +14,12 @@ class _FakeAnthropic:
     """`llm.provider.LLMProvider` 互換の AnthropicClient スタブ."""
 
     provider_id = "anthropic"
-    model_id = "test-model"
 
     def __init__(self, *, configured: bool) -> None:
         self.is_configured = configured
+
+    def model_for(self, feature: str) -> str:  # noqa: ARG002
+        return "test-model"
 
     async def propose_trends(self, *, prompt: str) -> dict[str, object]:  # noqa: ARG002
         return {"trends": []}

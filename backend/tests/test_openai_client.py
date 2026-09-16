@@ -80,6 +80,18 @@ def test_is_configured_reflects_key(client: OpenAIClient, monkeypatch: pytest.Mo
     assert client.is_configured is True
 
 
+def test_model_for_reflects_feature_override(client: OpenAIClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.llm import registry as reg
+
+    monkeypatch.setattr(
+        reg,
+        "settings",
+        reg.settings.model_copy(update={"openai_model": "gpt-5.1", "llm_model_stock_pick_openai": "gpt-5.1-mini"}),
+    )
+    assert client.model_for("stock_pick") == "gpt-5.1-mini"
+    assert client.model_for("portfolio_signal") == "gpt-5.1"
+
+
 async def test_propose_stock_pick_parses_structured_json(client: OpenAIClient, monkeypatch: pytest.MonkeyPatch) -> None:
     payload: dict[str, object] = {
         "should_include": True,

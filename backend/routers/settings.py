@@ -88,13 +88,19 @@ async def get_llm_providers() -> ApiResponse[LLMProviderSettingsResponse]:
     summary="1機能ぶんのLLMプロバイダ設定を更新（.envへ永続化。反映にはbackend/celeryの再起動が必要）",
 )
 async def update_llm_providers(req: LLMProviderUpdateRequest) -> ApiResponse[LLMProviderSettingsResponse]:
-    """指定機能の公式/シャドウプロバイダを更新する（`None` のフィールドは変更しない）."""
-    if req.primary_provider is None and req.shadow_providers is None:
+    """指定機能の公式/シャドウプロバイダ・使用モデルを更新する（`None` のフィールドは変更しない）."""
+    if req.primary_provider is None and req.shadow_providers is None and req.models is None:
         raise HTTPException(status_code=400, detail="更新する項目が指定されていません")
 
-    updates = config_store.env_updates_for_llm_provider(
-        req.feature, primary_provider=req.primary_provider, shadow_providers=req.shadow_providers
-    )
+    try:
+        updates = config_store.env_updates_for_llm_provider(
+            req.feature,
+            primary_provider=req.primary_provider,
+            shadow_providers=req.shadow_providers,
+            models={str(k): v for k, v in req.models.items()} if req.models is not None else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         config_store.update_env_keys(updates)
     except ValueError as exc:

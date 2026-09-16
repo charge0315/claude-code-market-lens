@@ -99,7 +99,7 @@ async def _record_one_shadow_signal(
     try:
         await insert_shadow(
             signal_id=signal_id,
-            challenger_version=f"{pid}:{provider.model_id}",
+            challenger_version=f"{pid}:{provider.model_for('portfolio_signal')}",
             action=action,
             entry=round(bracket.entry, 2) if action == "add" else None,
             stop=round(bracket.stop, 2),

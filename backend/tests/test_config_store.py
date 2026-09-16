@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from backend.services import config_store
+
+
+def _models(row: dict[str, object]) -> dict[str, str]:
+    return cast("dict[str, str]", row["models"])
 
 
 def test_mask_keeps_only_last_four_chars() -> None:
@@ -149,3 +154,59 @@ def test_env_updates_for_llm_provider_omits_none_fields() -> None:
 def test_env_updates_for_llm_provider_rejects_unknown_feature() -> None:
     with pytest.raises(ValueError, match="未知の機能"):
         config_store.env_updates_for_llm_provider("unknown", primary_provider="openai", shadow_providers=None)
+
+
+def test_get_llm_provider_options_includes_default_model_and_presets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.1-mini")
+
+    options = {o["value"]: o for o in config_store.get_llm_provider_options()}
+
+    assert options["anthropic"]["default_model"] == "claude-sonnet-5"  # config.py のフィールド default
+    assert options["openai"]["default_model"] == "gpt-5.1-mini"  # .env 上書きを反映
+    assert "claude-opus-5" in cast("list[str]", options["anthropic"]["model_presets"])
+
+
+def test_get_llm_provider_settings_models_fall_back_to_provider_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    for env_name in (
+        "LLM_MODEL_STOCK_PICK_ANTHROPIC",
+        "LLM_MODEL_STOCK_PICK_OPENAI",
+        "LLM_MODEL_STOCK_PICK_GEMINI",
+        "ANTHROPIC_MODEL",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+    rows = {row["feature"]: row for row in config_store.get_llm_provider_settings()}
+
+    assert _models(rows["stock_pick"])["anthropic"] == "claude-sonnet-5"
+
+
+def test_get_llm_provider_settings_models_reflect_feature_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("LLM_MODEL_STOCK_PICK_ANTHROPIC", "claude-opus-5")
+
+    rows = {row["feature"]: row for row in config_store.get_llm_provider_settings()}
+
+    assert _models(rows["stock_pick"])["anthropic"] == "claude-opus-5"
+    # 他機能は上書きされていないのでプロバイダ既定値のまま。
+    assert _models(rows["portfolio_signal"])["anthropic"] == "claude-sonnet-5"
+
+
+def test_env_updates_for_llm_provider_includes_model_overrides() -> None:
+    updates = config_store.env_updates_for_llm_provider(
+        "stock_pick",
+        primary_provider=None,
+        shadow_providers=None,
+        models={"anthropic": "claude-opus-5", "gemini": ""},
+    )
+    assert updates == {
+        "LLM_MODEL_STOCK_PICK_ANTHROPIC": "claude-opus-5",
+        "LLM_MODEL_STOCK_PICK_GEMINI": "",
+    }
+
+
+def test_env_updates_for_llm_provider_rejects_unknown_provider_in_models() -> None:
+    with pytest.raises(ValueError, match="未知のプロバイダ"):
+        config_store.env_updates_for_llm_provider(
+            "stock_pick", primary_provider=None, shadow_providers=None, models={"bogus": "x"}
+        )
