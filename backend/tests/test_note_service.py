@@ -11,12 +11,19 @@ from backend.services.ledger import prediction_ledger as pl
 from backend.services.notes import note_generator as gen
 from backend.services.notes import note_service as svc
 
+_LONG_BODY = (
+    "# 本日の相場概況\n本文です。国内主要指数は堅調に推移し、値がさ株を中心に買いが優勢な展開となりました。"
+    "海外市場の流れを引き継ぎ、投資家心理は総じてリスクオンの姿勢が強く、出来高も高水準で推移しています。"
+    "個別銘柄では業績上振れ期待の高い企業に資金が集中し、テクニカル指標も強気シグナルを示すものが目立ちました。"
+    "引き続き市況の変化には注意しつつ、堅調な展開が続くか見極めていく必要があります。今後の値動きにも注目です。"
+)
+
 
 class _FakeLLM:
     provider_id = "anthropic"
     is_configured = True
 
-    def __init__(self, title: str, body: str) -> None:
+    def __init__(self, title: str, body: str = _LONG_BODY) -> None:
         self._title = title
         self._body = body
 
@@ -59,7 +66,7 @@ async def test_generate_today_reuses_existing_without_force(migrated_db: Path, m
     today = today_jst()
     await pl.insert_pick(_entry("p1", "mid_term", "7203", issued_at=f"{today}T08:50:00+09:00"))
 
-    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("1回目", "本文1"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("1回目"))
     first = await svc.generate_today()
 
     # 2回目は force=False のため LLM を呼ばないはず（呼ばれたら例外で気付く）。
@@ -84,7 +91,7 @@ async def test_generate_today_source_pick_ids_track_todays_official_picks(
     today = today_jst()
     await pl.insert_pick(_entry("p-mid", "mid_term", "7203", issued_at=f"{today}T08:50:00+09:00"))
     await pl.insert_pick(_entry("p-short", "short_term", "9984", issued_at=f"{today}T08:52:00+09:00"))
-    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t"))
 
     note = await svc.generate_today()
 
@@ -105,7 +112,7 @@ async def test_regenerate_uses_original_note_date_not_today(migrated_db: Path, m
     )
     await pl.insert_pick(_entry("p1", "mid_term", "7203", issued_at="2026-09-10T08:50:00+09:00"))
 
-    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("旧日付・再生成後", "本文2"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("旧日付・再生成後"))
     regenerated = await svc.regenerate(str(old_row["note_id"]))
 
     assert regenerated is not None
@@ -116,7 +123,7 @@ async def test_regenerate_uses_original_note_date_not_today(migrated_db: Path, m
 
 
 async def test_approve_then_mark_published_flow(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t"))
     note = await svc.generate_today()
 
     approved = await svc.approve(note.note_id)
@@ -131,7 +138,7 @@ async def test_approve_then_mark_published_flow(migrated_db: Path, monkeypatch: 
 
 
 async def test_reject_sets_status(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t"))
     note = await svc.generate_today()
 
     rejected = await svc.reject(note.note_id)

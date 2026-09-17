@@ -11,10 +11,13 @@ import json
 from datetime import datetime
 
 from backend.models.note import DailyNote
+from backend.services.data.market_indices_service import get_market_snapshot
 from backend.services.db import note_db
 from backend.services.jst_time import JST, today_jst
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.notes.note_generator import generate, has_price_mention
+from backend.services.picks.pick_analysis import to_pick_analysis
+from backend.services.vault.news_digest_service import get_market_news_digest, render_news_digest_block
 
 
 def _note_from_row(row: dict[str, object]) -> DailyNote:
@@ -42,7 +45,13 @@ async def _generate_for_date(note_date: str, *, force: bool) -> DailyNote:
 
     mid_term = await pl.list_picks(horizon_type="mid_term", issued_from=f"{note_date}T00:00:00", limit=50)
     short_term = await pl.list_picks(horizon_type="short_term", issued_from=f"{note_date}T00:00:00", limit=50)
-    title, body, model_version = await generate(note_date, mid_term, short_term)
+    mid_term_analysis = [await to_pick_analysis(p) for p in mid_term]
+    short_term_analysis = [await to_pick_analysis(p) for p in short_term]
+    market = await get_market_snapshot()
+    news = render_news_digest_block(await get_market_news_digest())
+    title, body, model_version = await generate(
+        note_date, mid_term_analysis, short_term_analysis, market=market, news_block=news
+    )
     source_pick_ids = [p.pick_id for p in (*mid_term, *short_term)]
 
     row = await note_db.upsert_note(
@@ -64,6 +73,12 @@ async def generate_today(*, force: bool = False) -> DailyNote:
 async def get_today() -> DailyNote | None:
     """本日分のドラフトを返す（無ければ None、まだ生成タスクが走っていない場合等）."""
     row = await note_db.get_note_by_date(today_jst())
+    return _note_from_row(row) if row is not None else None
+
+
+async def get_by_id(note_id: str) -> DailyNote | None:
+    """`note_id` でドラフトを返す（無ければ None）."""
+    row = await note_db.get_note_by_id(note_id)
     return _note_from_row(row) if row is not None else None
 
 

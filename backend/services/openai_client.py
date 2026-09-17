@@ -52,6 +52,9 @@ JsonDict = dict[str, object]
 
 _MAX_TOKENS = 1024
 _TREND_MAX_TOKENS = 4096
+# note下書き（🆕 テンプレート準拠の多章立て記事、ユーザー指示）は _TREND_MAX_TOKENS では
+# 本文が途中で切れ body_markdown が空になる事象が実測で発生したため、大きめに確保する。
+_NOTE_MAX_TOKENS = 8192
 
 _STOCK_PICK_STRICT_SCHEMA: JsonDict = _strict(STOCK_PICK_SCHEMA)
 _PORTFOLIO_SIGNAL_STRICT_SCHEMA: JsonDict = _strict(PORTFOLIO_SIGNAL_SCHEMA)
@@ -206,7 +209,7 @@ class OpenAIClient:
             model=resolve_model("note_publish", "openai"),
             schema_name="submit_daily_note",
             schema=_NOTE_STRICT_SCHEMA,
-            max_tokens=_TREND_MAX_TOKENS,
+            max_tokens=_NOTE_MAX_TOKENS,
             prompt=prompt,
         )
 

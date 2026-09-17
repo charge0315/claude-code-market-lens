@@ -33,6 +33,7 @@ from backend.routers.registry import router as registry_router  # noqa: E402
 from backend.routers.settings import router as settings_router  # noqa: E402
 from backend.routers.stock import router as stock_router  # noqa: E402
 from backend.routers.trend import router as trend_router  # noqa: E402
+from backend.routers.vault_reports import router as vault_reports_router  # noqa: E402
 from backend.services.db.database import dispose_db, init_db  # noqa: E402
 from backend.services.security_headers import register_security_headers  # noqa: E402
 from backend.services.task_registry import close_redis_client  # noqa: E402
@@ -90,6 +91,7 @@ app.include_router(stock_router)
 app.include_router(market_router)
 app.include_router(settings_router)
 app.include_router(notes_router)
+app.include_router(vault_reports_router)
 
 
 @app.get("/api/health", response_model=LivenessResponse, tags=["health"], summary="Liveness check")

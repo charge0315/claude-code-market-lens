@@ -50,3 +50,11 @@ class NoteMarkPublishedRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     published_url: str
+
+
+class NoteExportResult(BaseModel):
+    """`POST /api/notes/{note_id}/export` の応答（保存先ディレクトリのみ）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    note_dir: str

@@ -11,8 +11,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from backend.models.common import ApiResponse
-from backend.models.note import DailyNote, NoteMarkPublishedRequest, NoteUpdateRequest
+from backend.models.note import DailyNote, NoteExportResult, NoteMarkPublishedRequest, NoteUpdateRequest
 from backend.services.notes import note_service
+from backend.services.notes.note_export import export_note_files
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -69,6 +70,23 @@ async def regenerate(note_id: str) -> ApiResponse[DailyNote]:
     if note is None:
         raise HTTPException(status_code=404, detail="該当するドラフトが見つかりません")
     return ApiResponse.ok(note)
+
+
+@router.post(
+    "/{note_id}/export",
+    response_model=ApiResponse[NoteExportResult],
+    summary="Obsidian(.md)・SingleHTMLへ書き出し",
+)
+async def export(note_id: str) -> ApiResponse[NoteExportResult]:
+    """現在のドラフト内容から Obsidian(.md)・SingleHTML を再生成し、Vaultへ保存する.
+
+    編集・承認後に最新内容を反映させたい場合の手動再エクスポート用（自動生成時にも実行される）。
+    """
+    note = await note_service.get_by_id(note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="該当するドラフトが見つかりません")
+    note_dir = await export_note_files(note)
+    return ApiResponse.ok(NoteExportResult(note_dir=str(note_dir)))
 
 
 @router.post("/{note_id}/mark-published", response_model=ApiResponse[DailyNote], summary="投稿完了を記録")

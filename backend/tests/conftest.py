@@ -130,6 +130,7 @@ def vault_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> VaultDirs:
     """
     from backend import config
     from backend.services.vault import brand_notes_service, daily_note_service, news_digest_service
+    from backend.services.vault_report import vault_writer
 
     root = tmp_path / "vault"
     tickers = root / "Tickers"
@@ -140,7 +141,7 @@ def vault_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> VaultDirs:
     new_settings = config.settings.model_copy(
         update={"vault_root": str(root), "brand_notes_dir": "", "daily_notes_dir": ""}
     )
-    for mod in (config, brand_notes_service, news_digest_service, daily_note_service):
+    for mod in (config, brand_notes_service, news_digest_service, daily_note_service, vault_writer):
         monkeypatch.setattr(mod, "settings", new_settings)
     brand_notes_service.clear_cache()
     news_digest_service.clear_cache()

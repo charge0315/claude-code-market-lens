@@ -12,7 +12,25 @@ from httpx import ASGITransport, AsyncClient
 from backend.models.pick import LedgerEntry, SubScores
 from backend.services.jst_time import today_jst
 from backend.services.ledger import prediction_ledger as pl
+from backend.services.notes import note_export as ne
 from backend.services.notes import note_generator as gen
+from backend.tests.conftest import VaultDirs
+
+
+@pytest.fixture(autouse=True)
+def _fake_price_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake(_symbol: str, _before_date: str) -> list[tuple[str, float]]:
+        return [("2026-09-15", 100.0), ("2026-09-16", 110.0)]
+
+    monkeypatch.setattr(ne, "fetch_price_history_before", _fake)
+
+
+_LONG_BODY = (
+    "# 本日の相場概況\n本文です。国内主要指数は堅調に推移し、値がさ株を中心に買いが優勢な展開となりました。"
+    "海外市場の流れを引き継ぎ、投資家心理は総じてリスクオンの姿勢が強く、出来高も高水準で推移しています。"
+    "個別銘柄では業績上振れ期待の高い企業に資金が集中し、テクニカル指標も強気シグナルを示すものが目立ちました。"
+    "引き続き市況の変化には注意しつつ、堅調な展開が続くか見極めていく必要があります。今後の値動きにも注目です。"
+)
 
 
 class _FakeLLM:
@@ -23,7 +41,7 @@ class _FakeLLM:
         return "test-model"
 
     async def propose_daily_note(self, *, prompt: str) -> dict[str, object]:  # noqa: ARG002
-        return {"title": "テスト記事", "body_markdown": "本文です"}
+        return {"title": "テスト記事", "body_markdown": _LONG_BODY}
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +50,7 @@ def _fake_llm(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest_asyncio.fixture
-async def client(migrated_db: Path) -> AsyncIterator[AsyncClient]:
+async def client(migrated_db: Path, vault_dirs: VaultDirs) -> AsyncIterator[AsyncClient]:
     # 素材となる本日の公式ピックが無いと note_generator が「該当なし」フォールバックに
     # 入ってしまうため、各テストの前提として1件だけ投入しておく。
     await pl.insert_pick(
@@ -124,3 +142,23 @@ async def test_list_recent_returns_generated_notes(client: AsyncClient) -> None:
 
     assert res.status_code == 200
     assert len(res.json()["data"]) == 1
+
+
+async def test_export_writes_obsidian_and_single_html(client: AsyncClient, vault_dirs: VaultDirs) -> None:
+    generated = (await client.post("/api/notes/generate")).json()["data"]
+    note_id = generated["note_id"]
+
+    res = await client.post(f"/api/notes/{note_id}/export")
+
+    assert res.status_code == 200
+    note_dir_str = res.json()["data"]["note_dir"]
+    expected_dir = vault_dirs.daily / "AlphaForge" / today_jst()
+    assert Path(note_dir_str) == expected_dir
+    assert (expected_dir / "note.md").is_file()
+    assert (expected_dir / "note_single.html").is_file()
+
+
+async def test_export_missing_note_returns_404(client: AsyncClient) -> None:
+    res = await client.post("/api/notes/does-not-exist/export")
+
+    assert res.status_code == 404

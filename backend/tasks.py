@@ -189,15 +189,40 @@ def run_transformer_training_batch_task() -> dict[str, object]:
 
 @celery_app.task(name="backend.tasks.run_daily_note_draft_task")
 def run_daily_note_draft_task() -> dict[str, object]:
-    """本日のピック生成完了後、有料note配信用の下書きを自動生成する（🆕 JST 08:15）.
+    """本日のピック生成完了後、有料note配信用の下書きを自動生成する（🆕 JST 08:05）.
 
-    生成のみ行い、配信（note.comへの投稿）は行わない — 人間がレビュー・承認した上で
-    手動投稿する半自動フロー（`services/notes/note_service.py` docstring 参照）。
+    生成後、Obsidian(.md)・SingleHTML への書き出しも行う（`Daily/AlphaForge/<日付>/`、
+    ユーザー指示: 毎朝Obsidianで内容を確認し note.com へ手動で貼り付ける運用のため）。
+    note.comへの投稿そのものは公式APIが無いため人間が行う（半自動フロー、
+    `services/notes/note_service.py` docstring 参照）。
     """
+    from backend.services.notes.note_export import export_note_files
     from backend.services.notes.note_service import generate_today
 
-    note = asyncio.run(generate_today())
-    return {"note_id": note.note_id, "status": note.status, "has_price_mention_warning": note.has_price_mention_warning}
+    async def _run() -> dict[str, object]:
+        note = await generate_today()
+        note_dir = await export_note_files(note)
+        return {
+            "note_id": note.note_id,
+            "status": note.status,
+            "has_price_mention_warning": note.has_price_mention_warning,
+            "note_dir": str(note_dir),
+        }
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(name="backend.tasks.generate_vault_report_task")
+def generate_vault_report_task() -> dict[str, object]:
+    """本日のAIピックの詳細アーカイブレポートをVaultへ保存する（🆕 JST 08:25）.
+
+    note下書き生成（JST 08:15）の後に走らせ、同じ台帳データから個人用アーカイブを作る。
+    `Daily/AlphaForge/<日付>/` はMarket Lens出力（`Daily/YYYY-MM-DD.md`）と衝突しない専用パス。
+    """
+    from backend.services.vault_report.report_service import generate_report_for_date
+
+    result = asyncio.run(generate_report_for_date())
+    return result.model_dump()
 
 
 @celery_app.task(name="backend.tasks.run_eod_review_task")

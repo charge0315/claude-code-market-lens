@@ -2666,6 +2666,444 @@
         }
       }
     },
+    "/api/notes/today": {
+      "get": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "本日のnoteドラフト取得",
+        "description": "本日分のドラフトを返す（beatタスクがまだ走っていなければ None）.",
+        "operationId": "get_today_api_notes_today_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_DailyNote__NoneType__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes": {
+      "get": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "noteドラフト一覧（直近）",
+        "description": "直近 N 件を新しい順で返す.",
+        "operationId": "list_recent_api_notes_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_DailyNote__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/generate": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "本日分のドラフトを手動生成",
+        "description": "本日分を生成する（既にあれば再利用、`force=True` で再生成）.",
+        "operationId": "generate_api_notes_generate_post",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}": {
+      "patch": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "ドラフト本文を編集",
+        "description": "タイトル・本文を上書きする（人間のレビュー編集）.",
+        "operationId": "update_api_notes__note_id__patch",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}/approve": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "ドラフトを承認",
+        "description": "承認する（note.comへの投稿はこの後、人間が手動で行う）.",
+        "operationId": "approve_api_notes__note_id__approve_post",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}/reject": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "ドラフトを却下",
+        "description": "却下する（この日は配信しない）.",
+        "operationId": "reject_api_notes__note_id__reject_post",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}/regenerate": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "ドラフトを再生成",
+        "description": "既存ドラフトと同じ日付で作り直す（承認/投稿記録はリセットされる）.",
+        "operationId": "regenerate_api_notes__note_id__regenerate_post",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}/export": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "Obsidian(.md)・SingleHTMLへ書き出し",
+        "description": "現在のドラフト内容から Obsidian(.md)・SingleHTML を再生成し、Vaultへ保存する.\n\n編集・承認後に最新内容を反映させたい場合の手動再エクスポート用（自動生成時にも実行される）。",
+        "operationId": "export_api_notes__note_id__export_post",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NoteExportResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/{note_id}/mark-published": {
+      "post": {
+        "tags": [
+          "notes"
+        ],
+        "summary": "投稿完了を記録",
+        "description": "人間が note.com への投稿を終えた後、投稿URLを記録する.",
+        "operationId": "mark_published_api_notes__note_id__mark_published_post",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteMarkPublishedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyNote_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vault-reports/generate": {
+      "post": {
+        "tags": [
+          "vault-reports"
+        ],
+        "summary": "Vaultアーカイブレポートを生成",
+        "description": "指定日（省略時はJST本日）のレポートを生成し、Vaultへ保存する.",
+        "operationId": "generate_api_vault_reports_generate_post",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VaultReportResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2871,6 +3309,50 @@
         ],
         "title": "ApiResponse[ApiKeysResponse]"
       },
+      "ApiResponse_DailyNote_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyNote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[DailyNote]"
+      },
       "ApiResponse_EodReview_": {
         "properties": {
           "success": {
@@ -3002,6 +3484,50 @@
           "success"
         ],
         "title": "ApiResponse[MarketSnapshot]"
+      },
+      "ApiResponse_NoteExportResult_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoteExportResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[NoteExportResult]"
       },
       "ApiResponse_Notification_": {
         "properties": {
@@ -3311,6 +3837,50 @@
         ],
         "title": "ApiResponse[TrendSnapshot]"
       },
+      "ApiResponse_Union_DailyNote__NoneType__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyNote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[Union[DailyNote, NoneType]]"
+      },
       "ApiResponse_Union_EodReview__NoneType__": {
         "properties": {
           "success": {
@@ -3533,6 +4103,50 @@
         ],
         "title": "ApiResponse[Union[dict, NoneType]]"
       },
+      "ApiResponse_VaultReportResult_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VaultReportResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[VaultReportResult]"
+      },
       "ApiResponse_dict_": {
         "properties": {
           "success": {
@@ -3578,6 +4192,54 @@
           "success"
         ],
         "title": "ApiResponse[dict]"
+      },
+      "ApiResponse_list_DailyNote__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DailyNote"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[DailyNote]]"
       },
       "ApiResponse_list_ModelCoverage__": {
         "properties": {
@@ -4154,6 +4816,102 @@
         "title": "CorrelationWarning",
         "description": "値動きが似ている（分散効果が薄い）銘柄ペアの警告."
       },
+      "DailyNote": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "note_date": {
+            "type": "string",
+            "title": "Note Date"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved",
+              "rejected",
+              "published"
+            ],
+            "title": "Status"
+          },
+          "source_pick_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Pick Ids"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "has_price_mention_warning": {
+            "type": "boolean",
+            "title": "Has Price Mention Warning"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "published_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "note_date",
+          "title",
+          "body_markdown",
+          "status",
+          "source_pick_ids",
+          "model_version",
+          "has_price_mention_warning",
+          "generated_at"
+        ],
+        "title": "DailyNote",
+        "description": "1 日 1 件の note ドラフト（`daily_notes` テーブルに対応、`note_date` で一意）."
+      },
       "EodReview": {
         "properties": {
           "review_date": {
@@ -4627,6 +5385,53 @@
         ],
         "title": "ModelCoverage",
         "description": "銘柄別モデル（P9/P14）の学習カバレッジ（🆕 P15）— モデルタイプ別に何%学習済みか.\n\n`yfinance_count`/`jquants_count`（🆕 P17）は、銘柄ごとの最新の学習成功試行が\n採用したデータソースの内訳（`training_batch_runs.data_source`）。\n`last_trained_at`（🆕 P17）はそのモデルタイプで最後に学習が成功した日時。"
+      },
+      "NoteExportResult": {
+        "properties": {
+          "note_dir": {
+            "type": "string",
+            "title": "Note Dir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_dir"
+        ],
+        "title": "NoteExportResult",
+        "description": "`POST /api/notes/{note_id}/export` の応答（保存先ディレクトリのみ）."
+      },
+      "NoteMarkPublishedRequest": {
+        "properties": {
+          "published_url": {
+            "type": "string",
+            "title": "Published Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published_url"
+        ],
+        "title": "NoteMarkPublishedRequest",
+        "description": "`POST /api/notes/{note_id}/mark-published` のリクエストボディ."
+      },
+      "NoteUpdateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "body_markdown"
+        ],
+        "title": "NoteUpdateRequest",
+        "description": "`PATCH /api/notes/{note_id}` のリクエストボディ（本文の手直し）."
       },
       "Notification": {
         "properties": {
@@ -6479,6 +7284,40 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VaultReportResult": {
+        "properties": {
+          "report_date": {
+            "type": "string",
+            "title": "Report Date"
+          },
+          "report_dir": {
+            "type": "string",
+            "title": "Report Dir"
+          },
+          "mid_term_count": {
+            "type": "integer",
+            "title": "Mid Term Count"
+          },
+          "short_term_count": {
+            "type": "integer",
+            "title": "Short Term Count"
+          },
+          "chart_count": {
+            "type": "integer",
+            "title": "Chart Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_date",
+          "report_dir",
+          "mid_term_count",
+          "short_term_count",
+          "chart_count"
+        ],
+        "title": "VaultReportResult",
+        "description": "レポート生成結果（保存先パスと件数のみ。本文はVault側のファイルを直接参照する）."
       }
     }
   }

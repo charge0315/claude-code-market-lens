@@ -61,6 +61,9 @@ JsonDict = dict[str, object]
 _MAX_TOKENS = 1024
 _CHAT_MAX_TOKENS = 4096
 _TREND_MAX_TOKENS = 4096
+# note下書き（🆕 テンプレート準拠の多章立て記事、ユーザー指示）は _TREND_MAX_TOKENS では
+# 本文が途中で切れ body_markdown が空になる事象が実測で発生したため、大きめに確保する。
+_NOTE_MAX_TOKENS = 8192
 
 
 class AnthropicClient:
@@ -198,7 +201,7 @@ class AnthropicClient:
             feature="note_publish",
             model=resolve_model("note_publish", "anthropic"),
             tool_schema=_NOTE_TOOL_SCHEMA,
-            max_tokens=_TREND_MAX_TOKENS,
+            max_tokens=_NOTE_MAX_TOKENS,
             prompt=prompt,
         )
 
