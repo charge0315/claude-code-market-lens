@@ -33,7 +33,7 @@ def _note(**overrides: object) -> DailyNote:
 def test_build_obsidian_note_has_stockfornote_frontmatter_schema() -> None:
     note = _note()
 
-    md = ne.build_obsidian_note(note)
+    md, table_images = ne.build_obsidian_note(note)
 
     assert md.startswith("---\n")
     frontmatter_text = md.split("---\n")[1]
@@ -45,6 +45,17 @@ def test_build_obsidian_note_has_stockfornote_frontmatter_schema() -> None:
     assert frontmatter["status"] == "draft"
     assert "note/stock" in frontmatter["tags"]
     assert note.body_markdown in md
+    assert table_images == {}
+
+
+def test_build_obsidian_note_replaces_table_with_svg_embed() -> None:
+    note = _note(body_markdown="解説です。\n\n| 銘柄コード | 方向性 |\n|---|---|\n| 7203 | 強気 |")
+
+    md, table_images = ne.build_obsidian_note(note)
+
+    assert "| 銘柄コード |" not in md
+    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.svg]]" in md
+    assert set(table_images.keys()) == {"table_1.svg"}
 
 
 def test_build_single_html_embeds_charts_inline() -> None:
@@ -74,6 +85,20 @@ def test_write_note_files_saves_to_alphaforge_marker_dir(vault_dirs: VaultDirs) 
     assert note_dir == vault_dirs.daily / "AlphaForge" / "2026-09-17"
     assert (note_dir / "note.md").read_text(encoding="utf-8") == "---\nfoo: bar\n---\nbody"
     assert (note_dir / "note_single.html").read_text(encoding="utf-8") == "<html>x</html>"
+    assert not (note_dir / "tables").exists()
+
+
+def test_write_note_files_saves_table_images_when_present(vault_dirs: VaultDirs) -> None:
+    note = _note()
+
+    note_dir = ne.write_note_files(
+        note,
+        obsidian_md="body",
+        single_html="<html>x</html>",
+        table_images={"table_1.svg": "<svg>x</svg>"},
+    )
+
+    assert (note_dir / "tables" / "table_1.svg").read_text(encoding="utf-8") == "<svg>x</svg>"
 
 
 def _entry(pick_id: str, symbol: str, *, issued_at: str) -> LedgerEntry:
@@ -127,3 +152,19 @@ async def test_export_note_files_writes_md_and_html_without_three_values(
     assert "1050" not in md  # target
     assert "1002" not in html
     assert "<svg" in html  # チャートが埋め込まれている
+
+
+async def test_export_note_files_renders_table_as_svg_image(migrated_db: Path, vault_dirs: VaultDirs) -> None:
+    await pl.insert_pick(_entry("p1", "7203", issued_at="2026-09-17T08:50:00+09:00"))
+    note = _note(
+        source_pick_ids=["p1"],
+        body_markdown="解説です。\n\n| 銘柄コード | 方向性 |\n|---|---|\n| 7203 | 強気 |",
+    )
+
+    note_dir = await ne.export_note_files(note)
+
+    md = (note_dir / "note.md").read_text(encoding="utf-8")
+    assert "| 銘柄コード |" not in md
+    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.svg]]" in md
+    table_svg = (note_dir / "tables" / "table_1.svg").read_text(encoding="utf-8")
+    assert "7203" in table_svg

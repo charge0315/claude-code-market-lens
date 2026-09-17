@@ -20,6 +20,7 @@ from backend.models.note import DailyNote
 from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.notes.markdown_to_html import markdown_to_html
+from backend.services.notes.table_image import extract_and_render_tables
 from backend.services.vault_report.chart_svg import render_chart_svg
 from backend.services.vault_report.price_history import fetch_price_history_before
 from backend.services.vault_report.vault_writer import report_dir_for_date
@@ -45,8 +46,16 @@ def _extract_summary(body_markdown: str, *, max_len: int = 120) -> str:
     return ""
 
 
-def build_obsidian_note(note: DailyNote) -> str:
-    """`StockForNote.md` のfrontmatterスキーマでObsidianノート全文を組み立てる."""
+def build_obsidian_note(note: DailyNote) -> tuple[str, dict[str, str]]:
+    """`StockForNote.md` のfrontmatterスキーマでObsidianノート全文を組み立てる.
+
+    本文中のMarkdown表はnote.com・Obsidianいずれのリッチペーストでも正しく解釈されない
+    （実機確認済み）ため、SVG画像に変換し `![[.../table_N.svg]]` 埋め込みへ差し替える
+    （ユーザー指示: Obsidianで表示すればそのまま画像として貼り付けられる形にする）。
+    戻り値は (本文, {ファイル名: SVG文字列}) — SVGは呼び出し元が `tables/` へ書き込む。
+    """
+    embed_dir = f"Daily/AlphaForge/{note.note_date}/tables"
+    body_with_tables, table_images = extract_and_render_tables(note.body_markdown, embed_dir=embed_dir)
     now = datetime.now(JST).isoformat(timespec="seconds")
     frontmatter = {
         "title": note.title,
@@ -61,7 +70,8 @@ def build_obsidian_note(note: DailyNote) -> str:
         "summary": _extract_summary(note.body_markdown),
     }
     yaml_block = yaml.dump(frontmatter, allow_unicode=True, sort_keys=False, default_flow_style=False)
-    return f"---\n{yaml_block}---\n\n# {note.title}\n\n{note.body_markdown}\n"
+    md = f"---\n{yaml_block}---\n\n# {note.title}\n\n{body_with_tables}\n"
+    return md, table_images
 
 
 def build_single_html(note: DailyNote, charts: dict[str, str]) -> str:
@@ -99,12 +109,19 @@ svg {{ max-width: 100%; height: auto; border-radius: 8px; }}
 """
 
 
-def write_note_files(note: DailyNote, *, obsidian_md: str, single_html: str) -> Path:
-    """`Daily/AlphaForge/<日付>/note.md` と `note_single.html` を書き込む."""
+def write_note_files(
+    note: DailyNote, *, obsidian_md: str, single_html: str, table_images: dict[str, str] | None = None
+) -> Path:
+    """`Daily/AlphaForge/<日付>/note.md`・`note_single.html`・（あれば）`tables/*.svg` を書き込む."""
     note_dir = report_dir_for_date(note.note_date)
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "note.md").write_text(obsidian_md, encoding="utf-8")
     (note_dir / "note_single.html").write_text(single_html, encoding="utf-8")
+    if table_images:
+        tables_dir = note_dir / "tables"
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        for filename, svg in table_images.items():
+            (tables_dir / filename).write_text(svg, encoding="utf-8")
     return note_dir
 
 
@@ -128,6 +145,6 @@ async def export_note_files(note: DailyNote) -> Path:
         if svg is not None:
             charts[p.symbol] = svg
 
-    obsidian_md = build_obsidian_note(note)
+    obsidian_md, table_images = build_obsidian_note(note)
     single_html = build_single_html(note, charts)
-    return write_note_files(note, obsidian_md=obsidian_md, single_html=single_html)
+    return write_note_files(note, obsidian_md=obsidian_md, single_html=single_html, table_images=table_images)
