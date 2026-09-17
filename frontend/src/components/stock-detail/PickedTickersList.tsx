@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { fetchPicks, fetchShadowPicks, type PickSummary, type ShadowPickSummary } from '@/lib/api/picks';
 import { fetchPortfolio } from '@/lib/api/portfolio';
+import { challengerProviderLabel, useOfficialProviderLabel } from '@/lib/llmProviderLabels';
 import { todayJst } from '@/lib/jstDate';
 import './stock-detail.css';
 
@@ -19,6 +20,8 @@ interface TickerEntry {
   symbol: string;
   companyName: string | null;
   engine: Engine;
+  // engine === 'shadow' の場合のみ設定（バッジのモデル名表示用、"<provider>:<model>" 形式）。
+  challengerVersion?: string;
 }
 
 function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): T[] {
@@ -33,6 +36,7 @@ function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): 
 export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string | null }): ReactNode {
   const [entries, setEntries] = useState<TickerEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const officialLabel = useOfficialProviderLabel('stock_pick');
 
   useEffect(() => {
     const today = todayJst();
@@ -48,7 +52,12 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
           (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'official' }),
         );
         const shadow = dedupeBySymbolKeepingLatest<ShadowPickSummary>([...shadowMid, ...shadowShort]).map(
-          (p): TickerEntry => ({ symbol: p.symbol, companyName: p.company_name, engine: 'shadow' }),
+          (p): TickerEntry => ({
+            symbol: p.symbol,
+            companyName: p.company_name,
+            engine: 'shadow',
+            challengerVersion: p.challenger_version,
+          }),
         );
         // 当日ピック済み（公式/シャドウどちらか）の銘柄は保有欄で重複表示しない。
         const pickedSymbols = new Set([...official, ...shadow].map((e) => e.symbol));
@@ -73,7 +82,11 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
             aria-current={e.symbol === selectedSymbol ? 'true' : undefined}
           >
             <span className="picked-ticker-engine-badge">
-              {e.engine === 'official' ? '公式' : e.engine === 'shadow' ? 'シャドウ' : '保有'}
+              {e.engine === 'official'
+                ? officialLabel
+                : e.engine === 'shadow'
+                  ? challengerProviderLabel(e.challengerVersion ?? '')
+                  : '保有'}
             </span>
             {e.symbol}
             {e.companyName && `（${e.companyName}）`}

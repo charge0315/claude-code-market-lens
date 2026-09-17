@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { fetchPicks, fetchShadowPicks, type PickSummary, type ShadowPickSummary } from '@/lib/api/picks';
+import { challengerProviderLabel, useOfficialProviderLabel } from '@/lib/llmProviderLabels';
 import { todayJst } from '@/lib/jstDate';
 import './portfolio.css';
 
@@ -15,6 +16,8 @@ export interface AiPickOption {
   companyName: string | null;
   engine: AiPickEngine;
   entry: number;
+  // engine === 'shadow' の場合のみ設定（バッジのモデル名表示用、"<provider>:<model>" 形式）。
+  challengerVersion?: string;
 }
 
 function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): T[] {
@@ -28,6 +31,7 @@ function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): 
 export function AiPickSelector({ onSelect }: { onSelect: (option: AiPickOption) => void }): ReactNode {
   const [options, setOptions] = useState<AiPickOption[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const officialLabel = useOfficialProviderLabel('stock_pick');
 
   useEffect(() => {
     const date = todayJst();
@@ -42,7 +46,13 @@ export function AiPickSelector({ onSelect }: { onSelect: (option: AiPickOption) 
           (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'official', entry: p.entry }),
         );
         const shadow = dedupeBySymbolKeepingLatest<ShadowPickSummary>([...shadowMid, ...shadowShort]).map(
-          (p): AiPickOption => ({ symbol: p.symbol, companyName: p.company_name, engine: 'shadow', entry: p.entry }),
+          (p): AiPickOption => ({
+            symbol: p.symbol,
+            companyName: p.company_name,
+            engine: 'shadow',
+            entry: p.entry,
+            challengerVersion: p.challenger_version,
+          }),
         );
         setOptions([...official, ...shadow]);
       })
@@ -59,7 +69,9 @@ export function AiPickSelector({ onSelect }: { onSelect: (option: AiPickOption) 
           {options.map((o) => (
             <li key={`${o.engine}-${o.symbol}`}>
               <button type="button" onClick={() => onSelect(o)}>
-                <span className="ai-pick-selector-badge">{o.engine === 'official' ? '公式' : 'シャドウ'}</span>
+                <span className="ai-pick-selector-badge">
+                  {o.engine === 'official' ? officialLabel : challengerProviderLabel(o.challengerVersion ?? '')}
+                </span>
                 <span>
                   {o.symbol}
                   {o.companyName && `（${o.companyName}）`}

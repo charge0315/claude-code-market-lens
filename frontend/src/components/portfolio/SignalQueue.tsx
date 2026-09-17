@@ -9,7 +9,7 @@ import {
   type PortfolioSignal,
   type PortfolioSignalStatus,
 } from '@/lib/api/portfolio';
-import { challengerProviderLabel } from '@/lib/llmProviderLabels';
+import { challengerProviderLabel, useOfficialProviderLabel } from '@/lib/llmProviderLabels';
 import './portfolio.css';
 
 // AI 売買タイミング判定の承認キュー（HITL）。承認/却下/実約定報告はすべて人間が行う
@@ -114,6 +114,7 @@ export function SignalQueue(): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fillingId, setFillingId] = useState<string | null>(null);
+  const officialLabel = useOfficialProviderLabel('portfolio_signal');
 
   const load = useCallback((status: PortfolioSignalStatus | 'all') => {
     fetchSignals(status === 'all' ? undefined : { status })
@@ -167,7 +168,7 @@ export function SignalQueue(): ReactNode {
             <li key={signal.signal_id} className="signal-card">
               <div className="signal-card-header">
                 <span className="signal-card-symbol">{signal.symbol}</span>
-                <span className="signal-card-engine-badge">公式判定</span>
+                <span className="signal-card-engine-badge">{officialLabel}判定</span>
                 <span className={`signal-card-action signal-card-action--${signal.action}`}>
                   {ACTION_LABELS[signal.action]}
                 </span>

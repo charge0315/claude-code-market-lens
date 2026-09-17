@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { PicksBoard } from '@/components/dashboard/PicksBoard';
 import { ShadowPicksBoard } from '@/components/dashboard/ShadowPicksBoard';
+import { useOfficialProviderLabel, useShadowProviderLabels } from '@/lib/llmProviderLabels';
 import './dashboard.css';
 
 // 公式パイプラインとシャドウ（challenger LLM、複数併用可）のピックを混在させず、
@@ -12,6 +13,9 @@ type Engine = 'official' | 'shadow';
 
 export function AiPicksSection(): ReactNode {
   const [engine, setEngine] = useState<Engine>('official');
+  const officialLabel = useOfficialProviderLabel('stock_pick');
+  const shadowLabels = useShadowProviderLabels('stock_pick');
+  const shadowTabLabel = shadowLabels.length > 0 ? `${shadowLabels.join('・')}（比較）` : 'シャドウ（比較）';
 
   return (
     <div>
@@ -22,7 +26,7 @@ export function AiPicksSection(): ReactNode {
           aria-pressed={engine === 'official'}
           onClick={() => setEngine('official')}
         >
-          公式
+          {officialLabel}
         </button>
         <button
           type="button"
@@ -30,7 +34,7 @@ export function AiPicksSection(): ReactNode {
           aria-pressed={engine === 'shadow'}
           onClick={() => setEngine('shadow')}
         >
-          シャドウ（比較）
+          {shadowTabLabel}
         </button>
       </div>
       {engine === 'official' ? <PicksBoard /> : <ShadowPicksBoard />}

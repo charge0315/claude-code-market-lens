@@ -16,6 +16,7 @@ import {
 } from '@/components/dashboard/pickDisplay';
 import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
 import { fetchPicks, runPicks, type HorizonType, type PickSummary } from '@/lib/api/picks';
+import { useOfficialProviderLabel } from '@/lib/llmProviderLabels';
 import { todayJst } from '@/lib/jstDate';
 import './dashboard.css';
 
@@ -62,6 +63,7 @@ export function PicksBoard(): ReactNode {
   const [detailModalPickId, setDetailModalPickId] = useState<string | null>(null);
   const [addHoldingPick, setAddHoldingPick] = useState<PickSummary | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('confidence');
+  const officialLabel = useOfficialProviderLabel('stock_pick');
 
   const load = useCallback((h: HorizonType) => {
     // 見出し・空表示ともに「本日の」ピックと明記しているため、日付を指定せず全期間の
@@ -107,10 +109,11 @@ export function PicksBoard(): ReactNode {
           </span>
           {/* 公式プロバイダは機能ごとに選択可能なため（`services/llm/registry.py`）、
               個々のピックがどのプロバイダで生成されたかは永続化していない。ここでは
-              一律「公式」と表示する。シャドウ判定は shadow_predictions への比較用のみで、
-              ここには載らない。 */}
-          <span className="pick-engine-badge" title="このピックは公式プロバイダが生成しました">
-            公式
+              「stock_pick機能に現在設定されているプロバイダ」のモデル名を表示する近似値とする
+              （設定変更前に生成された過去ピックとはズレうる）。シャドウ判定は shadow_predictions
+              への比較用のみで、ここには載らない。 */}
+          <span className="pick-engine-badge" title={`このピックは${officialLabel}（公式プロバイダ）が生成しました`}>
+            {officialLabel}
           </span>
         </span>
       ),

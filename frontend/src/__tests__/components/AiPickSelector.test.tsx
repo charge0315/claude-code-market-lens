@@ -76,7 +76,7 @@ describe('AiPickSelector', () => {
     render(<AiPickSelector onSelect={jest.fn()} />);
 
     expect(await screen.findByRole('button', { name: /公式.*7203（トヨタ自動車）.*¥1,000/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /シャドウ.*9984（ソフトバンクグループ）.*¥2,000/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gemini.*9984（ソフトバンクグループ）.*¥2,000/ })).toBeInTheDocument();
   });
 
   it('選択すると onSelect が entry 付きで呼ばれる', async () => {

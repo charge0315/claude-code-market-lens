@@ -182,7 +182,7 @@ describe('PickedTickersList', () => {
     render(<PickedTickersList selectedSymbol={null} />);
 
     expect(await screen.findByRole('link', { name: '公式 9984（ソフトバンクグループ）' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'シャドウ 9984（ソフトバンクグループ）' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gemini 9984（ソフトバンクグループ）' })).toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {

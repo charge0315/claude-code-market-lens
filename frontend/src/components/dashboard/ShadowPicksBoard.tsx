@@ -15,7 +15,7 @@ import {
 } from '@/components/dashboard/pickDisplay';
 import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
 import { fetchShadowPicks, type ShadowPickSummary, type HorizonType } from '@/lib/api/picks';
-import { challengerProviderLabel } from '@/lib/llmProviderLabels';
+import { challengerProviderLabel, useOfficialProviderLabel } from '@/lib/llmProviderLabels';
 import { todayJst } from '@/lib/jstDate';
 import './dashboard.css';
 
@@ -33,6 +33,7 @@ export function ShadowPicksBoard(): ReactNode {
   const [noteModalSymbol, setNoteModalSymbol] = useState<string | null>(null);
   const [officialPickId, setOfficialPickId] = useState<string | null>(null);
   const [addHoldingPick, setAddHoldingPick] = useState<ShadowPickSummary | null>(null);
+  const officialLabel = useOfficialProviderLabel('stock_pick');
 
   const load = useCallback((h: HorizonType) => {
     fetchShadowPicks(h, { date: todayJst(), limit: 50 })
@@ -136,7 +137,7 @@ export function ShadowPicksBoard(): ReactNode {
           <span className="pick-action-group">
             {p.pick_id && (
               <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
-                公式版と比較
+                {officialLabel}版と比較
               </button>
             )}
             <button type="button" onClick={() => setAddHoldingPick(p)}>
@@ -172,8 +173,9 @@ export function ShadowPicksBoard(): ReactNode {
       </div>
 
       <p className="model-lab-as-of">
-        シャドウプロバイダが公式パイプラインと同じ候補を独立に判定した結果です。あくまで比較参考用で、
-        売買提案の採否・台帳化は行いません。公式側の「手動更新」を押すと一緒に更新されます。
+        シャドウプロバイダが{officialLabel}（公式パイプライン）と同じ候補を独立に判定した結果です。
+        あくまで比較参考用で、売買提案の採否・台帳化は行いません。{officialLabel}側の「手動更新」を
+        押すと一緒に更新されます。
       </p>
 
       {error && <p className="signal-queue-error">{error}</p>}
@@ -193,7 +195,7 @@ export function ShadowPicksBoard(): ReactNode {
       )}
 
       {officialPickId && (
-        <Modal title="公式版のピック詳細" onClose={() => setOfficialPickId(null)} variant="panel">
+        <Modal title={`${officialLabel}版のピック詳細`} onClose={() => setOfficialPickId(null)} variant="panel">
           <PickDetailPanel key={officialPickId} pickId={officialPickId} />
         </Modal>
       )}
