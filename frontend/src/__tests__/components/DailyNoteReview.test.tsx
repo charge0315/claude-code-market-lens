@@ -12,10 +12,14 @@ import {
   updateNoteContent,
 } from '@/lib/api/notes';
 import type { DailyNote } from '@/lib/api/notes';
+import { fetchPicks } from '@/lib/api/picks';
+import type { PickSummary } from '@/lib/api/picks';
 
 jest.mock('@/lib/api/notes');
+jest.mock('@/lib/api/picks');
 
 const mockFetchTodayNote = fetchTodayNote as jest.MockedFunction<typeof fetchTodayNote>;
+const mockFetchPicks = fetchPicks as jest.MockedFunction<typeof fetchPicks>;
 const mockGenerateNote = generateNote as jest.MockedFunction<typeof generateNote>;
 const mockApproveNote = approveNote as jest.MockedFunction<typeof approveNote>;
 const mockRejectNote = rejectNote as jest.MockedFunction<typeof rejectNote>;
@@ -46,6 +50,7 @@ beforeEach(() => {
     value: { writeText: jest.fn().mockResolvedValue(undefined) },
     configurable: true,
   });
+  mockFetchPicks.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -202,6 +207,41 @@ describe('DailyNoteReview', () => {
     render(<DailyNoteReview />);
 
     expect(await screen.findByText('noteドラフトの取得に失敗しました')).toBeInTheDocument();
+  });
+
+  it('source_pick_idsに一致するピックのみ参考チャートとして表示する', async () => {
+    mockFetchTodayNote.mockResolvedValue(makeNote({ source_pick_ids: ['p1'] }));
+    const matching: PickSummary = {
+      pick_id: 'p1',
+      issued_at: '2026-09-17T08:50:00+09:00',
+      horizon_type: 'mid_term',
+      symbol: '7203',
+      company_name: 'トヨタ自動車',
+      direction: 'bullish',
+      entry: 1000,
+      stop: 950,
+      target: 1100,
+      composite_score: 60,
+      concordance: 0.8,
+      confidence: 70,
+      confidence_bucket: 'high',
+      rationale_text: 'x',
+      model_version: 'v1',
+      source_contributions: {},
+      current_price: null,
+      change_pct: null,
+      spark: [100, 110, 105],
+      reasoning_tags: [],
+    };
+    const unrelated: PickSummary = { ...matching, pick_id: 'p2', symbol: '9984' };
+    mockFetchPicks.mockImplementation((horizonType) =>
+      Promise.resolve(horizonType === 'mid_term' ? [matching, unrelated] : []),
+    );
+
+    render(<DailyNoteReview />);
+
+    expect(await screen.findByRole('img', { name: /7203（トヨタ自動車）/ })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /9984/ })).not.toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {

@@ -11,6 +11,9 @@ import {
   updateNoteContent,
   type DailyNote,
 } from '@/lib/api/notes';
+import { escapeHtml, markdownToHtml } from '@/lib/markdownToHtml';
+import { fetchPicks, type PickSummary } from '@/lib/api/picks';
+import { NoteChartCard } from './NoteChartCard';
 import './notes.css';
 
 // 日次noteドラフトのレビューカード（🆕）。celery-beat が JST 08:15 に自動生成した本日の
@@ -27,8 +30,21 @@ const STATUS_LABELS: Record<DailyNote['status'], string> = {
 
 const NOTE_COM_NEW_POST_URL = 'https://note.com/notes/new';
 
-function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text);
+// note.com のエディタはリッチテキストのため、プレーンテキストの Markdown 記法（##, ** 等）を
+// そのまま貼り付けても見出し・太字にならない（実機確認済み）。text/html も添えてコピーし、
+// 対応先のリッチペーストで書式が反映されるようにする。ClipboardItem 非対応環境（jsdom 等）では
+// プレーンテキストのみへフォールバックする。
+function copyNoteToClipboard(title: string, bodyMarkdown: string): Promise<void> {
+  const plain = `${title}\n\n${bodyMarkdown}`;
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard.write) {
+    return navigator.clipboard.writeText(plain);
+  }
+  const html = `<h1>${escapeHtml(title)}</h1>\n${markdownToHtml(bodyMarkdown)}`;
+  const item = new ClipboardItem({
+    'text/plain': new Blob([plain], { type: 'text/plain' }),
+    'text/html': new Blob([html], { type: 'text/html' }),
+  });
+  return navigator.clipboard.write([item]);
 }
 
 export function DailyNoteReview(): ReactNode {
@@ -39,6 +55,7 @@ export function DailyNoteReview(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [publishedUrlInput, setPublishedUrlInput] = useState('');
+  const [sourcePicks, setSourcePicks] = useState<PickSummary[]>([]);
 
   const load = useCallback(() => {
     fetchTodayNote()
@@ -58,6 +75,24 @@ export function DailyNoteReview(): ReactNode {
   useEffect(() => {
     load();
   }, [load]);
+
+  // チャート素材（値動き）を取得する。source_pick_ids には entry/stop/target を含まない
+  // PickSummary（spark配列のみ利用）を突き合わせるだけで、3値は一切扱わない。
+  useEffect(() => {
+    // source_pick_ids が空（その日ピックが1件も無かった等）なら、初期値の空配列のまま
+    // で問題ない（`note_id` は日付ごとに安定しており、再生成しても picks は変わらないため、
+    // 「populated→emptyへ戻す」再設定が必要になる実用上のケースは無い）。
+    if (!note || note.source_pick_ids.length === 0) {
+      return;
+    }
+    const ids = new Set(note.source_pick_ids);
+    Promise.all([
+      fetchPicks('mid_term', { date: note.note_date, limit: 50 }),
+      fetchPicks('short_term', { date: note.note_date, limit: 50 }),
+    ])
+      .then(([mid, short]) => setSourcePicks([...mid, ...short].filter((p) => ids.has(p.pick_id))))
+      .catch(() => setSourcePicks([]));
+  }, [note]);
 
   const applyResult = (updated: DailyNote): void => {
     setNote(updated);
@@ -115,7 +150,7 @@ export function DailyNoteReview(): ReactNode {
   };
 
   const handleCopy = (): void => {
-    copyToClipboard(`${title}\n\n${body}`)
+    copyNoteToClipboard(title, body)
       .then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
@@ -183,6 +218,19 @@ export function DailyNoteReview(): ReactNode {
           disabled={note.status === 'published'}
         />
       </label>
+
+      {sourcePicks.length > 0 && (
+        <div className="daily-note-charts">
+          <p className="daily-note-charts-label">
+            参考チャート（記事へ挿入する場合は画像として保存し、note.comへ手動アップロードしてください）
+          </p>
+          <div className="daily-note-charts-grid">
+            {sourcePicks.map((p) => (
+              <NoteChartCard key={p.pick_id} symbol={p.symbol} companyName={p.company_name} values={p.spark} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {note.status !== 'published' && (
         <div className="daily-note-actions">
