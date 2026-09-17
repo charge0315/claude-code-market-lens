@@ -170,6 +170,51 @@ describe('DailyNoteReview', () => {
     expect(await screen.findByRole('button', { name: 'コピーしました' })).toBeInTheDocument();
   });
 
+  it('参考ピックがある場合も本文をコピーボタンが正常に完了する（note.comチャートトリガー挿入込み）', async () => {
+    // トリガー挿入自体のロジックは `lib/noteComChartTriggers.test.ts` で純粋関数として検証済み。
+    // ここでは sourcePicks の配線（symbol抽出→copyNoteToClipboardへの受け渡し）がコピー成功を
+    // 妨げないことを、他のコピーテストと同じくUI観測可能な結果（ボタン文言）で確認する
+    // （navigator.clipboard の再定義はモック呼び出し内容の検証には使えないため — 既知の制約）。
+    mockFetchTodayNote.mockResolvedValue(
+      makeNote({
+        source_pick_ids: ['p1'],
+        body_markdown: '解説です。\n\n### 7203（トヨタ自動車）中長期・強気\n\n強気の展開です。',
+      }),
+    );
+    const matching: PickSummary = {
+      pick_id: 'p1',
+      issued_at: '2026-09-17T08:50:00+09:00',
+      horizon_type: 'mid_term',
+      symbol: '7203',
+      company_name: 'トヨタ自動車',
+      direction: 'bullish',
+      entry: 1000,
+      stop: 950,
+      target: 1100,
+      composite_score: 60,
+      concordance: 0.8,
+      confidence: 70,
+      confidence_bucket: 'high',
+      rationale_text: 'x',
+      model_version: 'v1',
+      source_contributions: {},
+      current_price: null,
+      change_pct: null,
+      spark: [100, 110, 105],
+      reasoning_tags: [],
+    };
+    mockFetchPicks.mockImplementation((horizonType) =>
+      Promise.resolve(horizonType === 'mid_term' ? [matching] : []),
+    );
+    const user = userEvent.setup();
+
+    render(<DailyNoteReview />);
+    await screen.findByRole('img', { name: /7203（トヨタ自動車）/ });
+    await user.click(screen.getByRole('button', { name: '本文をコピー' }));
+
+    expect(await screen.findByRole('button', { name: 'コピーしました' })).toBeInTheDocument();
+  });
+
   it('note.comで新規投稿を開くリンクを表示する', async () => {
     mockFetchTodayNote.mockResolvedValue(makeNote());
 

@@ -12,6 +12,7 @@ import {
   type DailyNote,
 } from '@/lib/api/notes';
 import { escapeHtml, markdownToHtml } from '@/lib/markdownToHtml';
+import { insertNoteComChartTriggers } from '@/lib/noteComChartTriggers';
 import { fetchPicks, type PickSummary } from '@/lib/api/picks';
 import { NoteChartCard } from './NoteChartCard';
 import './notes.css';
@@ -34,12 +35,15 @@ const NOTE_COM_NEW_POST_URL = 'https://note.com/notes/new';
 // そのまま貼り付けても見出し・太字にならない（実機確認済み）。text/html も添えてコピーし、
 // 対応先のリッチペーストで書式が反映されるようにする。ClipboardItem 非対応環境（jsdom 等）では
 // プレーンテキストのみへフォールバックする。
-function copyNoteToClipboard(title: string, bodyMarkdown: string): Promise<void> {
-  const plain = `${title}\n\n${bodyMarkdown}`;
+function copyNoteToClipboard(title: string, bodyMarkdown: string, pickSymbols: string[]): Promise<void> {
+  // note.comの証券コード自動チャート挿入（`^7203`）はコピー時のみ挿入し、保存済み本文
+  // （Obsidian書き出しにも使われる）は汚さない（`lib/noteComChartTriggers.ts` 参照）。
+  const bodyWithCharts = insertNoteComChartTriggers(bodyMarkdown, pickSymbols);
+  const plain = `${title}\n\n${bodyWithCharts}`;
   if (typeof ClipboardItem === 'undefined' || !navigator.clipboard.write) {
     return navigator.clipboard.writeText(plain);
   }
-  const html = `<h1>${escapeHtml(title)}</h1>\n${markdownToHtml(bodyMarkdown)}`;
+  const html = `<h1>${escapeHtml(title)}</h1>\n${markdownToHtml(bodyWithCharts)}`;
   const item = new ClipboardItem({
     'text/plain': new Blob([plain], { type: 'text/plain' }),
     'text/html': new Blob([html], { type: 'text/html' }),
@@ -150,7 +154,11 @@ export function DailyNoteReview(): ReactNode {
   };
 
   const handleCopy = (): void => {
-    copyNoteToClipboard(title, body)
+    copyNoteToClipboard(
+      title,
+      body,
+      sourcePicks.map((p) => p.symbol),
+    )
       .then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
