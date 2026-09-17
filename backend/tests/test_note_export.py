@@ -48,14 +48,15 @@ def test_build_obsidian_note_has_stockfornote_frontmatter_schema() -> None:
     assert table_images == {}
 
 
-def test_build_obsidian_note_replaces_table_with_svg_embed() -> None:
+def test_build_obsidian_note_replaces_table_with_jpeg_embed() -> None:
     note = _note(body_markdown="解説です。\n\n| 銘柄コード | 方向性 |\n|---|---|\n| 7203 | 強気 |")
 
     md, table_images = ne.build_obsidian_note(note)
 
     assert "| 銘柄コード |" not in md
-    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.svg]]" in md
-    assert set(table_images.keys()) == {"table_1.svg"}
+    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.jpg]]" in md
+    assert set(table_images.keys()) == {"table_1.jpg"}
+    assert table_images["table_1.jpg"].startswith(b"\xff\xd8\xff")
 
 
 def test_build_single_html_embeds_charts_inline() -> None:
@@ -95,10 +96,31 @@ def test_write_note_files_saves_table_images_when_present(vault_dirs: VaultDirs)
         note,
         obsidian_md="body",
         single_html="<html>x</html>",
-        table_images={"table_1.svg": "<svg>x</svg>"},
+        table_images={"table_1.jpg": b"\xff\xd8\xff\x00fake"},
     )
 
-    assert (note_dir / "tables" / "table_1.svg").read_text(encoding="utf-8") == "<svg>x</svg>"
+    assert (note_dir / "tables" / "table_1.jpg").read_bytes() == b"\xff\xd8\xff\x00fake"
+
+
+def test_write_note_files_clears_stale_table_images_from_previous_export(vault_dirs: VaultDirs) -> None:
+    note = _note()
+    ne.write_note_files(
+        note,
+        obsidian_md="body",
+        single_html="<html>x</html>",
+        table_images={"table_1.jpg": b"a", "table_2.jpg": b"b"},
+    )
+
+    note_dir = ne.write_note_files(
+        note,
+        obsidian_md="body2",
+        single_html="<html>y</html>",
+        table_images={"table_1.jpg": b"c"},
+    )
+
+    tables_dir = note_dir / "tables"
+    assert {p.name for p in tables_dir.iterdir()} == {"table_1.jpg"}
+    assert (tables_dir / "table_1.jpg").read_bytes() == b"c"
 
 
 def _entry(pick_id: str, symbol: str, *, issued_at: str) -> LedgerEntry:
@@ -154,7 +176,7 @@ async def test_export_note_files_writes_md_and_html_without_three_values(
     assert "<svg" in html  # チャートが埋め込まれている
 
 
-async def test_export_note_files_renders_table_as_svg_image(migrated_db: Path, vault_dirs: VaultDirs) -> None:
+async def test_export_note_files_renders_table_as_jpeg_image(migrated_db: Path, vault_dirs: VaultDirs) -> None:
     await pl.insert_pick(_entry("p1", "7203", issued_at="2026-09-17T08:50:00+09:00"))
     note = _note(
         source_pick_ids=["p1"],
@@ -165,6 +187,6 @@ async def test_export_note_files_renders_table_as_svg_image(migrated_db: Path, v
 
     md = (note_dir / "note.md").read_text(encoding="utf-8")
     assert "| 銘柄コード |" not in md
-    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.svg]]" in md
-    table_svg = (note_dir / "tables" / "table_1.svg").read_text(encoding="utf-8")
-    assert "7203" in table_svg
+    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.jpg]]" in md
+    table_jpeg = (note_dir / "tables" / "table_1.jpg").read_bytes()
+    assert table_jpeg.startswith(b"\xff\xd8\xff")

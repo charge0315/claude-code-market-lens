@@ -46,13 +46,14 @@ def _extract_summary(body_markdown: str, *, max_len: int = 120) -> str:
     return ""
 
 
-def build_obsidian_note(note: DailyNote) -> tuple[str, dict[str, str]]:
+def build_obsidian_note(note: DailyNote) -> tuple[str, dict[str, bytes]]:
     """`StockForNote.md` のfrontmatterスキーマでObsidianノート全文を組み立てる.
 
     本文中のMarkdown表はnote.com・Obsidianいずれのリッチペーストでも正しく解釈されない
-    （実機確認済み）ため、SVG画像に変換し `![[.../table_N.svg]]` 埋め込みへ差し替える
-    （ユーザー指示: Obsidianで表示すればそのまま画像として貼り付けられる形にする）。
-    戻り値は (本文, {ファイル名: SVG文字列}) — SVGは呼び出し元が `tables/` へ書き込む。
+    （実機確認済み）ため、JPEG画像に変換し `![[.../table_N.jpg]]` 埋め込みへ差し替える
+    （ユーザー指示: Obsidianで表示すればそのまま画像として貼り付けられる形にする。
+    note.comはSVGアップロードを受け付けないためJPEGを使う、実機確認済み）。
+    戻り値は (本文, {ファイル名: JPEGバイト列}) — 画像は呼び出し元が `tables/` へ書き込む。
     """
     embed_dir = f"Daily/AlphaForge/{note.note_date}/tables"
     body_with_tables, table_images = extract_and_render_tables(note.body_markdown, embed_dir=embed_dir)
@@ -114,18 +115,27 @@ tbody tr:nth-child(even) {{ background: #efe0c8; }}
 
 
 def write_note_files(
-    note: DailyNote, *, obsidian_md: str, single_html: str, table_images: dict[str, str] | None = None
+    note: DailyNote, *, obsidian_md: str, single_html: str, table_images: dict[str, bytes] | None = None
 ) -> Path:
-    """`Daily/AlphaForge/<日付>/note.md`・`note_single.html`・（あれば）`tables/*.svg` を書き込む."""
+    """`Daily/AlphaForge/<日付>/note.md`・`note_single.html`・（あれば）`tables/*.jpg` を書き込む.
+
+    `tables/` は書き込み前に一旦空にする。再生成のたびに表の数が変わりうるため、そのままだと
+    古い回の画像（例: 前回は table_3.jpg まであったが今回は table_2.jpg まで）が消えずに残り、
+    note.md からは参照されない孤立ファイルになってしまう。
+    """
     note_dir = report_dir_for_date(note.note_date)
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "note.md").write_text(obsidian_md, encoding="utf-8")
     (note_dir / "note_single.html").write_text(single_html, encoding="utf-8")
+    tables_dir = note_dir / "tables"
+    if tables_dir.exists():
+        for existing in tables_dir.iterdir():
+            if existing.is_file():
+                existing.unlink()
     if table_images:
-        tables_dir = note_dir / "tables"
         tables_dir.mkdir(parents=True, exist_ok=True)
-        for filename, svg in table_images.items():
-            (tables_dir / filename).write_text(svg, encoding="utf-8")
+        for filename, jpeg_bytes in table_images.items():
+            (tables_dir / filename).write_bytes(jpeg_bytes)
     return note_dir
 
 

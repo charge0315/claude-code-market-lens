@@ -1,30 +1,52 @@
-"""`services/notes/table_image` の検証（Markdown表のSVG画像化・埋め込み置換）."""
+"""`services/notes/table_image` の検証（Markdown表のJPEG画像化・埋め込み置換）."""
 
 from __future__ import annotations
 
+import io
+
+from PIL import Image
+
 from backend.services.notes import table_image as ti
 
-
-def test_render_table_svg_includes_header_and_cell_text() -> None:
-    svg = ti.render_table_svg([["銘柄コード", "方向性"], ["7203", "強気"]])
-
-    assert svg is not None
-    assert svg.startswith("<svg")
-    assert "銘柄コード" in svg
-    assert "7203" in svg
-    assert "強気" in svg
+_JPEG_MAGIC = b"\xff\xd8\xff"
 
 
-def test_render_table_svg_returns_none_for_empty_rows() -> None:
-    assert ti.render_table_svg([]) is None
+def _dimensions(jpeg_bytes: bytes) -> tuple[int, int]:
+    with Image.open(io.BytesIO(jpeg_bytes)) as img:
+        return img.size
 
 
-def test_render_table_svg_escapes_cell_text_against_xss() -> None:
-    svg = ti.render_table_svg([["<script>alert(1)</script>", "b"]])
+def test_render_table_jpeg_returns_valid_jpeg_bytes() -> None:
+    jpeg_bytes = ti.render_table_jpeg([["銘柄コード", "方向性"], ["7203", "強気"]])
 
-    assert svg is not None
-    assert "<script>alert(1)</script>" not in svg
-    assert "&lt;script&gt;" in svg
+    assert jpeg_bytes is not None
+    assert jpeg_bytes.startswith(_JPEG_MAGIC)
+    width, height = _dimensions(jpeg_bytes)
+    assert width > 0
+    assert height > 0
+
+
+def test_render_table_jpeg_returns_none_for_empty_rows() -> None:
+    assert ti.render_table_jpeg([]) is None
+
+
+def test_render_table_jpeg_does_not_raise_on_html_like_cell_text() -> None:
+    # PillowはHTMLとして解釈しないため、エスケープ不要でそのまま描画できる（例外にならない）。
+    jpeg_bytes = ti.render_table_jpeg([["<script>alert(1)</script>", "b"]])
+
+    assert jpeg_bytes is not None
+    assert jpeg_bytes.startswith(_JPEG_MAGIC)
+
+
+def test_render_table_jpeg_wider_table_produces_wider_image() -> None:
+    narrow = ti.render_table_jpeg([["a", "b"], ["1", "2"]])
+    wide = ti.render_table_jpeg(
+        [["銘柄コード", "銘柄名", "方向性", "合成スコア"], ["7203", "トヨタ自動車", "強気", "61.3"]]
+    )
+
+    assert narrow is not None
+    assert wide is not None
+    assert _dimensions(wide)[0] > _dimensions(narrow)[0]
 
 
 def test_extract_and_render_tables_replaces_table_block_with_embed() -> None:
@@ -42,11 +64,11 @@ def test_extract_and_render_tables_replaces_table_block_with_embed() -> None:
     new_body, images = ti.extract_and_render_tables(body, embed_dir="Daily/AlphaForge/2026-09-17/tables")
 
     assert "| 銘柄コード |" not in new_body
-    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.svg]]" in new_body
+    assert "![[Daily/AlphaForge/2026-09-17/tables/table_1.jpg]]" in new_body
     assert "本日のピックです。" in new_body
     assert "## まとめ" in new_body
-    assert set(images.keys()) == {"table_1.svg"}
-    assert "7203" in images["table_1.svg"]
+    assert set(images.keys()) == {"table_1.jpg"}
+    assert images["table_1.jpg"].startswith(_JPEG_MAGIC)
 
 
 def test_extract_and_render_tables_numbers_multiple_tables_sequentially() -> None:
@@ -54,9 +76,9 @@ def test_extract_and_render_tables_numbers_multiple_tables_sequentially() -> Non
 
     new_body, images = ti.extract_and_render_tables(body, embed_dir="dir")
 
-    assert "![[dir/table_1.svg]]" in new_body
-    assert "![[dir/table_2.svg]]" in new_body
-    assert set(images.keys()) == {"table_1.svg", "table_2.svg"}
+    assert "![[dir/table_1.jpg]]" in new_body
+    assert "![[dir/table_2.jpg]]" in new_body
+    assert set(images.keys()) == {"table_1.jpg", "table_2.jpg"}
 
 
 def test_extract_and_render_tables_leaves_non_table_body_unchanged() -> None:

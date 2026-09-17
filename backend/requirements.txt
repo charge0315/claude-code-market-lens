@@ -52,3 +52,7 @@ torch>=2.13.0
 
 # Web Push（VAPID）
 pywebpush==2.0.3
+
+# note下書き用の表画像（🆕）: note.comはSVGアップロードを受け付けないため、JPEGでラスタライズする
+# （`services/notes/table_image.py`）。Windowsシステムフォント（Noto Sans JP等）で日本語を描画する。
+Pillow==12.3.0
