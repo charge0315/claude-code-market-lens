@@ -86,7 +86,18 @@ def test_write_note_files_saves_to_alphaforge_marker_dir(vault_dirs: VaultDirs) 
     assert note_dir == vault_dirs.daily / "AlphaForge" / "2026-09-17"
     assert (note_dir / "note.md").read_text(encoding="utf-8") == "---\nfoo: bar\n---\nbody"
     assert (note_dir / "note_single.html").read_text(encoding="utf-8") == "<html>x</html>"
+    assert not (note_dir / "note_wxr.xml").exists()
     assert not (note_dir / "tables").exists()
+
+
+def test_write_note_files_saves_wxr_xml_when_provided(vault_dirs: VaultDirs) -> None:
+    note = _note()
+
+    note_dir = ne.write_note_files(
+        note, obsidian_md="body", single_html="<html>x</html>", wxr_xml="<rss><channel /></rss>"
+    )
+
+    assert (note_dir / "note_wxr.xml").read_text(encoding="utf-8") == "<rss><channel /></rss>"
 
 
 def test_write_note_files_saves_table_images_when_present(vault_dirs: VaultDirs) -> None:
@@ -167,13 +178,17 @@ async def test_export_note_files_writes_md_and_html_without_three_values(
 
     assert (note_dir / "note.md").is_file()
     assert (note_dir / "note_single.html").is_file()
+    assert (note_dir / "note_wxr.xml").is_file()
     md = (note_dir / "note.md").read_text(encoding="utf-8")
     html = (note_dir / "note_single.html").read_text(encoding="utf-8")
+    wxr = (note_dir / "note_wxr.xml").read_text(encoding="utf-8")
     assert "1002" not in md  # entry
     assert "985" not in md  # stop
     assert "1050" not in md  # target
     assert "1002" not in html
+    assert "1002" not in wxr
     assert "<svg" in html  # チャートが埋め込まれている
+    assert note.title in wxr
 
 
 async def test_export_note_files_renders_table_as_jpeg_image(migrated_db: Path, vault_dirs: VaultDirs) -> None:

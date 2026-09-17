@@ -1,5 +1,6 @@
-"""note下書きのObsidian(.md)・SingleHTML書き出し（🆕 ユーザー指示: 毎朝Obsidianを確認して
-note.comへ手動で貼り付ける運用のための出力）.
+"""note下書きのObsidian(.md)・SingleHTML・WordPress(WXR/.xml)書き出し（🆕 ユーザー指示: 毎朝
+Obsidianを確認してnote.comへ手動で貼り付ける運用に加え、同じ下書きをWordPressへも
+インポートできるよう出力する）.
 
 `90_Meta/Templates/StockForNote.md`（ユーザー提供テンプレート）のfrontmatterスキーマを踏襲する。
 同テンプレートのサマリーテーブル・売買戦略欄には目安買値・損切りライン・目標利確（3値）が
@@ -21,6 +22,7 @@ from backend.services.jst_time import JST
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.notes.markdown_to_html import markdown_to_html
 from backend.services.notes.table_image import extract_and_render_tables
+from backend.services.notes.wordpress_export import build_wxr_xml
 from backend.services.vault_report.chart_svg import render_chart_svg
 from backend.services.vault_report.price_history import fetch_price_history_before
 from backend.services.vault_report.vault_writer import report_dir_for_date
@@ -115,9 +117,14 @@ tbody tr:nth-child(even) {{ background: #efe0c8; }}
 
 
 def write_note_files(
-    note: DailyNote, *, obsidian_md: str, single_html: str, table_images: dict[str, bytes] | None = None
+    note: DailyNote,
+    *,
+    obsidian_md: str,
+    single_html: str,
+    wxr_xml: str | None = None,
+    table_images: dict[str, bytes] | None = None,
 ) -> Path:
-    """`Daily/AlphaForge/<日付>/note.md`・`note_single.html`・（あれば）`tables/*.jpg` を書き込む.
+    """`Daily/AlphaForge/<日付>/note.md`・`note_single.html`・`note_wxr.xml`・（あれば）`tables/*.jpg` を書き込む.
 
     `tables/` は書き込み前に一旦空にする。再生成のたびに表の数が変わりうるため、そのままだと
     古い回の画像（例: 前回は table_3.jpg まであったが今回は table_2.jpg まで）が消えずに残り、
@@ -127,6 +134,8 @@ def write_note_files(
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "note.md").write_text(obsidian_md, encoding="utf-8")
     (note_dir / "note_single.html").write_text(single_html, encoding="utf-8")
+    if wxr_xml is not None:
+        (note_dir / "note_wxr.xml").write_text(wxr_xml, encoding="utf-8")
     tables_dir = note_dir / "tables"
     if tables_dir.exists():
         for existing in tables_dir.iterdir():
@@ -140,7 +149,7 @@ def write_note_files(
 
 
 async def export_note_files(note: DailyNote) -> Path:
-    """本日のnote下書きから Obsidian(.md)・SingleHTML を生成し、Vaultへ書き込む.
+    """本日のnote下書きから Obsidian(.md)・SingleHTML・WordPress(WXR/.xml) を生成し、Vaultへ書き込む.
 
     チャートはピック前日までの終値から生成する（`services/vault_report` と同じロジックを再利用、
     未来リーク防止）。`note.source_pick_ids` に対応する銘柄を、同日の公式ピック一覧
@@ -161,4 +170,7 @@ async def export_note_files(note: DailyNote) -> Path:
 
     obsidian_md, table_images = build_obsidian_note(note)
     single_html = build_single_html(note, charts)
-    return write_note_files(note, obsidian_md=obsidian_md, single_html=single_html, table_images=table_images)
+    wxr_xml = build_wxr_xml(note, table_image_filenames=list(table_images.keys()))
+    return write_note_files(
+        note, obsidian_md=obsidian_md, single_html=single_html, wxr_xml=wxr_xml, table_images=table_images
+    )

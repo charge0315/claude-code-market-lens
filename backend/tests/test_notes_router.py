@@ -156,6 +156,7 @@ async def test_export_writes_obsidian_and_single_html(client: AsyncClient, vault
     assert Path(note_dir_str) == expected_dir
     assert (expected_dir / "note.md").is_file()
     assert (expected_dir / "note_single.html").is_file()
+    assert (expected_dir / "note_wxr.xml").is_file()
 
 
 async def test_export_missing_note_returns_404(client: AsyncClient) -> None:
