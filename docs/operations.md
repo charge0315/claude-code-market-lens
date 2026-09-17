@@ -89,8 +89,10 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 
 | 時刻 / 周期 | タスク | 内容 |
 |---|---|---|
-| 平日 08:50 | `run_picks_task("mid_term")` | 中長期ピック生成 |
-| 平日 08:52 | `run_picks_task("short_term")` | 短期ピック生成（2分ずらして直列ワーカーの二重占有回避） |
+| 平日 07:30 | `run_picks_task("mid_term")` | 中長期ピック生成（🔧 P28、当初 08:50 から前倒し。下記参照） |
+| 平日 07:32 | `run_picks_task("short_term")` | 短期ピック生成（🔧 P28、当初 08:52 から前倒し。`--pool=solo` の直列ワーカーでは2分ずらしても順番待ちになるだけで二重占有回避の効果は無いが、ピック生成完了を早めるために時刻自体を前倒しした） |
+| 平日 08:05 | `run_daily_note_draft_task` | 🆕 P28、note下書き自動生成（Obsidian/SingleHTML書き出しまで同タスク内で実行）。ピック生成完了を待てるだけの余裕を見て設定 |
+| 平日 08:15 | `generate_vault_report_task` | 🆕 P28、個人用Vaultアーカイブレポート生成（note下書き生成の後、同じ台帳データから作成） |
 | 毎日 16:38 | `resolve_pick_outcomes_task` | 未決着ピックの決着解決（複数ホライズン） |
 | 毎日 16:48 | `update_eval_metrics_task` | 評価指標（較正・IC・成績）再集計 |
 | 毎日 07:13/10:13/13:13/16:13 | `sync_trends_task` | Trend Tracking Agent 同期（TTL 3h） |
@@ -113,7 +115,7 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 `ml_pool`/`mid_term`/`short_term` レーン（`run_promotion_evaluation_task` が扱う人手承認ゲート）
 とは意図的に別格の運用（ユーザー確認済み、`per_ticker_training_service.py` docstring 参照）。
 
-**手で `.delay()` タスクを投入しない**（CLAUDE.md）。手動実行が必要な場合は対応する API（`POST /api/picks/run`、`POST /api/portfolio/signals/run`、`POST /api/portfolio/eod-review/run`、`POST /api/eval/run`、`POST /api/registry/promotions/evaluate` 等）を使う。
+**手で `.delay()` タスクを投入しない**（CLAUDE.md）。手動実行が必要な場合は対応する API（`POST /api/picks/run`、`POST /api/portfolio/signals/run`、`POST /api/portfolio/eod-review/run`、`POST /api/eval/run`、`POST /api/registry/promotions/evaluate`、`POST /api/notes/generate`（🆕 P28、note下書きの再生成）、`POST /api/vault-reports/generate`（🆕 P28）等）を使う。
 
 **銘柄別モデルの手動学習トリガー（`POST /api/registry/training/run`、モデルラボ「今すぐ学習」）
 は上記の `TRAINING_*_DAILY_LIMIT` を使わない**（🆕 P14、ユーザー確認済み）:
@@ -148,6 +150,9 @@ celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める
 | `LLM_DAILY_COST_LIMIT_USD` | – | `5.0` | LLM コストの安全装置（目標ではない、CLAUDE.md）。超過時の挙動は `services/api_cost` 参照 |
 | `GEMINI_API_KEY` | – | 空（マルチLLM判定が無効） | Gemini API キー（🆕 P12）。設定すると公式パイプライン（Anthropic）と並行して比較用の shadow 判定を `shadow_predictions` へ記録する。未設定でも公式パイプラインには一切影響しない |
 | `GEMINI_MODEL` | – | `gemini-2.5-pro` | 使用する Gemini モデル ID |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | – | 空 / – | OpenAI API キー・モデル ID（🆕 P27、`services/openai_client.py`）。3プロバイダ目として追加 |
+| `LLM_PROVIDER_<FEATURE>` / `LLM_SHADOW_PROVIDERS_<FEATURE>` | – | 既定は導入前と同一動作（公式=`anthropic`、shadowは stock_pick/portfolio_signal のみ `gemini`） | 🆕 P27、機能（`stock_pick`/`portfolio_signal`/`eod_review`/`trend_analyzer`/`note_publish`）ごとに公式・シャドウのLLMプロバイダを選択（`services/llm/registry.py`、詳細は `plans/05_決定ログと未決事項.md` §2c）。`/settings` 画面からも編集可（`LLMProviderPanel.tsx`） |
+| `LLM_MODEL_<FEATURE>_<PROVIDER>` | – | 空（プロバイダ既定モデルを使用） | 🆕 P27、機能×プロバイダごとの使用モデルを個別上書き |
 | `DATABASE_URL` | – | `sqlite+aiosqlite:///./data/alpha_forge.db` | DB 接続先（PostgreSQL 移行可能な設計） |
 | `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | – | `redis://127.0.0.1:6379/4` `/5` | Celery（他サービスと衝突しないよう DB 番号を分離） |
 | `VAULT_ROOT` | – | `Personal Space/10_Stock` | Obsidian Vault ルート（読み取り専用が原則） |
