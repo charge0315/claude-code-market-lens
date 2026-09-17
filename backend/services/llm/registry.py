@@ -33,6 +33,7 @@ _PRIMARY_SETTINGS_FIELD: dict[FeatureId, str] = {
     "portfolio_signal": "llm_provider_portfolio_signal",
     "eod_review": "llm_provider_eod_review",
     "trend_analyzer": "llm_provider_trend_analyzer",
+    "note_publish": "llm_provider_note_publish",
 }
 
 _SHADOW_SETTINGS_FIELD: dict[FeatureId, str] = {
@@ -83,6 +84,9 @@ _MODEL_OVERRIDE_FIELD: dict[tuple[FeatureId, ProviderId], str] = {
     ("trend_analyzer", "anthropic"): "llm_model_trend_analyzer_anthropic",
     ("trend_analyzer", "openai"): "llm_model_trend_analyzer_openai",
     ("trend_analyzer", "gemini"): "llm_model_trend_analyzer_gemini",
+    ("note_publish", "anthropic"): "llm_model_note_publish_anthropic",
+    ("note_publish", "openai"): "llm_model_note_publish_openai",
+    ("note_publish", "gemini"): "llm_model_note_publish_gemini",
 }
 
 # プロバイダの既定モデル（機能×プロバイダの上書きが空文字のときのフォールバック先）。

@@ -1,0 +1,150 @@
+"""`services/notes/note_service` の検証（1日1件・再生成・承認フロー）."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from backend.models.pick import LedgerEntry, SubScores
+from backend.services.ledger import prediction_ledger as pl
+from backend.services.notes import note_generator as gen
+from backend.services.notes import note_service as svc
+
+
+class _FakeLLM:
+    provider_id = "anthropic"
+    is_configured = True
+
+    def __init__(self, title: str, body: str) -> None:
+        self._title = title
+        self._body = body
+
+    def model_for(self, _feature: str) -> str:
+        return "test-model"
+
+    async def propose_daily_note(self, *, prompt: str) -> dict[str, object]:  # noqa: ARG002
+        return {"title": self._title, "body_markdown": self._body}
+
+
+def _entry(pick_id: str, horizon: str, symbol: str, *, issued_at: str) -> LedgerEntry:
+    return LedgerEntry(
+        pick_id=pick_id,
+        run_id="r1",
+        issued_at=issued_at,
+        horizon_type=horizon,
+        symbol=symbol,
+        direction="bullish",
+        entry=1002.0,
+        stop=985.0,
+        target=1050.0,
+        sub_scores=SubScores(technical=60, trend=55, fundamental=52, sentiment=50),
+        composite_score=60.0,
+        concordance=0.67,
+        confidence_raw=70.0,
+        confidence=72.0,
+        confidence_bucket="high",
+        feature_snapshot={},
+        rationale_struct={},
+        rationale_text="反発余地",
+        model_version="baseline-2026-09-11",
+        source_contributions={},
+        created_at=issued_at,
+    )
+
+
+async def test_generate_today_reuses_existing_without_force(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.jst_time import today_jst
+
+    today = today_jst()
+    await pl.insert_pick(_entry("p1", "mid_term", "7203", issued_at=f"{today}T08:50:00+09:00"))
+
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("1回目", "本文1"))
+    first = await svc.generate_today()
+
+    # 2回目は force=False のため LLM を呼ばないはず（呼ばれたら例外で気付く）。
+    class _Boom:
+        is_configured = True
+
+        async def propose_daily_note(self, *, prompt: str) -> dict[str, object]:  # noqa: ARG002
+            raise AssertionError("LLM should not be called")
+
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _Boom())
+    second = await svc.generate_today()
+
+    assert first.title == second.title == "1回目"
+    assert first.note_id == second.note_id
+
+
+async def test_generate_today_source_pick_ids_track_todays_official_picks(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services.jst_time import today_jst
+
+    today = today_jst()
+    await pl.insert_pick(_entry("p-mid", "mid_term", "7203", issued_at=f"{today}T08:50:00+09:00"))
+    await pl.insert_pick(_entry("p-short", "short_term", "9984", issued_at=f"{today}T08:52:00+09:00"))
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+
+    note = await svc.generate_today()
+
+    assert set(note.source_pick_ids) == {"p-mid", "p-short"}
+
+
+async def test_regenerate_uses_original_note_date_not_today(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """過去日のドラフトを再生成しても、当日分を上書きしてしまわないこと（回帰）."""
+    from backend.services.db import note_db
+
+    old_row = await note_db.upsert_note(
+        note_date="2026-09-10",
+        title="旧日付",
+        body_markdown="本文",
+        source_pick_ids=["p1"],
+        model_version="anthropic:test",
+        has_price_mention_warning=False,
+    )
+    await pl.insert_pick(_entry("p1", "mid_term", "7203", issued_at="2026-09-10T08:50:00+09:00"))
+
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("旧日付・再生成後", "本文2"))
+    regenerated = await svc.regenerate(str(old_row["note_id"]))
+
+    assert regenerated is not None
+    assert regenerated.note_date == "2026-09-10"
+    assert regenerated.title == "旧日付・再生成後"
+    # 当日分の draft は作られていない。
+    assert await svc.get_today() is None
+
+
+async def test_approve_then_mark_published_flow(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+    note = await svc.generate_today()
+
+    approved = await svc.approve(note.note_id)
+    assert approved is not None
+    assert approved.status == "approved"
+    assert approved.approved_at is not None
+
+    published = await svc.mark_published(note.note_id, published_url="https://note.com/example/n/abc")
+    assert published is not None
+    assert published.status == "published"
+    assert published.published_url == "https://note.com/example/n/abc"
+
+
+async def test_reject_sets_status(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _FakeLLM("t", "b"))
+    note = await svc.generate_today()
+
+    rejected = await svc.reject(note.note_id)
+
+    assert rejected is not None
+    assert rejected.status == "rejected"
+
+
+async def test_update_content_returns_none_for_missing_note(migrated_db: Path) -> None:
+    result = await svc.update_content("missing-id", title="x", body_markdown="y")
+
+    assert result is None
+
+
+async def test_get_today_returns_none_when_not_generated_yet(migrated_db: Path) -> None:
+    assert await svc.get_today() is None

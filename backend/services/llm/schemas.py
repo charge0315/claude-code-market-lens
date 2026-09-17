@@ -176,6 +176,34 @@ EOD_REVIEW_SCHEMA: JsonDict = {
 }
 
 
+# 日次note配信（🆕）: 本日のAIピック分析結果をもとに有料note記事の下書きを生成する。
+# 具体的な売買価格・断定的な投資指示は一切含めない（投資助言業への抵触回避、CLAUDE.md）。
+# entry/stop/target はそもそもプロンプトに渡さない（呼び出し元 `services/notes/note_generator.py`）。
+NOTE_SCHEMA: JsonDict = {
+    "name": "submit_daily_note",
+    "description": (
+        "本日のAI銘柄ピック（中長期・短期）の分析結果をもとに、有料note記事として配信する"
+        "解説記事の下書きを作成する。具体的な買値・損切値・売値等の売買価格や、"
+        "「買い時」「売るべき」等の断定的な投資指示は一切書かないこと。テクニカル/ファンダメンタル/"
+        "センチメント分析の解説と一般的な考察のみに留めること。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "記事タイトル（日本語、30字程度）"},
+            "body_markdown": {
+                "type": "string",
+                "description": (
+                    "記事本文（Markdown、日本語）。市場概況・銘柄ごとの分析解説・総括で構成する。"
+                    "具体的な売買価格や断定的な投資指示は書かないこと。"
+                ),
+            },
+        },
+        "required": ["title", "body_markdown"],
+    },
+}
+
+
 def _uppercase_types(node: object) -> object:
     """JSON Schema ノードを再帰的に走査し、`type` の値を Gemini の大文字表記に変換する."""
     if isinstance(node, dict):

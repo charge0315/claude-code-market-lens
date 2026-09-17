@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     llm_provider_trend_analyzer: Literal["anthropic", "openai", "gemini"] = Field(
         default="anthropic", validation_alias="LLM_PROVIDER_TREND_ANALYZER"
     )
+    # note_publish（🆕 日次noteドラフト生成）は公式/シャドウ設定UIには出さない（YAGNI、
+    # `services/llm/types.py` 参照）。設定を変えたい場合は .env を直接編集する。
+    llm_provider_note_publish: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_NOTE_PUBLISH"
+    )
     # 「シャドウ」= 公式パイプラインと同一プロンプトを並行判定させ、比較表示のみに使う
     # チャレンジャー（複数併用可）。既定は導入前の Gemini shadow 挙動と完全一致させる。
     llm_shadow_providers_stock_pick: Annotated[list[str], NoDecode] = Field(
@@ -106,6 +111,9 @@ class Settings(BaseSettings):
     llm_model_trend_analyzer_anthropic: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_ANTHROPIC")
     llm_model_trend_analyzer_openai: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_OPENAI")
     llm_model_trend_analyzer_gemini: str = Field(default="", validation_alias="LLM_MODEL_TREND_ANALYZER_GEMINI")
+    llm_model_note_publish_anthropic: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_ANTHROPIC")
+    llm_model_note_publish_openai: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_OPENAI")
+    llm_model_note_publish_gemini: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_GEMINI")
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")

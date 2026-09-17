@@ -41,6 +41,9 @@ from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA as _EOD_REVIEW_TOOL_SCHEMA,
 )
 from backend.services.llm.schemas import (
+    NOTE_SCHEMA as _NOTE_TOOL_SCHEMA,
+)
+from backend.services.llm.schemas import (
     PORTFOLIO_SIGNAL_SCHEMA as _PORTFOLIO_SIGNAL_TOOL_SCHEMA,
 )
 from backend.services.llm.schemas import (
@@ -185,6 +188,16 @@ class AnthropicClient:
             feature="trend_analyzer",
             model=resolve_model("trend_analyzer", "anthropic"),
             tool_schema=_TREND_TOOL_SCHEMA,
+            max_tokens=_TREND_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_daily_note(self, *, prompt: str) -> JsonDict:
+        """forced tool-use で日次noteドラフト（タイトル・本文）を取得する."""
+        return await self._forced_tool_call(
+            feature="note_publish",
+            model=resolve_model("note_publish", "anthropic"),
+            tool_schema=_NOTE_TOOL_SCHEMA,
             max_tokens=_TREND_MAX_TOKENS,
             prompt=prompt,
         )

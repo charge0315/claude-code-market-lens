@@ -28,6 +28,7 @@ from backend.services.circuit_breaker import CircuitBreaker
 from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA,
+    NOTE_SCHEMA,
     PORTFOLIO_SIGNAL_SCHEMA,
     STOCK_PICK_SCHEMA,
     TREND_SCHEMA,
@@ -56,6 +57,7 @@ _STOCK_PICK_STRICT_SCHEMA: JsonDict = _strict(STOCK_PICK_SCHEMA)
 _PORTFOLIO_SIGNAL_STRICT_SCHEMA: JsonDict = _strict(PORTFOLIO_SIGNAL_SCHEMA)
 _EOD_REVIEW_STRICT_SCHEMA: JsonDict = _strict(EOD_REVIEW_SCHEMA)
 _TREND_STRICT_SCHEMA: JsonDict = _strict(TREND_SCHEMA)
+_NOTE_STRICT_SCHEMA: JsonDict = _strict(NOTE_SCHEMA)
 
 
 class OpenAIClient:
@@ -193,6 +195,17 @@ class OpenAIClient:
             model=resolve_model("trend_analyzer", "openai"),
             schema_name="submit_trends",
             schema=_TREND_STRICT_SCHEMA,
+            max_tokens=_TREND_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_daily_note(self, *, prompt: str) -> JsonDict:
+        """forced structured-output で日次noteドラフト（タイトル・本文）を取得する."""
+        return await self._structured_response(
+            feature="note_publish_openai",
+            model=resolve_model("note_publish", "openai"),
+            schema_name="submit_daily_note",
+            schema=_NOTE_STRICT_SCHEMA,
             max_tokens=_TREND_MAX_TOKENS,
             prompt=prompt,
         )

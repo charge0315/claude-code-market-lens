@@ -36,7 +36,13 @@ from backend.services.gemini_errors import (
     GeminiTimeoutError,
 )
 from backend.services.llm.registry import resolve_model
-from backend.services.llm.schemas import EOD_REVIEW_SCHEMA, PORTFOLIO_SIGNAL_SCHEMA, STOCK_PICK_SCHEMA, TREND_SCHEMA
+from backend.services.llm.schemas import (
+    EOD_REVIEW_SCHEMA,
+    NOTE_SCHEMA,
+    PORTFOLIO_SIGNAL_SCHEMA,
+    STOCK_PICK_SCHEMA,
+    TREND_SCHEMA,
+)
 from backend.services.llm.schemas import to_gemini_response_schema as _to_gemini
 from backend.services.llm.types import FeatureId
 
@@ -54,6 +60,7 @@ _STOCK_PICK_RESPONSE_SCHEMA: JsonDict = _to_gemini(STOCK_PICK_SCHEMA)
 _PORTFOLIO_SIGNAL_RESPONSE_SCHEMA: JsonDict = _to_gemini(PORTFOLIO_SIGNAL_SCHEMA)
 _EOD_REVIEW_RESPONSE_SCHEMA: JsonDict = _to_gemini(EOD_REVIEW_SCHEMA)
 _TREND_RESPONSE_SCHEMA: JsonDict = _to_gemini(TREND_SCHEMA)
+_NOTE_RESPONSE_SCHEMA: JsonDict = _to_gemini(NOTE_SCHEMA)
 
 
 class GeminiClient:
@@ -180,6 +187,15 @@ class GeminiClient:
             feature="trend_analyzer_gemini",
             model=resolve_model("trend_analyzer", "gemini"),
             response_schema=_TREND_RESPONSE_SCHEMA,
+            prompt=prompt,
+        )
+
+    async def propose_daily_note(self, *, prompt: str) -> JsonDict:
+        """forced structured-output で日次noteドラフト（タイトル・本文）を取得する."""
+        return await self._generate_structured(
+            feature="note_publish_gemini",
+            model=resolve_model("note_publish", "gemini"),
+            response_schema=_NOTE_RESPONSE_SCHEMA,
             prompt=prompt,
         )
 

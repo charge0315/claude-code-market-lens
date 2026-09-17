@@ -187,6 +187,19 @@ def run_transformer_training_batch_task() -> dict[str, object]:
     return summary.to_dict()
 
 
+@celery_app.task(name="backend.tasks.run_daily_note_draft_task")
+def run_daily_note_draft_task() -> dict[str, object]:
+    """本日のピック生成完了後、有料note配信用の下書きを自動生成する（🆕 JST 08:15）.
+
+    生成のみ行い、配信（note.comへの投稿）は行わない — 人間がレビュー・承認した上で
+    手動投稿する半自動フロー（`services/notes/note_service.py` docstring 参照）。
+    """
+    from backend.services.notes.note_service import generate_today
+
+    note = asyncio.run(generate_today())
+    return {"note_id": note.note_id, "status": note.status, "has_price_mention_warning": note.has_price_mention_warning}
+
+
 @celery_app.task(name="backend.tasks.run_eod_review_task")
 def run_eod_review_task() -> dict[str, object]:
     """本日の `portfolio_signals` を集計し大引け後レビューを生成する（🆕 P7d、JST 16:31）.
