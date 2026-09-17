@@ -18,6 +18,7 @@ from sqlalchemy import text
 from backend.models.pick import ConfidenceBucket, LedgerEntry, PickSummary
 from backend.services.data.data_fetcher import _get_ticker_master
 from backend.services.data.quote_service import compute_change_pct, fetch_quote_with_spark
+from backend.services.db import pick_outcome_db
 from backend.services.db.database import get_db
 
 # 確度バケットの境界（較正後 confidence 0〜100）。
@@ -205,6 +206,18 @@ async def list_picks(
             )
         )
     return summaries
+
+
+async def list_recent_outcome_reviews(*, since: str, limit: int = 20) -> list[dict[str, object]]:
+    """直近に決着したピックへ銘柄名を補って返す（note下書きの前日レビュー章向け、CL-1）.
+
+    `list_picks` と同じ理由（銘柄名は台帳に保存していない）で、表示専用の付加情報として
+    都度ティッカーマスタから引く。entry/stop/target は `pick_outcome_db.list_recent_reviews`
+    の時点で選択していないため、ここにも現れない。
+    """
+    rows = await pick_outcome_db.list_recent_reviews(since=since, limit=limit)
+    name_by_code = {t.code: t.name for t in await _get_ticker_master()}
+    return [{**row, "company_name": name_by_code.get(str(row["symbol"]))} for row in rows]
 
 
 def _dig(payload: object, dotted_path: str) -> object:

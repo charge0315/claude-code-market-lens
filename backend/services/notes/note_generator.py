@@ -16,13 +16,24 @@ LLM の出力を完全には制御できないため、生成後に軽量な価�
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from backend.models.market import IndexQuote
 from backend.services.llm.errors import LLMError
 from backend.services.llm.registry import resolve_feature_provider
 from backend.services.picks.pick_analysis import PickAnalysis
 
-__all__ = ["DISCLAIMER", "SOURCES_NOTE", "PickAnalysis", "build_prompt", "generate", "has_price_mention"]
+__all__ = [
+    "DISCLAIMER",
+    "SOURCES_NOTE",
+    "PickAnalysis",
+    "PriorOutcomeReview",
+    "build_prompt",
+    "generate",
+    "has_price_mention",
+    "review_from_row",
+]
 
 DISCLAIMER = (
     "\n\n---\n\n"
@@ -50,6 +61,8 @@ _PRICE_PATTERN = re.compile(r"[¥￥]\s?\d|\d+\s?円")
 _MIN_BODY_LENGTH = 200
 
 _DIRECTION_LABELS: dict[str, str] = {"bullish": "強気", "bearish": "弱気", "neutral": "中立"}
+_HORIZON_TYPE_LABELS: dict[str, str] = {"mid_term": "中長期", "short_term": "短期"}
+_FIRST_HIT_LABELS: dict[str, str] = {"target": "目標到達", "stop": "損切りライン到達", "none": "未到達"}
 _SOURCE_LABELS: dict[str, str] = {
     "technical": "テクニカル",
     "trend": "トレンド",
@@ -57,6 +70,42 @@ _SOURCE_LABELS: dict[str, str] = {
     "sentiment": "センチメント",
     "ml": "機械学習モデル",
 }
+
+
+@dataclass(frozen=True)
+class PriorOutcomeReview:
+    """決着済みピック1件分の振り返り素材（entry/stop/targetは含めない、CL-1: 決着後の実測値のみ）."""
+
+    symbol: str
+    company_name: str | None
+    horizon_type: str
+    horizon_days: int
+    direction: str
+    realized_return: float
+    excess_return: float
+    mfe: float
+    mae: float
+    first_hit: str
+    win: bool
+    confidence_bucket: str
+
+
+def review_from_row(row: Mapping[str, object]) -> PriorOutcomeReview:
+    """`prediction_ledger.list_recent_outcome_reviews` の1行を `PriorOutcomeReview` へ変換する."""
+    return PriorOutcomeReview(
+        symbol=str(row["symbol"]),
+        company_name=str(row["company_name"]) if row.get("company_name") else None,
+        horizon_type=str(row["horizon_type"]),
+        horizon_days=int(row["horizon_days"]),  # type: ignore[call-overload]
+        direction=str(row["direction"]),
+        realized_return=float(row["realized_return"]),  # type: ignore[arg-type]
+        excess_return=float(row["excess_return"]),  # type: ignore[arg-type]
+        mfe=float(row["mfe"]),  # type: ignore[arg-type]
+        mae=float(row["mae"]),  # type: ignore[arg-type]
+        first_hit=str(row["first_hit"]),
+        win=bool(row["win"]),
+        confidence_bucket=str(row["confidence_bucket"]),
+    )
 
 
 def _sub_score_line(sub_scores: dict[str, float]) -> str:
@@ -104,6 +153,24 @@ def _pick_lines(picks: list[PickAnalysis]) -> list[str]:
     return lines
 
 
+def _prior_review_lines(reviews: list[PriorOutcomeReview]) -> list[str]:
+    """決着済みピックの振り返り行を作る（entry/stop/targetは一切含めない、決着後の実測値のみ）."""
+    lines: list[str] = []
+    for r in reviews:
+        name = f"（{r.company_name}）" if r.company_name else ""
+        direction = _DIRECTION_LABELS.get(r.direction, r.direction)
+        horizon = _HORIZON_TYPE_LABELS.get(r.horizon_type, r.horizon_type)
+        first_hit = _FIRST_HIT_LABELS.get(r.first_hit, r.first_hit)
+        result = "的中" if r.win else "不的中"
+        lines.append(
+            f"- {r.symbol}{name}: {horizon}（{r.horizon_days}営業日）, 方向性={direction}, "
+            f"判定={result}, 実現リターン={r.realized_return * 100:.2f}%, "
+            f"TOPIX超過リターン={r.excess_return * 100:.2f}%, MFE={r.mfe * 100:.2f}%, "
+            f"MAE={r.mae * 100:.2f}%, 先着={first_hit}, 確度バケット={r.confidence_bucket}"
+        )
+    return lines
+
+
 def _market_lines(market: list[IndexQuote]) -> str:
     if not market:
         return "（本日は市況データを取得できませんでした）"
@@ -130,17 +197,25 @@ _TEMPLATE_STRUCTURE_INSTRUCTIONS = """
   表形式で示す
 - 与えられた市況ニュースのメタ情報（あれば）を踏まえた寄り前の地合い解説
 
-## 2. 🤖 AIモデルの思考プロセス＆スクリーニング方針
+## 2. 📈 前日ピックの決着レビュー＆改善点
+- 与えられた「直近で決着済みのピック」一覧（無ければ「本日は決着件数が少なく傾向分析には
+  至らない」旨を正直に書くこと）を、的中/不的中・実現リターン・TOPIX超過リターン・MFE/MAE・
+  先着（target/stop）の実測値に基づいて振り返る
+- 傾向を無理に断定せず、実データから読み取れる範囲の考察に留める
+- 次回のスクリーニング・確度較正に生かせる具体的な改善点を挙げる
+- 具体的な買値・損切りライン等の価格提示や、断定的な投資指示は書かないこと（他章と同様）
+
+## 3. 🤖 AIモデルの思考プロセス＆スクリーニング方針
 - Alpha Forgeの実際の分析方式（テクニカル・トレンド・ファンダメンタル・センチメントの4分析を
   合成スコア化し、確度は過去の実測勝率に基づき較正している）を正確に説明すること
 - 存在しない手法（LightGBM・SNS言及バズ等）を勝手に創作しないこと
 - 本日抽出された銘柄群に共通する傾向があれば触れる
 
-## 3. 📊 本日のAIピック一覧（サマリーテーブル）
+## 4. 📊 本日のAIピック一覧（サマリーテーブル）
 - 列: 銘柄コード / 銘柄名 / 方向性 / 合成スコア / 確度 / 4分析の方向一致度 / 想定保有期間の目安
 - 具体的な価格（買値・損切りライン・利確目標）は列に含めないこと
 
-## 4. 🔍 各ピック銘柄の徹底解説＆チャート分析
+## 5. 🔍 各ピック銘柄の徹底解説＆チャート分析
 - 銘柄ごとの見出しは必ず「### {証券コード}（{銘柄名}）」から始めること
   （例: ### 7203（トヨタ自動車）中長期・強気 — note.com貼り付け時にこの見出し直後へ
   証券コードのチャート自動挿入トリガーを機械的に挿入するため、見出しの表記ゆれは避けること）
@@ -149,11 +224,11 @@ _TEMPLATE_STRUCTURE_INSTRUCTIONS = """
 - 「売買戦略」として具体的な価格水準を提示するのは禁止。定性的な観点（見るべきポイント・
   注意すべきシナリオ）に留めること
 
-## 5. ⚖️ 4分析レーダー比較
+## 6. ⚖️ 4分析レーダー比較
 - 全銘柄横断で、テクニカル・トレンド・ファンダメンタル・センチメントの4軸を比較する表
   （架空の「割安性」「成長性」等のカテゴリは使わず、実際に算出されている4分析軸のみ使うこと）
 
-## 6. 📝 編集メモ・免責事項
+## 7. 📝 編集メモ・免責事項
 - 有料記事化の際の構成案（どこから有料境界を引くか）への軽い言及
 - 免責事項（投資助言ではない旨）
 """
@@ -166,12 +241,14 @@ def build_prompt(
     *,
     market: list[IndexQuote] | None = None,
     news_block: str | None = None,
+    prior_reviews: list[PriorOutcomeReview] | None = None,
 ) -> str:
     """note下書き生成用プロンプトを組み立てる（entry/stop/targetは一切渡さない）."""
     mid_lines = "\n".join(_pick_lines(mid_term)) or "（本日は該当なし）"
     short_lines = "\n".join(_pick_lines(short_term)) or "（本日は該当なし）"
     market_block = _market_lines(market or [])
     news = news_block or "（本日は市況ニュースのメタ情報がありません）"
+    review_lines = "\n".join(_prior_review_lines(prior_reviews or [])) or "（直近で決着済みのピックはありません）"
 
     return (
         "あなたは日本株AI分析noteの執筆者です。以下は本日のAI銘柄ピック（中長期・短期）の"
@@ -182,6 +259,7 @@ def build_prompt(
         "考えられるかの解釈・考察を加えてください。\n\n"
         f"## 市況指標（実データ）\n{market_block}\n\n"
         f"## 市況ニュース（メタ情報のみ）\n{news}\n\n"
+        f"## 直近で決着済みのピック（前日レビュー用の実測値）\n{review_lines}\n\n"
         f"## {note_date} 中長期ピック分析\n{mid_lines}\n\n"
         f"## {note_date} 短期ピック分析\n{short_lines}\n\n"
         "submit_daily_note で記事タイトルと本文（Markdown）を提出してください。"
@@ -200,6 +278,7 @@ async def generate(
     *,
     market: list[IndexQuote] | None = None,
     news_block: str | None = None,
+    prior_reviews: list[PriorOutcomeReview] | None = None,
 ) -> tuple[str, str, str]:
     """(title, body_markdown, model_version) を返す。LLM未設定/失敗時は定型文でフォールバックする."""
     provider = resolve_feature_provider("note_publish")
@@ -208,7 +287,9 @@ async def generate(
         body = "本日は紹介できる分析結果がありませんでした。" + DISCLAIMER
         return title, body, "unavailable"
 
-    prompt = build_prompt(note_date, mid_term, short_term, market=market, news_block=news_block)
+    prompt = build_prompt(
+        note_date, mid_term, short_term, market=market, news_block=news_block, prior_reviews=prior_reviews
+    )
     try:
         raw = await provider.propose_daily_note(prompt=prompt)
     except LLMError:

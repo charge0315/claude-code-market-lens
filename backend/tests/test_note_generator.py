@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from backend.services.notes import note_generator as gen
-from backend.services.notes.note_generator import PickAnalysis
+from backend.services.notes.note_generator import PickAnalysis, PriorOutcomeReview, review_from_row
 
 
 class _FakeLLM:
@@ -74,6 +74,64 @@ def test_build_prompt_handles_empty_horizon() -> None:
     prompt = gen.build_prompt("2026-09-17", [], [])
 
     assert "該当なし" in prompt
+
+
+def test_build_prompt_handles_no_prior_reviews() -> None:
+    """前日決着分が無い日は、正直に「決着済みのピックはありません」と書かれる（捏造禁止）."""
+    prompt = gen.build_prompt("2026-09-17", [], [])
+
+    assert "直近で決着済みのピックはありません" in prompt
+
+
+def test_build_prompt_includes_prior_review_lines() -> None:
+    """前日レビュー章向けに、entry/stop/targetを含まない決着済みピックの実測値をプロンプトへ含める."""
+    review = PriorOutcomeReview(
+        symbol="7203",
+        company_name="トヨタ自動車",
+        horizon_type="short_term",
+        horizon_days=1,
+        direction="bullish",
+        realized_return=0.021,
+        excess_return=0.015,
+        mfe=0.03,
+        mae=-0.005,
+        first_hit="target",
+        win=True,
+        confidence_bucket="high",
+    )
+
+    prompt = gen.build_prompt("2026-09-17", [], [], prior_reviews=[review])
+
+    assert "7203（トヨタ自動車）" in prompt
+    assert "判定=的中" in prompt
+    assert "実現リターン=2.10%" in prompt
+    assert "TOPIX超過リターン=1.50%" in prompt
+    assert "先着=目標到達" in prompt
+    # entry/stop/target は PriorOutcomeReview 自体に無く、プロンプトにも現れない。
+    assert "entry" not in prompt.lower()
+
+
+def test_review_from_row_converts_db_row() -> None:
+    row = {
+        "symbol": "9984",
+        "company_name": "ソフトバンクグループ",
+        "horizon_type": "mid_term",
+        "horizon_days": 20,
+        "direction": "bearish",
+        "realized_return": -0.03,
+        "excess_return": -0.02,
+        "mfe": 0.01,
+        "mae": -0.04,
+        "first_hit": "stop",
+        "win": 0,
+        "confidence_bucket": "low",
+    }
+
+    review = review_from_row(row)
+
+    assert review.symbol == "9984"
+    assert review.win is False
+    assert review.horizon_days == 20
 
 
 def test_has_price_mention_detects_yen_amounts() -> None:

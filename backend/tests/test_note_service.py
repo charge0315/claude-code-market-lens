@@ -83,6 +83,52 @@ async def test_generate_today_reuses_existing_without_force(migrated_db: Path, m
     assert first.note_id == second.note_id
 
 
+async def test_generate_today_includes_prior_day_outcome_review(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """前日決着済みピック（pick_outcomes）の実測値が、note生成プロンプトへ渡ることを検証する（回帰）."""
+    from datetime import datetime, timedelta
+
+    from backend.services.db import pick_outcome_db
+    from backend.services.jst_time import today_jst
+
+    today = today_jst()
+    yesterday = (datetime.fromisoformat(today) - timedelta(days=1)).strftime("%Y-%m-%d")
+    await pl.insert_pick(_entry("p-prev", "short_term", "7203", issued_at=f"{yesterday}T08:50:00+09:00"))
+    await pick_outcome_db.upsert_outcome(
+        pick_id="p-prev",
+        horizon_days=1,
+        resolved_at=f"{today}T09:05:00+09:00",
+        realized_return=0.021,
+        win=True,
+        hit_stop=False,
+        hit_target=True,
+        first_hit="target",
+        mfe=0.03,
+        mae=-0.005,
+        benchmark_return=0.006,
+        excess_return=0.015,
+        confidence_bucket="high",
+        direction="bullish",
+    )
+    await pl.insert_pick(_entry("p-today", "mid_term", "9984", issued_at=f"{today}T08:50:00+09:00"))
+
+    captured: dict[str, str] = {}
+
+    class _CapturingLLM(_FakeLLM):
+        async def propose_daily_note(self, *, prompt: str) -> dict[str, object]:
+            captured["prompt"] = prompt
+            return await super().propose_daily_note(prompt=prompt)
+
+    monkeypatch.setattr(gen, "resolve_feature_provider", lambda _f: _CapturingLLM("t"))
+
+    await svc.generate_today()
+
+    assert "7203" in captured["prompt"]
+    assert "実現リターン=2.10%" in captured["prompt"]
+    assert "判定=的中" in captured["prompt"]
+
+
 async def test_generate_today_source_pick_ids_track_todays_official_picks(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

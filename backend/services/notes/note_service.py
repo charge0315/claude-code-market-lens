@@ -8,16 +8,21 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from backend.models.note import DailyNote
 from backend.services.data.market_indices_service import get_market_snapshot
 from backend.services.db import note_db
 from backend.services.jst_time import JST, today_jst
 from backend.services.ledger import prediction_ledger as pl
-from backend.services.notes.note_generator import generate, has_price_mention
+from backend.services.notes.note_generator import generate, has_price_mention, review_from_row
 from backend.services.picks.pick_analysis import to_pick_analysis
 from backend.services.vault.news_digest_service import get_market_news_digest, render_news_digest_block
+
+# 前日レビュー章の決着済みピック検索窓（暦日）。土日を挟んでも直近の営業日分の決着を拾える
+# よう、1日ではなく数日分をバッファに持つ（取引所の営業日カレンダーは持たないため簡易対応）。
+_PRIOR_REVIEW_LOOKBACK_DAYS = 4
+_PRIOR_REVIEW_LIMIT = 20
 
 
 def _note_from_row(row: dict[str, object]) -> DailyNote:
@@ -49,8 +54,16 @@ async def _generate_for_date(note_date: str, *, force: bool) -> DailyNote:
     short_term_analysis = [await to_pick_analysis(p) for p in short_term]
     market = await get_market_snapshot()
     news = render_news_digest_block(await get_market_news_digest())
+    since = (datetime.fromisoformat(note_date) - timedelta(days=_PRIOR_REVIEW_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    review_rows = await pl.list_recent_outcome_reviews(since=f"{since}T00:00:00", limit=_PRIOR_REVIEW_LIMIT)
+    prior_reviews = [review_from_row(row) for row in review_rows]
     title, body, model_version = await generate(
-        note_date, mid_term_analysis, short_term_analysis, market=market, news_block=news
+        note_date,
+        mid_term_analysis,
+        short_term_analysis,
+        market=market,
+        news_block=news,
+        prior_reviews=prior_reviews,
     )
     source_pick_ids = [p.pick_id for p in (*mid_term, *short_term)]
 

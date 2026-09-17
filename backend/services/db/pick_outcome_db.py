@@ -131,6 +131,30 @@ async def list_resolved_for_eval(*, horizon_days: int, since: str | None = None)
         return [dict(r._mapping) for r in result]
 
 
+async def list_recent_reviews(*, since: str, limit: int = 20) -> list[dict[str, object]]:
+    """直近に決着した（本番のみ）ピックを決着日時の降順で返す（noteの前日レビュー章用）.
+
+    entry/stop/target 等の価格列は選択しない。noteの生成素材には価格を一切渡さない方針
+    （`note_generator.py` の docstring）を、決着済みピックの振り返り素材にも一貫させる。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text("""
+                SELECT
+                    p.pick_id, p.symbol, p.horizon_type, p.issued_at, p.direction,
+                    o.horizon_days, o.resolved_at, o.realized_return, o.excess_return,
+                    o.mfe, o.mae, o.first_hit, o.win, o.confidence_bucket
+                FROM pick_outcomes o
+                JOIN prediction_ledger p ON p.pick_id = o.pick_id
+                WHERE o.resolved_at >= :since AND p.is_shadow = 0
+                ORDER BY o.resolved_at DESC
+                LIMIT :limit
+                """),
+            {"since": since, "limit": limit},
+        )
+        return [dict(r._mapping) for r in result]
+
+
 async def cohort_winrate(
     *, confidence_bucket: str | None = None, direction: str | None = None, horizon_days: int = 20
 ) -> tuple[float | None, int]:
