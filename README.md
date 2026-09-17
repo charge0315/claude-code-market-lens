@@ -1,4 +1,4 @@
-# Alpha Forge
+# ALPHA FORGE
 
 [![CI](https://github.com/charge0315/claude-code-market-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/charge0315/claude-code-market-lens/actions/workflows/ci.yml)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
@@ -66,9 +66,6 @@
 - **プロンプトインジェクション対策** — Vault・ニュース等の外部由来本文は LLM プロンプトへ注入せず、構造化フィールドのみを利用する境界をテストで固定。
 - **国内証券標準の UI** — 上昇 = 赤 / 下落 = 緑、JST 基準の時刻表示、高密度・低余白のプロ端末デザイン。
 
-再利用元は [Market Lens](../market-lens)。ドメインロジック・データ取得層・スコアリングは
-移植を第一選択としています。詳細は [`plans/`](plans/) を参照。
-
 ## 構成
 
 | レイヤー | 技術 | ポート |
@@ -85,7 +82,7 @@ backend/
   celery_app.py      Celery 設定（beat スケジュール一元、_BEAT_SCHEDULE 参照）
   alembic/           マイグレーション（0001_baseline に全ドメインテーブル）
   routers/           HTTP / WS エンドポイント
-  services/          ドメインロジック（フェーズごとに Market Lens から移植 / 新規設計）
+  services/          ドメインロジック
 frontend/
   src/app/           dashboard / stock-detail / portfolio / model-lab / notifications
   src/components/     ui / layout / pipeline / dashboard / portfolio / notify / model-lab / stock-detail

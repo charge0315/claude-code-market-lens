@@ -11,7 +11,7 @@
 | frontend | Next.js 16 + TypeScript (strict) / Vanilla CSS | 3001 |
 | backend | FastAPI + Python 3.11 | 8002 |
 | DB | SQLite + Alembic（`backend/alembic/versions/`、head 追従） | — |
-| 非同期 | Celery + Redis（DB 番号 4/5、Market Lens と分離） | — |
+| 非同期 | Celery + Redis（DB 番号 4/5） | — |
 | リアルタイム | SSE（推論トレース）/ WebSocket（通知） | — |
 
 ## 2. ディレクトリ構成（実装後）
@@ -46,7 +46,7 @@ frontend/src/
 ```
 
 計画時点（`plans/02`）との主な差分:
-- `services/portfolio/ai_portfolio*` は移植していない。Market Lens の同名機能は「AI が自前資金で仮想ポートフォリオを自動売買する」別機能であり、Alpha Forge の「実保有への HITL 提案のみ・自動約定なし」とは設計思想が相容れないため（`plans/04_タスクリスト.md` P7a 参照）。
+- `services/portfolio/ai_portfolio*` は実装していない。「AI が自前資金で仮想ポートフォリオを自動売買する」機能は、Alpha Forge の「実保有への HITL 提案のみ・自動約定なし」という設計思想とは相容れないため対象外とした（`plans/04_タスクリスト.md` P7a 参照）。
 - frontend の `components/{charts,sidebar}/` は実際には機能別ディレクトリ（`dashboard/` `portfolio/` `model-lab/` `stock-detail/` `layout/`）に分かれている。
 - P8 完了後（P9〜P26）にユーザー追加依頼で拡張: 銘柄別モデル自動学習（XGBoost/RandomForest/LSTM/Transformer）・ナレッジベース（Qdrant）検索統合・マルチLLM判定（Gemini を challenger として並行実行、`services/picks/gemini_picks.py` で独立一覧化）・外部 API キー設定画面（`services/config_store.py`）・ポートフォリオの銘柄検索追加/売却履歴（`portfolio_sell_history` テーブル）。UI 配色は CLAUDE.md 当初記載の near-black+ブルーから、ユーザー提示の参考デザインに合わせ最終的に明るいクリーム色（`tokens.css` 単一情報源）へ変更（`plans/04` P18/P21、`plans/05` §2b 参照）。
 
@@ -73,10 +73,6 @@ frontend/src/
 - 継続学習の教師信号は自分の実測値のみ。
 - CSP は nonce ベース（`frontend/src/middleware.ts`）。
 - Vault は読み取り専用。
-
-## 7. Market Lens との分離
-
-ポート（8002/3001 vs 8001/3000）、Redis DB 番号（4/5 vs 0/1）、venv、DB ファイルをすべて分離済み。
 
 ---
 

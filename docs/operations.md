@@ -21,7 +21,7 @@
 .venv\Scripts\celery.exe -A backend.celery_app worker --pool=solo --loglevel=info
 
 # 3. Celery beat（定期実行スケジューラ。ワーカーとは別プロセス — Windows は
-#    `worker -B`（beat 埋め込み）を拒否するため必ず分離する、Market Lens と同じ制約）
+#    `worker -B`（beat 埋め込み）を拒否するため必ず分離する）
 .venv\Scripts\celery.exe -A backend.celery_app beat --loglevel=info
 
 # 4. フロントエンド（ポート 3001）
@@ -29,13 +29,13 @@ cd frontend && npm run build && npm start   # 本番相当
 # cd frontend && npm run dev                 # 開発時
 ```
 
-Redis はローカルで別途起動しておく（`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` の既定は `redis://127.0.0.1:6379/4` `/5` — Market Lens の `/0` `/1` と衝突しないよう DB 番号を分離済み）。**Redis 未起動でもバックエンド自体は起動する**が、celery-beat 経由の自走機能（下記表）はすべて動かない。
+Redis はローカルで別途起動しておく（`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` の既定は `redis://127.0.0.1:6379/4` `/5`）。**Redis 未起動でもバックエンド自体は起動する**が、celery-beat 経由の自走機能（下記表）はすべて動かない。
 
 停止は各プロセスを `Ctrl+C`。Celery ワーカーは実行中タスクの完了を待たず即終了する（再実行すればよい、DB は壊れない）。
 
 ### 簡易起動（まとめて起動/停止）
 
-Market Lens `scripts/start.ps1` と同じ設計の起動/停止スクリプトを用意している。
+まとめて起動/停止するスクリプトを用意している。
 
 ```powershell
 .\scripts\start.ps1   # 4プロセスをまとめてバックグラウンド起動
@@ -135,10 +135,10 @@ celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める
 
 | 変数 | 必須 | 既定値 | 用途 |
 |---|:---:|---|---|
-| `ML_SECRET_KEY` | ✅ | なし（16文字未満は起動時エラー） | Market Lens の認証基盤を踏襲した設定スロット。Alpha Forge は未認証（単一ユーザー・デスクトップ常駐前提、CLAUDE.md）だが `Settings()` の fail-fast 検証は残しているため値の設定自体は必須 |
+| `ML_SECRET_KEY` | ✅ | なし（16文字未満は起動時エラー） | 旧設計の認証基盤向け設定スロットの名残。Alpha Forge は未認証（単一ユーザー・デスクトップ常駐前提、CLAUDE.md）だが `Settings()` の fail-fast 検証は残しているため値の設定自体は必須 |
 | `ML_PASSWORD_HASH` | ✅ | なし（空は起動時エラー） | 同上（現状ログイン機能では未使用。上記と同じ理由で必須） |
 | `ML_USERNAME` | – | `admin` | 同上（未使用） |
-| `BACKEND_PORT` / `FRONTEND_PORT` | – | `8002` / `3001` | Market Lens（8001/3000）と非衝突のポート |
+| `BACKEND_PORT` / `FRONTEND_PORT` | – | `8002` / `3001` | 他のローカルサービスと競合しないよう選定したポート |
 | `ML_CORS_ORIGINS` | – | `http://localhost:3001,http://127.0.0.1:3001` | CORS 許可オリジン |
 | `BACKEND_PROXY_TARGET` | – | `http://127.0.0.1:8002` | frontend の `/api` `/ws` リライト先（Next.js サーバのみ参照） |
 | `ML_COOKIE_SECURE` | – | `false` | 本番 https では `true` 必須 |
@@ -149,7 +149,7 @@ celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める
 | `GEMINI_API_KEY` | – | 空（マルチLLM判定が無効） | Gemini API キー（🆕 P12）。設定すると公式パイプライン（Anthropic）と並行して比較用の shadow 判定を `shadow_predictions` へ記録する。未設定でも公式パイプラインには一切影響しない |
 | `GEMINI_MODEL` | – | `gemini-2.5-pro` | 使用する Gemini モデル ID |
 | `DATABASE_URL` | – | `sqlite+aiosqlite:///./data/alpha_forge.db` | DB 接続先（PostgreSQL 移行可能な設計） |
-| `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | – | `redis://127.0.0.1:6379/4` `/5` | Celery（Market Lens と DB 番号分離） |
+| `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | – | `redis://127.0.0.1:6379/4` `/5` | Celery（他サービスと衝突しないよう DB 番号を分離） |
 | `VAULT_ROOT` | – | `Personal Space/10_Stock` | Obsidian Vault ルート（読み取り専用が原則） |
 | `BRAND_NOTES_DIR` / `DAILY_NOTES_DIR` | – | 空（`VAULT_ROOT` から導出） | 銘柄ナレッジ / 日次マーケットノートのディレクトリ |
 | `SHIKIHO_ENABLED` | – | `false` | 四季報連携（当面スタブ） |
@@ -163,7 +163,7 @@ celery-beat の自動定期実行は5分/60分間隔の1firing予算に収める
 | `CALIBRATION_METHOD` | – | `auto` | 確度較正方式（`auto`/`isotonic`/`platt`/`identity`） |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | – | 空（Push 配信は無効、アプリ内通知のみ） | Web Push 用 VAPID 鍵。`npx web-push generate-vapid-keys` で生成 |
 
-必須変数（`ML_SECRET_KEY`, `ML_PASSWORD_HASH`）はどちらか欠けると `backend/config.py` の `Settings()` が起動時に例外を投げる（フェイルファスト設計、Market Lens 踏襲）。ローカル動作確認だけであれば任意のダミー値（32文字以上の `ML_SECRET_KEY` と bcrypt 形式の `ML_PASSWORD_HASH`）で起動できる。
+必須変数（`ML_SECRET_KEY`, `ML_PASSWORD_HASH`）はどちらか欠けると `backend/config.py` の `Settings()` が起動時に例外を投げる（フェイルファスト設計）。ローカル動作確認だけであれば任意のダミー値（32文字以上の `ML_SECRET_KEY` と bcrypt 形式の `ML_PASSWORD_HASH`）で起動できる。
 
 **外部 API キー（`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`JQUANTS_API_KEY`）は `/settings` 画面からも編集できる**（🆕 P20）。画面からの保存は `.env` への永続化のみで、`Settings` は起動時に一度だけ読み込む frozen オブジェクトのため**実行中の backend / celery worker・beat には反映されない**。値を変えたら該当プロセスを再起動すること。設定画面は §6 の認証機構と同じ前提（無認証・単一ユーザー・デスクトップ常駐）を引き継ぐため、同一 LAN 上の他端末からもキーを書き換えられる状態である点に留意する。
 
@@ -211,13 +211,13 @@ Redis プロセスの生死を確認し、落ちていれば再起動 → Celery
 
 **症状**: 株価・ファンダメンタル取得系が遅い、または `503`（サーキットブレーカ OPEN）。
 
-**正常なフェイルセーフ動作**（`services/circuit_breaker.py`、Market Lens 踏襲）。5回連続失敗で30秒 OPEN、以降は即座に 503。30秒後に自動で1回だけ試行を許可（HALF_OPEN）し、成功すれば復帰する。基本的に何もせず待つ。
+**正常なフェイルセーフ動作**（`services/circuit_breaker.py`）。5回連続失敗で30秒 OPEN、以降は即座に 503。30秒後に自動で1回だけ試行を許可（HALF_OPEN）し、成功すれば復帰する。基本的に何もせず待つ。
 
 ---
 
 ## 5. バックアップ・リストア
 
-Alpha Forge には Market Lens のような自動バックアップスクリプトはまだ無い。SQLite ファイル1本（`data/alpha_forge.db`）が唯一の永続状態のため、最低限以下を手動で行う。
+Alpha Forge には自動バックアップスクリプトはまだ無い。SQLite ファイル1本（`data/alpha_forge.db`）が唯一の永続状態のため、最低限以下を手動で行う。
 
 ```bash
 # バックアップ（稼働中でも sqlite3 の online backup API を使えば安全だが、
@@ -234,7 +234,7 @@ cp data/alpha_forge.db "data/alpha_forge_$(date +%Y%m%d_%H%M%S).db"
 ## 6. 既知の制限・今後の課題
 
 - 自動バックアップスクリプト・起動/停止スクリプト（`start.ps1`/`stop.ps1` 相当）は未整備。単一プロセスずつ手動起動する運用が前提
-- 認証機構は Market Lens から `Settings` のスロットのみ引き継いでおり、実際のログイン機能は無い（CLAUDE.md: デスクトップ常駐・単一ユーザー前提のため意図的に未実装）
+- 認証機構は `Settings` の設定スロットのみが残っており、実際のログイン機能は無い（CLAUDE.md: デスクトップ常駐・単一ユーザー前提のため意図的に未実装）
 - celery-beat の自走スケジュールは日本の祝日を考慮しない（`trading_calendar.py` と同じスコープ外の判断）
 - Web Push はブラウザの購読が有効な場合のみ配信される。デスクトップ常駐前提のため PWA 化・インストール導線は意図的に作っていない
 - 通知はアプリ内表示 + Web Push のみ（メール/Slack/LINE 等の外部連携は無し）
