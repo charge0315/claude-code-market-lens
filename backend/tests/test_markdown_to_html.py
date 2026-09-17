@@ -33,3 +33,23 @@ def test_line_breaks_within_paragraph_become_br() -> None:
 
 def test_escapes_html_for_xss_protection() -> None:
     assert markdown_to_html("<script>alert(1)</script>") == "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"
+
+
+def test_converts_table_to_html_table() -> None:
+    html = markdown_to_html("| 銘柄コード | 方向性 |\n|---|---|\n| 7203 | 強気 |\n| 9984 | 中立 |")
+    assert html == (
+        "<table><thead><tr><th>銘柄コード</th><th>方向性</th></tr></thead>"
+        "<tbody><tr><td>7203</td><td>強気</td></tr><tr><td>9984</td><td>中立</td></tr></tbody></table>"
+    )
+
+
+def test_table_cells_support_inline_bold_and_are_escaped() -> None:
+    html = markdown_to_html("| a | b |\n|---|---|\n| **強気** | <script>x</script> |")
+    assert "<td><strong>強気</strong></td>" in html
+    assert "<script>x</script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_pipe_block_without_separator_row_is_not_treated_as_table() -> None:
+    html = markdown_to_html("| これは表ではない |\n| ただのテキスト行 |")
+    assert "<table>" not in html

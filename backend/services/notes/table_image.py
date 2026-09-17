@@ -55,11 +55,11 @@ def _is_separator_row(line: str) -> bool:
     return bool(parts) and all(_SEPARATOR_CELL_RE.match(p) for p in parts)
 
 
-def _is_table_block(lines: list[str]) -> bool:
+def is_table_block(lines: list[str]) -> bool:
     return len(lines) >= 2 and all(_TABLE_ROW_RE.match(line) for line in lines) and _is_separator_row(lines[1])
 
 
-def _parse_table_block(block: str) -> list[list[str]]:
+def parse_table_block(block: str) -> list[list[str]]:
     lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
     data_lines = [lines[0], *lines[2:]]
     return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in data_lines]
@@ -152,8 +152,8 @@ def extract_and_render_tables(body_markdown: str, *, embed_dir: str) -> tuple[st
     new_blocks: list[str] = []
     for block in blocks:
         lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
-        if _is_table_block(lines):
-            svg = render_table_svg(_parse_table_block(block))
+        if is_table_block(lines):
+            svg = render_table_svg(parse_table_block(block))
             if svg is not None:
                 table_no += 1
                 filename = f"table_{table_no}.svg"

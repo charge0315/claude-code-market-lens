@@ -33,6 +33,29 @@ describe('markdownToHtml', () => {
   it('HTML特殊文字をエスケープする（XSS対策）', () => {
     expect(markdownToHtml('<script>alert(1)</script>')).toBe('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');
   });
+
+  it('Markdown表をtable要素へ変換する', () => {
+    const html = markdownToHtml('| 銘柄コード | 方向性 |\n|---|---|\n| 7203 | 強気 |\n| 9984 | 中立 |');
+
+    expect(html).toBe(
+      '<table><thead><tr><th>銘柄コード</th><th>方向性</th></tr></thead>' +
+        '<tbody><tr><td>7203</td><td>強気</td></tr><tr><td>9984</td><td>中立</td></tr></tbody></table>',
+    );
+  });
+
+  it('表セル内の太字変換とエスケープに対応する', () => {
+    const html = markdownToHtml('| a | b |\n|---|---|\n| **強気** | <script>x</script> |');
+
+    expect(html).toContain('<td><strong>強気</strong></td>');
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('区切り行の無いパイプ行は表として扱わない', () => {
+    const html = markdownToHtml('| これは表ではない |\n| ただのテキスト行 |');
+
+    expect(html).not.toContain('<table>');
+  });
 });
 
 describe('escapeHtml', () => {

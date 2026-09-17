@@ -96,6 +96,10 @@ h2 {{ border-bottom: 2px solid #c67139; padding-bottom: 4px; }}
 figure {{ margin: 16px 0; }}
 figcaption {{ font-size: 0.85rem; color: #5c584f; margin-bottom: 4px; }}
 svg {{ max-width: 100%; height: auto; border-radius: 8px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9rem; }}
+th, td {{ border: 1px solid #c9bfa8; padding: 6px 10px; text-align: left; }}
+th {{ background: #c67139; color: #fffaf2; }}
+tbody tr:nth-child(even) {{ background: #efe0c8; }}
 .disclaimer {{ color: #5c584f; font-size: 0.8rem; border-top: 1px solid #c9bfa8; padding-top: 12px; margin-top: 24px; }}
 </style>
 </head>

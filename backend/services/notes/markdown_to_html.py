@@ -2,13 +2,17 @@
 
 `frontend/src/lib/markdownToHtml.ts`（note.com貼り付け用のクリップボードコピーで使用）と
 同じ変換方針のPython版。note下書きは見出し(#/##/###)・太字(**)・区切り線(---)・箇条書き(-)・
-段落のみを使う想定のため、フル仕様のMarkdownパーサーは導入しない（YAGNI）。
+表(| |)・段落のみを使う想定のため、フル仕様のMarkdownパーサーは導入しない（YAGNI）。
+表のGFM検出は `table_image.py`（Obsidian書き出しのSVG画像化でも使用）と共有し、
+判定ロジックの重複を避ける（DRY）。
 """
 
 from __future__ import annotations
 
 import re
 from html import escape
+
+from backend.services.notes.table_image import is_table_block, parse_table_block
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+?)\*(?!\*)")
@@ -23,6 +27,13 @@ def _inline_to_html(text: str) -> str:
     return _ITALIC_RE.sub(r"<em>\1</em>", bolded)
 
 
+def _table_to_html(block: str) -> str:
+    header, *body_rows = parse_table_block(block)
+    thead = "<tr>" + "".join(f"<th>{_inline_to_html(c)}</th>" for c in header) + "</tr>"
+    tbody = "".join("<tr>" + "".join(f"<td>{_inline_to_html(c)}</td>" for c in row) + "</tr>" for row in body_rows)
+    return f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+
+
 def _block_to_html(block: str) -> str:
     trimmed = block.strip()
 
@@ -35,6 +46,10 @@ def _block_to_html(block: str) -> str:
         return f"<h{level}>{_inline_to_html(heading_match.group(2))}</h{level}>"
 
     lines = [line.strip() for line in trimmed.split("\n") if line.strip()]
+
+    if is_table_block(lines):
+        return _table_to_html(trimmed)
+
     if lines and all(_BULLET_RE.match(line) for line in lines):
         items = "".join(f"<li>{_inline_to_html(_BULLET_RE.sub('', line))}</li>" for line in lines)
         return f"<ul>{items}</ul>"
