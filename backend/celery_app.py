@@ -35,18 +35,24 @@ celery_app = Celery(
 )
 
 # beat スケジュール。時刻は UTC 固定で評価されるため JST は UTC へ換算して書く（JST は DST なし）。
-# 方針（`plans/03_システム設計.md` §3.6）: ピック生成 08:50 JST / 決着・評価は夜間 /
-# トレンド同期 1 日 4 回。保有監視・フル再学習・昇格ゲートは P5/P7 で追加する。
+# 方針（`plans/03_システム設計.md` §3.6）: ピック生成は寄り付き（JST 09:00）前に完了 /
+# 決着・評価は夜間 / トレンド同期 1 日 4 回。保有監視・フル再学習・昇格ゲートは P5/P7 で追加する。
+#
+# ピック生成開始時刻（07:40 JST）の根拠: 2026-09-17 実測で run_picks_task(mid_term) 単体が
+# 約23分28秒かかった（全銘柄への yfinance 価格取得 + LLM 提案生成が直列）。worker は
+# --pool=solo で直列実行のため mid_term → short_term は完全に順番待ちになり、2 分ずらしは
+# 二重占有回避の効果を持たない。合計 ~50 分を見込んでも寄り付き 09:00 に間に合うよう、
+# 安全マージンを確保して 07:40 開始とする。
 _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     "run-picks-mid-term": {
         "task": "backend.tasks.run_picks_task",
         "args": ("mid_term",),
-        "schedule": crontab(hour=23, minute=50),  # JST 08:50（寄り付き前）
+        "schedule": crontab(hour=22, minute=40),  # JST 07:40（寄り付き前、安全マージン込み）
     },
     "run-picks-short-term": {
         "task": "backend.tasks.run_picks_task",
         "args": ("short_term",),
-        "schedule": crontab(hour=23, minute=52),  # JST 08:52（2 分ずらして直列ワーカーの二重占有回避）
+        "schedule": crontab(hour=22, minute=42),  # JST 07:42（solo worker で直列実行のため実質は順番待ち）
     },
     "resolve-pick-outcomes": {
         "task": "backend.tasks.resolve_pick_outcomes_task",
