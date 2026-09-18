@@ -142,18 +142,25 @@ class Settings(BaseSettings):
 
     # --- PIT（point-in-time）特徴量スナップショット（🆕 P29） ---
     # `plans/03_システム設計` §3.7。日次収集タスクの on/off とスコープ、学習パネルへの
-    # 投入可否・被覆率ゲート閾値。詳細は `plans/05_決定ログと未決事項.md` §3 #I〜#K。
+    # 投入可否・被覆率ゲート閾値。詳細は `plans/05_決定ログと未決事項.md` §3 #I〜#K
+    # （2026-09-18 ユーザー確認: I はセンチメント keyword も全ユニバースへ拡大、
+    # K はゲート閾値を厳格化）。
     pit_snapshot_enabled: bool = Field(default=True, validation_alias="PIT_SNAPSHOT_ENABLED")
     pit_snapshot_scope: Literal["universe", "candidates", "watchlist"] = Field(
         default="universe", validation_alias="PIT_SNAPSHOT_SCOPE"
     )
-    pit_sentiment_scope: Literal["candidates", "watchlist"] = Field(
-        default="candidates", validation_alias="PIT_SENTIMENT_SCOPE"
+    # 🔧 2026-09-18: 既定 "candidates" → "universe" へ変更（#I 確定）。yfinance のニュース取得を
+    # 東証全銘柄（約4000銘柄）へ毎日走らせるため、レート制限次第では収集完了まで時間を要する
+    # （キャッシュ TTL 24h、`sentiment_analyzer._SENTIMENT_CACHE_TTL` のため翌日以降は既存銘柄分
+    # の再取得コストは下がる）。
+    pit_sentiment_scope: Literal["universe", "candidates", "watchlist"] = Field(
+        default="universe", validation_alias="PIT_SENTIMENT_SCOPE"
     )
     # 学習パネルへの PIT 列投入そのものの opt-in（既定 OFF、台帳が貯まるまで明示的に有効化しない）。
     pit_features_enabled: bool = Field(default=False, validation_alias="PIT_FEATURES_ENABLED")
-    pit_min_coverage_days: int = Field(default=60, validation_alias="PIT_MIN_COVERAGE_DAYS", ge=1)
-    pit_min_coverage_ratio: float = Field(default=0.5, validation_alias="PIT_MIN_COVERAGE_RATIO", ge=0.0, le=1.0)
+    # 🔧 2026-09-18: 60営業日/50% → 120営業日/70% へ厳格化（#K 確定、ユーザーが安定重視を選択）。
+    pit_min_coverage_days: int = Field(default=120, validation_alias="PIT_MIN_COVERAGE_DAYS", ge=1)
+    pit_min_coverage_ratio: float = Field(default=0.7, validation_alias="PIT_MIN_COVERAGE_RATIO", ge=0.0, le=1.0)
     pit_asof_tolerance_bdays: int = Field(default=5, validation_alias="PIT_ASOF_TOLERANCE_BDAYS", ge=0)
 
     # --- ナレッジベース ベクトル検索（kb_creator、既存の外部サービス。任意） ---
