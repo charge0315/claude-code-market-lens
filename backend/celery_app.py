@@ -56,6 +56,18 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "args": ("short_term",),
         "schedule": crontab(hour=22, minute=32),  # JST 07:32（solo worker で直列実行のため実質は順番待ち）
     },
+    # 🆕 P29: PIT（point-in-time）特徴量スナップショット収集。大引け後・当日分の frontmatter/
+    # ニュースが出揃うタイミング（`plans/03_システム設計` §3.6）。決着解決・評価バッチとは
+    # 独立したデータ（今日時点の特徴量を記録するだけで、決着解決は使わない）のため実行順の
+    # 依存はない。
+    "collect-pit-fundamental-snapshot": {
+        "task": "backend.tasks.collect_pit_fundamental_snapshot_task",
+        "schedule": crontab(hour=7, minute=45),  # JST 16:45
+    },
+    "collect-pit-sentiment-snapshot": {
+        "task": "backend.tasks.collect_pit_sentiment_snapshot_task",
+        "schedule": crontab(hour=7, minute=50),  # JST 16:50
+    },
     "resolve-pick-outcomes": {
         "task": "backend.tasks.resolve_pick_outcomes_task",
         "schedule": crontab(hour=7, minute=38),  # JST 16:38（大引け後）
@@ -80,6 +92,13 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "backend.tasks.run_pool_training_task",
         # JST 毎月1日 04:00（月次。J-Quants 一括バー呼び出しが重いため週次より粗い頻度にする）。
         "schedule": crontab(hour=19, minute=0, day_of_month=1),
+    },
+    # 🆕 P29: ソースアブレーション評価。crontab は「N ヶ月ごと」を直接表現できないため月次発火
+    # し、四半期開始月（1/4/7/10）以外はタスク内部で skip する（`run_pool_training` の直後、
+    # 同じ月初のタイミングに揃える）。
+    "run-source-ablation": {
+        "task": "backend.tasks.run_source_ablation_task",
+        "schedule": crontab(hour=19, minute=30, day_of_month=1),
     },
     "run-portfolio-monitor": {
         "task": "backend.tasks.run_portfolio_monitor_task",

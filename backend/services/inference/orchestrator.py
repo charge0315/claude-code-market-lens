@@ -33,6 +33,7 @@ from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_
 from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.jst_time import JST
+from backend.services.learning.pit_snapshot_service import record_llm_sentiment_snapshot
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
@@ -40,8 +41,12 @@ from backend.services.llm.registry import resolve_feature_provider, resolve_shad
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
-from backend.services.scoring.llm_news_sentiment_service import get_llm_news_sentiment, render_news_sentiment_block
-from backend.services.vault.brand_notes_service import get_brand_note
+from backend.services.scoring.llm_news_sentiment_service import (
+    LlmNewsSentimentResult,
+    get_llm_news_sentiment,
+    render_news_sentiment_block,
+)
+from backend.services.vault.brand_notes_service import BrandNote, get_brand_note
 from backend.services.vault.daily_note_service import read_daily_frontmatter
 from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
 
@@ -77,7 +82,41 @@ def _num(value: object) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _feature_snapshot(rec: dict[str, object], atr: float | None, trend_score: float | None) -> dict[str, object]:
+def _pit_fundamental_snapshot(brand: BrandNote | None) -> dict[str, object] | None:
+    """Vault frontmatter の生の財務指標（数値・enum のみ）を `feature_snapshot` 埋め込み用に返す.
+
+    🆕 P29: 従来は `score_breakdown.fundamental`（recommender のヒューリスティック合成スコア、
+    0-100）しか台帳に残らず、PER/PBR/ROE 等の生値は将来の特徴量エンジニアリングにも PSI
+    ドリフト監視（`registry/drift.py`）にも使えなかった（`plans/03_システム設計` §1.9）。
+    """
+    return brand.to_prompt_dict() if brand else None
+
+
+def _pit_sentiment_snapshot(news_sentiment: LlmNewsSentimentResult | None) -> dict[str, object] | None:
+    """LLM ニュースセンチメント判定の生フィールド（enum/number のみ）を `feature_snapshot` 用に返す.
+
+    🆕 P29: `reasoning`（自由記述）は含めない — `llm_news_sentiment_service` の
+    enum/number 転送境界を `feature_snapshot` の側でも一貫させる。
+    """
+    if news_sentiment is None:
+        return None
+    return {
+        "llm_sentiment_label": news_sentiment.sentiment_label,
+        "llm_sentiment_score": news_sentiment.sentiment_score,
+        "llm_impact_score": news_sentiment.impact_score,
+        "llm_confidence": news_sentiment.confidence,
+        "news_count": news_sentiment.news_count,
+    }
+
+
+def _feature_snapshot(
+    rec: dict[str, object],
+    atr: float | None,
+    trend_score: float | None,
+    *,
+    brand: BrandNote | None = None,
+    news_sentiment: LlmNewsSentimentResult | None = None,
+) -> dict[str, object]:
     return {
         "score_breakdown": rec.get("score_breakdown"),
         "technical_signals": rec.get("technical_signals"),
@@ -87,6 +126,9 @@ def _feature_snapshot(rec: dict[str, object], atr: float | None, trend_score: fl
         "trend_score": trend_score,
         "atr_14": atr,
         "current_price": _as_dict(rec.get("technical_signals")).get("current_price"),
+        # 🆕 P29: 遡及的な特徴量エンジニアリング・生粒度 PSI 監視のための生値（§1.9）。
+        "pit_fundamental": _pit_fundamental_snapshot(brand),
+        "pit_sentiment": _pit_sentiment_snapshot(news_sentiment),
     }
 
 
@@ -266,6 +308,11 @@ async def run_inference(
     # コスト増は限定的。失敗・ニュース無しは None（フェイルソフト、ステージは失敗扱いにしない）。
     news_sentiment = await get_llm_news_sentiment(symbol)
     news_sentiment_block = render_news_sentiment_block(news_sentiment)
+    # 🆕 P29: shortlist 選定後の判定を PIT 台帳へ副産物記録する（追加 LLM 呼び出しは発生しない、
+    # `plans/03_システム設計` §3.7.7）。失敗してもピック生成本体には影響させない（フェイルソフト、
+    # `record_llm_sentiment_snapshot` 内部で例外を握り潰す）。
+    if news_sentiment is not None:
+        await record_llm_sentiment_snapshot(symbol, news_sentiment)
     prompt = build_pick_prompt(
         horizon_type=horizon_type,
         recommendation=rec,
@@ -396,7 +443,7 @@ async def run_inference(
         confidence_raw=confidence_raw,
         confidence=confidence,
         confidence_bucket=bucket,
-        feature_snapshot=_feature_snapshot(rec, atr, trend_score),
+        feature_snapshot=_feature_snapshot(rec, atr, trend_score, brand=brand, news_sentiment=news_sentiment),
         rationale_struct={
             "recommender_reasoning": rec.get("reasoning"),
             "llm_risk_factors": raw.get("risk_factors") or [],

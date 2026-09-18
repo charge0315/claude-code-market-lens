@@ -14,6 +14,7 @@ from backend.services.inference import orchestrator as orch
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.scoring.llm_news_sentiment_service import LlmNewsSentimentResult
 from backend.services.vault import knowledge_search_client as ksc
+from backend.services.vault.brand_notes_service import BrandNote
 from backend.tests.conftest import VaultDirs
 from backend.tests.test_pick_pipeline import _DEFAULT_GEMINI, _DEFAULT_LLM, WiredState, _FakeGemini, _FakeLLM, _rec
 
@@ -521,6 +522,114 @@ async def test_rationale_struct_contains_news_sentiment(
     assert outcome.status == "done"
     assert outcome.pick is not None
     assert outcome.pick.rationale_struct["news_sentiment"] == sentiment.to_rationale_dict()
+
+
+# --- PIT（point-in-time）特徴量スナップショット（🆕 P29）---
+
+
+def _brand_note(code: str, **overrides: object) -> BrandNote:
+    base: dict[str, object | None] = {
+        "code": code,
+        "name": None,
+        "name_en": None,
+        "security_type": None,
+        "market": None,
+        "sector33": None,
+        "sector17": None,
+        "scale_cat": None,
+        "fiscal_year_end": None,
+        "listing_date": None,
+        "last_earnings_date": None,
+        "last_earnings_type": None,
+        "close_date": None,
+        "data_as_of": None,
+        "close_price": None,
+        "market_cap_oku": None,
+        "per_forecast": None,
+        "pbr": None,
+        "roe": None,
+        "equity_ratio": None,
+        "dividend_yield_forecast": None,
+        "bps": None,
+        "eps_forecast": None,
+        "dividend_forecast": None,
+        "shares_outstanding": None,
+    }
+    base.update(overrides)
+    return BrandNote(**base)  # type: ignore[arg-type]
+
+
+async def test_feature_snapshot_includes_raw_pit_fundamental_and_sentiment(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 P29: 集約後スコアだけでなく、Vault frontmatter / LLM センチメントの生値が
+    `feature_snapshot.pit_fundamental` / `pit_sentiment` に残ること（将来の遡及学習・
+    生粒度 PSI 監視のため）."""
+    note = _brand_note("7203", per_forecast=15.2, pbr=1.3, roe=0.12)
+    sentiment = _news_sentiment(label="positive", score=0.6, impact=40.0, confidence=55.0)
+
+    async def fake_brand(_code: str) -> BrandNote:
+        return note
+
+    async def fake_news_sentiment(_code: str) -> LlmNewsSentimentResult:
+        return sentiment
+
+    monkeypatch.setattr(orch, "get_brand_note", fake_brand)
+    monkeypatch.setattr(orch, "get_llm_news_sentiment", fake_news_sentiment)
+
+    outcome = await _run(wired)
+
+    assert outcome.status == "done"
+    assert outcome.pick is not None
+    snapshot = outcome.pick.feature_snapshot
+    pit_sentiment = snapshot["pit_sentiment"]
+    assert snapshot["pit_fundamental"] == note.to_prompt_dict()
+    assert pit_sentiment == {
+        "llm_sentiment_label": "positive",
+        "llm_sentiment_score": 0.6,
+        "llm_impact_score": 40.0,
+        "llm_confidence": 55.0,
+        "news_count": 3,
+    }
+    # reasoning（自由記述）は feature_snapshot へ一切転送しない。
+    assert isinstance(pit_sentiment, dict)
+    assert "reasoning" not in pit_sentiment
+
+
+async def test_feature_snapshot_pit_fields_none_when_no_source(wired: WiredState, migrated_db: Path) -> None:
+    """既定（`wired` = brand/news_sentiment とも None）では `pit_*` も None のままであること."""
+    outcome = await _run(wired)
+
+    assert outcome.status == "done"
+    assert outcome.pick is not None
+    assert outcome.pick.feature_snapshot["pit_fundamental"] is None
+    assert outcome.pick.feature_snapshot["pit_sentiment"] is None
+
+
+async def test_llm_sentiment_snapshot_recorded_as_pit_side_effect(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 P29: shortlist の LLM センチメント判定は追加 LLM 呼び出し無しで PIT 台帳へ副産物記録される."""
+    from backend.services.db import pit_snapshot_db
+    from backend.services.jst_time import today_jst
+
+    sentiment = _news_sentiment(label="negative", score=-0.4, impact=45.0, confidence=60.0)
+
+    async def fake_news_sentiment(_code: str) -> LlmNewsSentimentResult:
+        return sentiment
+
+    monkeypatch.setattr(orch, "get_llm_news_sentiment", fake_news_sentiment)
+
+    outcome = await _run(wired)
+    assert outcome.status == "done"
+
+    rows = await pit_snapshot_db.list_sentiment_range(
+        codes=["7203"], since=today_jst(), until=today_jst(), source="llm"
+    )
+    assert len(rows) == 1
+    assert rows[0]["llm_sentiment_label"] == "negative"
+    assert rows[0]["llm_sentiment_score"] == -0.4
+    assert rows[0]["news_count"] == 3
 
 
 async def test_news_sentiment_block_reaches_prompt_without_reasoning(

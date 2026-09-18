@@ -263,7 +263,7 @@ class PoolTrainingSummary:
         }
 
 
-def _default_as_of_dates(panel_bdays: int = _DEFAULT_PANEL_BDAYS) -> list[str]:
+def default_as_of_dates(panel_bdays: int = _DEFAULT_PANEL_BDAYS) -> list[str]:
     """前方リターンが解決済みの範囲で、直近 `panel_bdays` 営業日の as_of 日付列を返す.
 
     終端 = 今日（JST）から `POOL_HORIZON_DAYS + _RESOLVE_BUFFER_BDAYS` 営業日前
@@ -277,7 +277,7 @@ def _default_as_of_dates(panel_bdays: int = _DEFAULT_PANEL_BDAYS) -> list[str]:
 async def run_pool_training(*, as_of_dates: Sequence[str] | None = None, seed: int = 42) -> PoolTrainingSummary:
     """断面プールモデルを1本学習し `model_registry` へ登録する.
 
-    `as_of_dates` 省略時は `_default_as_of_dates()`。重い `build_panel`（ユニバース走査＋
+    `as_of_dates` 省略時は `default_as_of_dates()`。重い `build_panel`（ユニバース走査＋
     J-Quants 一括バー）と学習・保存は `asyncio.to_thread` へ逃がす。J-Quants 未設定・
     データ不足（ラベル付き行が `_MIN_LABELED_ROWS` 未満等）は例外にせず `status="skipped"`
     で正常終了する（他の自走タスクに影響させない）。
@@ -288,7 +288,7 @@ async def run_pool_training(*, as_of_dates: Sequence[str] | None = None, seed: i
     昇格する（🔧 Market Lens は 1 本しか無い前提で即 `activate_model` していたが、Alpha Forge
     は再学習後の自動切替をしない）。
     """
-    dates = list(as_of_dates) if as_of_dates is not None else _default_as_of_dates()
+    dates = list(as_of_dates) if as_of_dates is not None else default_as_of_dates()
 
     panel = await build_panel(dates)
     if panel.empty or "label" not in panel.columns or panel["label"].notna().sum() < _MIN_LABELED_ROWS:
@@ -306,10 +306,18 @@ async def run_pool_training(*, as_of_dates: Sequence[str] | None = None, seed: i
     artifact_path = str(_MODEL_DIR / f"{version}.joblib")
     await asyncio.to_thread(clf.save, artifact_path)
 
+    # 🆕 P29: PIT 特徴量の被覆率ゲート判定結果（`panel_feature_service._attach_pit_features`
+    # が `panel.attrs["pit_coverage"]` へ記録済み）を、このモデルバージョンの val_metrics へ
+    # 転記する。`PIT_FEATURES_ENABLED=false`（既定）では属性自体が付かないため何もしない。
+    val_metrics = cast("dict[str, object]", dict(metrics))
+    pit_coverage = panel.attrs.get("pit_coverage")
+    if pit_coverage is not None:
+        val_metrics["pit_coverage"] = pit_coverage
+
     await ensure_registered(
         version,
         lane=POOL_LANE,
-        val_metrics=cast("dict[str, object]", metrics),
+        val_metrics=val_metrics,
         feature_list=clf.feature_cols,
         artifact_path=artifact_path,
     )
@@ -333,6 +341,7 @@ async def load_pool_classifier(version: str) -> PoolClassifier:
 __all__ = [
     "PoolClassifier",
     "PoolTrainingSummary",
+    "default_as_of_dates",
     "load_pool_classifier",
     "run_pool_training",
     "train_pool_model",

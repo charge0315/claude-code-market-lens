@@ -140,6 +140,22 @@ class Settings(BaseSettings):
     # --- 四季報（当面スタブ） ---
     shikiho_enabled: bool = Field(default=False, validation_alias="SHIKIHO_ENABLED")
 
+    # --- PIT（point-in-time）特徴量スナップショット（🆕 P29） ---
+    # `plans/03_システム設計` §3.7。日次収集タスクの on/off とスコープ、学習パネルへの
+    # 投入可否・被覆率ゲート閾値。詳細は `plans/05_決定ログと未決事項.md` §3 #I〜#K。
+    pit_snapshot_enabled: bool = Field(default=True, validation_alias="PIT_SNAPSHOT_ENABLED")
+    pit_snapshot_scope: Literal["universe", "candidates", "watchlist"] = Field(
+        default="universe", validation_alias="PIT_SNAPSHOT_SCOPE"
+    )
+    pit_sentiment_scope: Literal["candidates", "watchlist"] = Field(
+        default="candidates", validation_alias="PIT_SENTIMENT_SCOPE"
+    )
+    # 学習パネルへの PIT 列投入そのものの opt-in（既定 OFF、台帳が貯まるまで明示的に有効化しない）。
+    pit_features_enabled: bool = Field(default=False, validation_alias="PIT_FEATURES_ENABLED")
+    pit_min_coverage_days: int = Field(default=60, validation_alias="PIT_MIN_COVERAGE_DAYS", ge=1)
+    pit_min_coverage_ratio: float = Field(default=0.5, validation_alias="PIT_MIN_COVERAGE_RATIO", ge=0.0, le=1.0)
+    pit_asof_tolerance_bdays: int = Field(default=5, validation_alias="PIT_ASOF_TOLERANCE_BDAYS", ge=0)
+
     # --- ナレッジベース ベクトル検索（kb_creator、既存の外部サービス。任意） ---
     # 空文字（既定）なら無効（`knowledge_search_client.search_ticker_notes` が常に空リストを返す）。
     # ユーザーの Obsidian Vault を Qdrant でインデックス済みの別プロセスへの読み取り専用クライアント。

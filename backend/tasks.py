@@ -49,6 +49,51 @@ def run_picks_task(horizon_type: str) -> dict[str, object]:
     return {"status": result.status, "picks": len(result.picks), "rejected": len(result.rejected)}
 
 
+@celery_app.task(name="backend.tasks.collect_pit_fundamental_snapshot_task")
+def collect_pit_fundamental_snapshot_task() -> dict[str, object]:
+    """当日分のファンダメンタル PIT スナップショットを収集する（🆕 P29、大引け後）.
+
+    `PIT_SNAPSHOT_ENABLED=false` なら即 skip（フェイルソフト、既定は有効）。
+    `plans/03_システム設計` §3.6 / §3.7。
+    """
+    from backend.config import settings
+    from backend.services.learning.pit_snapshot_service import collect_fundamental_snapshots, resolve_snapshot_codes
+
+    if not settings.pit_snapshot_enabled:
+        return {"status": "skipped_disabled"}
+
+    async def _run() -> dict[str, object]:
+        codes = await resolve_snapshot_codes(settings.pit_snapshot_scope)
+        stats = await collect_fundamental_snapshots(codes)
+        return {"scope": settings.pit_snapshot_scope, "attempted": stats.attempted, "collected": stats.collected}
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(name="backend.tasks.collect_pit_sentiment_snapshot_task")
+def collect_pit_sentiment_snapshot_task() -> dict[str, object]:
+    """当日分の keyword センチメント PIT スナップショットを収集する（🆕 P29、大引け後）.
+
+    LLM センチメントは追加収集しない — ピック生成（`run_picks_task`）の一部として
+    `orchestrator.py` が既に shortlist 分を副産物記録済み（`plans/03_システム設計` §3.7.7）。
+    """
+    from backend.config import settings
+    from backend.services.learning.pit_snapshot_service import (
+        collect_sentiment_snapshots_keyword,
+        resolve_snapshot_codes,
+    )
+
+    if not settings.pit_snapshot_enabled:
+        return {"status": "skipped_disabled"}
+
+    async def _run() -> dict[str, object]:
+        codes = await resolve_snapshot_codes(settings.pit_sentiment_scope)
+        stats = await collect_sentiment_snapshots_keyword(codes)
+        return {"scope": settings.pit_sentiment_scope, "attempted": stats.attempted, "collected": stats.collected}
+
+    return asyncio.run(_run())
+
+
 @celery_app.task(name="backend.tasks.resolve_pick_outcomes_task")
 def resolve_pick_outcomes_task() -> dict[str, int]:
     """未決着ピックを古い順に解決して `pick_outcomes` へ書き込む（夜間）."""
@@ -128,6 +173,33 @@ def run_pool_training_task() -> dict[str, object]:
 
     summary = asyncio.run(run_pool_training())
     return summary.to_dict()
+
+
+@celery_app.task(name="backend.tasks.run_source_ablation_task")
+def run_source_ablation_task() -> dict[str, object]:
+    """PIT 由来の特徴量グループについて四半期ごとのソースアブレーション評価を行う（🆕 P29）.
+
+    月次（`run_pool_training_task` と同日）に発火するが、実行するのは四半期開始月
+    （1/4/7/10 月）のみ — celery-beat の crontab は「N ヶ月ごと」を直接表現できないため、
+    タスク内部でガードする。`source_ablations`（`0001_baseline` で定義済みだが書き込む実装が
+    存在しなかった）の初実装。「Vault 由来の特徴量を足して本当に良くなったか」を判定する。
+    """
+    from backend.services.learning.pool_training_service import default_as_of_dates
+
+    if datetime.now(JST).month not in (1, 4, 7, 10):
+        return {"status": "skipped_not_quarter_start"}
+
+    async def _run() -> dict[str, object]:
+        from backend.services.learning.panel_feature_service import build_panel
+        from backend.services.ledger.ablation_service import run_all_pit_ablations
+
+        panel = await build_panel(default_as_of_dates())
+        if panel.empty:
+            return {"status": "skipped_empty_panel"}
+        results = await run_all_pit_ablations(panel)
+        return {"status": "done", "groups_evaluated": [r.excluded_source for r in results]}
+
+    return asyncio.run(_run())
 
 
 @celery_app.task(name="backend.tasks.run_portfolio_monitor_task")

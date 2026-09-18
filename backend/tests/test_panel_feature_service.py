@@ -1,10 +1,13 @@
 """panel_feature_service（断面特徴量の純関数・build_panel の I/O 層）のテスト.
 
 Market Lens `backend/tests/test_panel_feature_service.py` から移植（インポート元のみ変更）。
-ネットワーク・DB・yfinance を一切使わない合成パネル・モック fetcher で検証する。
+ネットワーク・yfinance を一切使わない合成パネル・モック fetcher で検証する（🆕 P29 の
+PIT 特徴量結合テストのみ `migrated_db` 隔離 DB を使う）。
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -336,6 +339,99 @@ async def test_build_panel_context_empty_when_no_prices() -> None:
     )
     assert ctx.frame.empty
     assert build_inference_row("0000", ctx) is None
+
+
+# ---------------------------------------------------------------------------
+# PIT（point-in-time）特徴量の結合（🆕 P29）
+# ---------------------------------------------------------------------------
+
+
+async def _seed_pit_fundamental(snapshot_date: str, codes: list[str]) -> None:
+    from backend.services.db import pit_snapshot_db
+
+    for i, code in enumerate(codes):
+        await pit_snapshot_db.upsert_fundamental_snapshot(
+            snapshot_date=snapshot_date,
+            code=code,
+            source="vault_frontmatter",
+            data_as_of=snapshot_date,
+            per_forecast=10.0 + i,
+            pbr=1.0 + i * 0.1,
+            roe=0.1 + i * 0.01,
+            equity_ratio=None,
+            dividend_yield_forecast=None,
+            eps_forecast=None,
+            bps=None,
+            market_cap_oku=None,
+            shares_outstanding=None,
+            last_earnings_date=None,
+            last_earnings_type=None,
+            sector33=None,
+            sector17=None,
+            scale_cat=None,
+            market=None,
+            extra=None,
+            created_at=f"{snapshot_date}T16:45:00+09:00",
+        )
+
+
+async def test_build_panel_is_unaffected_when_pit_features_disabled(migrated_db: Path) -> None:
+    """既定（`PIT_FEATURES_ENABLED=false`）では PIT 列も `attrs["pit_coverage"]` も一切付かないこと."""
+    panel = await build_panel(
+        _AS_OF, universe=_UNIVERSE, price_loader=_fake_price_loader, forward_return_loader=_fake_forward_returns
+    )
+    assert "per_forecast" not in panel.columns
+    assert "has_pit_fundamental" not in panel.columns
+    assert "pit_coverage" not in panel.attrs
+
+
+async def test_build_panel_attaches_pit_fundamental_when_coverage_meets_gate(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend import config
+
+    await _seed_pit_fundamental(_AS_OF[0], [t.code for t in _UNIVERSE])
+    monkeypatch.setattr(
+        pfs,
+        "settings",
+        config.settings.model_copy(
+            update={"pit_features_enabled": True, "pit_min_coverage_days": 1, "pit_min_coverage_ratio": 1.0}
+        ),
+    )
+
+    panel = await build_panel(
+        _AS_OF, universe=_UNIVERSE, price_loader=_fake_price_loader, forward_return_loader=_fake_forward_returns
+    )
+
+    assert (panel["has_pit_fundamental"] == 1).all()
+    assert (panel["per_forecast"] > 0).all()
+    # 断面ランク列（相対位置）が PIT 列にも付いていること（§3.7.3）。
+    assert "xs_rank_per_forecast" in panel.columns
+    assert "sector_rel_roe" in panel.columns
+    assert panel.attrs["pit_coverage"]["pit_fundamental"]["included"] is True
+
+
+async def test_build_panel_drops_pit_fundamental_columns_when_coverage_gate_not_met(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PIT 台帳が空（被覆率ゲート未達）のときは列ごと落として学習対象から除外すること.
+
+    薄い列を無理に食わせると「欠損 = 古い期間」という時間軸を学習してしまう、という
+    §3.7.4 の理由に対応する回帰テスト。"""
+    from backend import config
+
+    monkeypatch.setattr(pfs, "settings", config.settings.model_copy(update={"pit_features_enabled": True}))
+
+    panel = await build_panel(
+        _AS_OF, universe=_UNIVERSE, price_loader=_fake_price_loader, forward_return_loader=_fake_forward_returns
+    )
+
+    assert "per_forecast" not in panel.columns
+    assert "has_pit_fundamental" not in panel.columns
+    assert "xs_rank_per_forecast" not in panel.columns
+    report = panel.attrs["pit_coverage"]["pit_fundamental"]
+    assert report["included"] is False
+    assert report["covered_days"] == 0
 
 
 # ---------------------------------------------------------------------------

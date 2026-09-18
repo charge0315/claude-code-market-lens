@@ -33,11 +33,13 @@ from typing import Final
 import numpy as np
 import pandas as pd
 
+from backend.config import settings
 from backend.models.jquants_raw import coerce_optional_float
 from backend.models.stocks import TickerInfo
 from backend.services.data.data_fetcher import _get_ticker_master, get_stock_data
 from backend.services.data.jquants_client import JQuantsClient, jquants
 from backend.services.data.jquants_errors import JQuantsError
+from backend.services.learning import pit_feature_service as pit_fs
 from backend.services.learning.feature_engineering import build_feature_matrix
 from backend.services.learning.pool_labeling import POOL_HORIZON_DAYS, cross_sectional_label
 from backend.services.trading_calendar import calc_target_date
@@ -48,9 +50,23 @@ logger = logging.getLogger(__name__)
 _MIN_HISTORY_ROWS = 80
 
 # --- 断面特徴量の既定対象列（build_panel が用意する列名） ---
-_DEFAULT_RANK_COLS: tuple[str, ...] = ("return_lag_1", "return_lag_5", "sma_20_diff", "dollar_volume")
+# 🆕 P29: PIT ファンダメンタル列（per_forecast/pbr/roe/dividend_yield_forecast）を追加。
+# 絶対水準より「その日のユニバース内・同セクター内での相対位置」のほうが学習に意味を持つ
+# ため（`plans/03_システム設計` §3.7.3）。`add_cross_sectional_features` は存在しない入力列を
+# 黙ってスキップするため、`PIT_FEATURES_ENABLED=false`（既定）や被覆率ゲート未達で列が
+# 無い場合も安全にスキップされる。
+_DEFAULT_RANK_COLS: tuple[str, ...] = (
+    "return_lag_1",
+    "return_lag_5",
+    "sma_20_diff",
+    "dollar_volume",
+    "per_forecast",
+    "pbr",
+    "roe",
+    "dividend_yield_forecast",
+)
 _DEFAULT_ZSCORE_COLS: tuple[str, ...] = ("volatility_20",)
-_DEFAULT_SECTOR_REL_COLS: tuple[str, ...] = ("return_lag_5",)
+_DEFAULT_SECTOR_REL_COLS: tuple[str, ...] = ("return_lag_5", "roe")
 _DEFAULT_MARKET_COLS: tuple[str, ...] = ("return_lag_1", "return_lag_5")
 _BREADTH_COL = "sma_20_diff"
 
@@ -319,7 +335,64 @@ async def build_panel(
         panel.loc[mask, "label"] = panel.loc[mask, "code"].map(code_to_label)
         panel.loc[mask, "fwd_return"] = panel.loc[mask, "code"].map(code_to_fwd)
 
+    if settings.pit_features_enabled:
+        panel = await _attach_pit_features(panel)
+
     return add_cross_sectional_features(panel)
+
+
+async def _attach_pit_features(panel: pd.DataFrame) -> pd.DataFrame:
+    """`PIT_FEATURES_ENABLED=true` の時のみ呼ばれる、PIT 特徴量の断面パネルへの結合本体.
+
+    `plans/03_システム設計` §3.7.4（ブートストラップ被覆率ゲート）。グループ（fundamental /
+    sentiment keyword / sentiment llm）ごとに独立して判定し、`PIT_MIN_COVERAGE_DAYS` /
+    `PIT_MIN_COVERAGE_RATIO` 未満のグループは値列・`has_*` フラグ列ごと落として学習対象から
+    除外する（薄い列を無理に食わせると「欠損 = 古い期間」という時間軸そのものを学習して
+    しまい、ウォークフォワード評価が楽観側へ壊れるため）。判定結果は
+    `panel.attrs["pit_coverage"]` へ記録し、`pool_training_service`（P29e）が
+    `model_registry.val_metrics.pit_coverage` へ転記できるようにする。
+    """
+    tol = settings.pit_asof_tolerance_bdays
+    coverage_report: dict[str, dict[str, object]] = {}
+
+    out = await pit_fs.attach_pit_fundamental_features(panel, tolerance_bdays=tol)
+    out, coverage_report[pit_fs.FUNDAMENTAL_GROUP] = _apply_coverage_gate(
+        out,
+        group=pit_fs.FUNDAMENTAL_GROUP,
+        has_col=pit_fs.FUNDAMENTAL_HAS_COL,
+        value_cols=(*pit_fs.FUNDAMENTAL_VALUE_COLS, pit_fs.FUNDAMENTAL_STALENESS_COL),
+    )
+
+    for source in ("keyword", "llm"):
+        out = await pit_fs.attach_pit_sentiment_features(out, source=source, tolerance_bdays=tol)
+        group = pit_fs.sentiment_group(source)
+        out, coverage_report[group] = _apply_coverage_gate(
+            out,
+            group=group,
+            has_col=pit_fs.sentiment_has_col(source),
+            value_cols=(*pit_fs.SENTIMENT_VALUE_COLS[source], pit_fs.sentiment_staleness_col(source)),
+        )
+
+    out.attrs["pit_coverage"] = coverage_report
+    return out
+
+
+def _apply_coverage_gate(
+    panel: pd.DataFrame, *, group: str, has_col: str, value_cols: tuple[str, ...]
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """被覆率ゲートを判定し、未達なら `value_cols` + `has_col` を落とした DataFrame を返す."""
+    coverage = pit_fs.compute_group_coverage(panel, group=group, has_col=has_col)
+    included = coverage.meets_gate(
+        min_coverage_days=settings.pit_min_coverage_days, min_coverage_ratio=settings.pit_min_coverage_ratio
+    )
+    out = panel if included else panel.drop(columns=[*value_cols, has_col])
+    report: dict[str, object] = {
+        "covered_days": coverage.covered_days,
+        "total_days": coverage.total_days,
+        "covered_ratio": round(coverage.covered_ratio, 4),
+        "included": included,
+    }
+    return out, report
 
 
 # ---------------------------------------------------------------------------

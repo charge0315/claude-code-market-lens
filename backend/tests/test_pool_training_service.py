@@ -196,6 +196,43 @@ async def test_run_pool_training_registers_and_bootstraps_champion(
     assert await model_registry_db.get_champion(POOL_LANE) == summary.version
 
 
+async def test_run_pool_training_records_pit_coverage_when_present_on_panel_attrs(
+    migrated_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 P29: `build_panel` が `panel.attrs["pit_coverage"]` を付けていれば val_metrics へ転記されること."""
+    import json
+
+    monkeypatch.setattr(pool_training_service, "_MODEL_DIR", tmp_path / "models")
+    panel = _synthetic_panel(n_dates=60, n_tickers=20)
+    panel.attrs["pit_coverage"] = {"pit_fundamental": {"covered_days": 0, "included": False}}
+    monkeypatch.setattr(pool_training_service, "build_panel", _async_return(panel))
+
+    summary = await run_pool_training(as_of_dates=["2025-01-02"])
+
+    row = await model_registry_db.get_model(str(summary.version))
+    assert row is not None
+    val_metrics = json.loads(str(row["val_metrics"]))
+    assert val_metrics["pit_coverage"] == {"pit_fundamental": {"covered_days": 0, "included": False}}
+
+
+async def test_run_pool_training_omits_pit_coverage_when_absent(
+    migrated_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """既定（PIT 無効）では `panel.attrs` が空のため val_metrics に `pit_coverage` キーが付かないこと."""
+    import json
+
+    monkeypatch.setattr(pool_training_service, "_MODEL_DIR", tmp_path / "models")
+    panel = _synthetic_panel(n_dates=60, n_tickers=20)
+    monkeypatch.setattr(pool_training_service, "build_panel", _async_return(panel))
+
+    summary = await run_pool_training(as_of_dates=["2025-01-02"])
+
+    row = await model_registry_db.get_model(str(summary.version))
+    assert row is not None
+    val_metrics = json.loads(str(row["val_metrics"]))
+    assert "pit_coverage" not in val_metrics
+
+
 async def test_run_pool_training_second_version_does_not_replace_champion(
     migrated_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

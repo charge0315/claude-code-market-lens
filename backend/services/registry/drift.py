@@ -24,11 +24,18 @@ _DEFAULT_BINS = 10
 _EPS = 1e-6
 
 # ドリフト監視の対象特徴量（`feature_snapshot` の dotted path）。
+# 🆕 P29: `pit_fundamental.*` / `pit_sentiment.*` は生特徴量（Vault frontmatter の生値 /
+# LLM センチメント判定の生値）。Vault スクレイピング仕様変更・欠損増加がドリフトとして
+# 可視化され、ドリフト検知が同時にデータ品質監視として働く（`plans/03_システム設計` §3.7.6）。
 MONITORED_FEATURES: tuple[str, ...] = (
     "score_breakdown.technical",
     "score_breakdown.fundamental",
     "atr_14",
     "trend_score",
+    "pit_fundamental.per_forecast",
+    "pit_fundamental.pbr",
+    "pit_fundamental.roe",
+    "pit_sentiment.llm_sentiment_score",
 )
 
 
