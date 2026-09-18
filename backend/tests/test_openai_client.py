@@ -112,6 +112,25 @@ async def test_propose_stock_pick_parses_structured_json(client: OpenAIClient, m
     assert out == payload
 
 
+async def test_propose_news_sentiment_parses_structured_json(
+    client: OpenAIClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload: dict[str, object] = {
+        "sentiment_label": "positive",
+        "sentiment_score": 0.5,
+        "impact_score": 40,
+        "confidence": 55,
+        "reasoning": "好調な決算見出しが複数。",
+    }
+
+    async def fake_create(**_kw: object) -> _Resp:
+        return _Resp(json.dumps(payload))
+
+    _install_create(monkeypatch, client, fake_create)
+    out = await client.propose_news_sentiment(ticker="7203", prompt="...")
+    assert out == payload
+
+
 async def test_sends_strict_json_schema_format(client: OpenAIClient, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

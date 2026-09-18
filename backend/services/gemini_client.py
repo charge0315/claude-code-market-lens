@@ -38,6 +38,7 @@ from backend.services.gemini_errors import (
 from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA,
+    NEWS_SENTIMENT_SCHEMA,
     NOTE_SCHEMA,
     PORTFOLIO_SIGNAL_SCHEMA,
     STOCK_PICK_SCHEMA,
@@ -61,6 +62,7 @@ _PORTFOLIO_SIGNAL_RESPONSE_SCHEMA: JsonDict = _to_gemini(PORTFOLIO_SIGNAL_SCHEMA
 _EOD_REVIEW_RESPONSE_SCHEMA: JsonDict = _to_gemini(EOD_REVIEW_SCHEMA)
 _TREND_RESPONSE_SCHEMA: JsonDict = _to_gemini(TREND_SCHEMA)
 _NOTE_RESPONSE_SCHEMA: JsonDict = _to_gemini(NOTE_SCHEMA)
+_NEWS_SENTIMENT_RESPONSE_SCHEMA: JsonDict = _to_gemini(NEWS_SENTIMENT_SCHEMA)
 
 
 class GeminiClient:
@@ -196,6 +198,17 @@ class GeminiClient:
             feature="note_publish_gemini",
             model=resolve_model("note_publish", "gemini"),
             response_schema=_NOTE_RESPONSE_SCHEMA,
+            prompt=prompt,
+        )
+
+    async def propose_news_sentiment(
+        self, *, ticker: str, prompt: str
+    ) -> JsonDict:  # noqa: ARG002 - AnthropicClient と呼び出しシグネチャを揃える
+        """forced structured-output でニュース見出しのセンチメント・影響度を取得する（本文非使用）."""
+        return await self._generate_structured(
+            feature="news_sentiment_gemini",
+            model=resolve_model("news_sentiment", "gemini"),
+            response_schema=_NEWS_SENTIMENT_RESPONSE_SCHEMA,
             prompt=prompt,
         )
 

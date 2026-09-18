@@ -13,6 +13,10 @@ doc 上は bracket ステージの算出物とされるが、実際は llm_overl
 そのまま得られる値であり、bracket ステージはそれに E2/対立シグナルキャップを適用してから
 `finalize_bracket` を呼ぶ役割を担う。E1〜E3 のハード除外・確度較正・確度フロアは doc 通り
 verify ステージへ集約した。
+
+🆕 ニュース見出しLLMセンチメント（`llm_news_sentiment_service`）は独立した隔離LLM呼び出しで、
+新規ステージは追加せず llm_overlay の payload 拡張として記録する（既存6ステージの後方互換を
+壊さないため）。強いネガティブ判定のみ bracket ステージで confidence cap を追加適用する。
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from backend.services.llm.registry import resolve_feature_provider, resolve_shad
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
+from backend.services.scoring.llm_news_sentiment_service import get_llm_news_sentiment, render_news_sentiment_block
 from backend.services.vault.brand_notes_service import get_brand_note
 from backend.services.vault.daily_note_service import read_daily_frontmatter
 from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
@@ -44,6 +49,14 @@ logger = logging.getLogger(__name__)
 
 _VALUE_TRAP_CONFIDENCE_CAP = 35.0
 _CONFLICTING_CONFIDENCE_CAP = 60.0
+# 強いネガティブ×高確信度×高影響度のニュースセンチメント（🆕）のみで発動する confidence cap。
+# 単一の補助シグナルであり、構造的な問題を示す value_trap ほど強くは効かせない
+# （`_VALUE_TRAP_CONFIDENCE_CAP` より緩く、`_CONFLICTING_CONFIDENCE_CAP` よりやや厳しい）。
+# ポジティブ判定で confidence を引き上げる処理は意図的に追加しない（非対称設計、
+# 較正されていない新バイアスを確度スコアへ導入しないため）。
+_NEWS_SENTIMENT_CONFIDENCE_CAP = 55.0
+_NEWS_SENTIMENT_CAP_MIN_LLM_CONFIDENCE = 50.0
+_NEWS_SENTIMENT_CAP_MIN_IMPACT = 50.0
 _MIN_CONFIDENCE = 40.0
 # E3 実測勝率ゲート: コホート約定 n がこれ以上で、勝率がこれ未満なら除外。
 _WINRATE_GATE = 0.45
@@ -249,6 +262,10 @@ async def run_inference(
     # 既存の frontmatter 専用関数で改めて読み直す（プロンプトインジェクション防御を維持）。
     kb_hits = await search_ticker_notes(str(brand.name) if brand and brand.name else symbol, code=symbol)
     related_daily = [fm for d in extract_related_daily_dates(kb_hits) if (fm := read_daily_frontmatter(d)) is not None]
+    # ニュース見出しLLMセンチメント（🆕、隔離LLM呼び出し）。shortlist後の1銘柄のみに掛けるため
+    # コスト増は限定的。失敗・ニュース無しは None（フェイルソフト、ステージは失敗扱いにしない）。
+    news_sentiment = await get_llm_news_sentiment(symbol)
+    news_sentiment_block = render_news_sentiment_block(news_sentiment)
     prompt = build_pick_prompt(
         horizon_type=horizon_type,
         recommendation=rec,
@@ -258,6 +275,7 @@ async def run_inference(
         news_digest_block=news_block,
         trend_context_block=trend_block,
         related_daily_frontmatter=related_daily or None,
+        news_sentiment_block=news_sentiment_block,
     )
     try:
         raw = await resolve_feature_provider("stock_pick").propose_stock_pick(ticker=symbol, prompt=prompt)
@@ -293,6 +311,7 @@ async def run_inference(
             "stop_loss_price": raw_stop,
             "take_profit_price": raw_target,
             "risk_factors": raw.get("risk_factors") or [],
+            "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
         },
         run_status="running",
     )
@@ -303,6 +322,13 @@ async def run_inference(
         capped = min(capped, _VALUE_TRAP_CONFIDENCE_CAP)  # E2
     if tech.get("signal_agreement") == "conflicting":
         capped = min(capped, _CONFLICTING_CONFIDENCE_CAP)
+    if (
+        news_sentiment is not None
+        and news_sentiment.sentiment_label in ("negative", "strongly_negative")
+        and news_sentiment.confidence >= _NEWS_SENTIMENT_CAP_MIN_LLM_CONFIDENCE
+        and news_sentiment.impact_score >= _NEWS_SENTIMENT_CAP_MIN_IMPACT
+    ):
+        capped = min(capped, _NEWS_SENTIMENT_CONFIDENCE_CAP)
 
     bracket, bracket_reason = finalize_bracket(current_price, atr, raw_entry, raw_stop, raw_target)
     if bracket is None:
@@ -375,6 +401,7 @@ async def run_inference(
             "recommender_reasoning": rec.get("reasoning"),
             "llm_risk_factors": raw.get("risk_factors") or [],
             "holding_period_days": standardize_holding_period(raw.get("holding_period_days")),
+            "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
         },
         rationale_text=str(raw.get("reasoning") or "総合スコアに基づく判定"),
         model_version=model_version,

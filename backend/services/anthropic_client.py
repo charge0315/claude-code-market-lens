@@ -41,6 +41,9 @@ from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA as _EOD_REVIEW_TOOL_SCHEMA,
 )
 from backend.services.llm.schemas import (
+    NEWS_SENTIMENT_SCHEMA as _NEWS_SENTIMENT_TOOL_SCHEMA,
+)
+from backend.services.llm.schemas import (
     NOTE_SCHEMA as _NOTE_TOOL_SCHEMA,
 )
 from backend.services.llm.schemas import (
@@ -64,6 +67,8 @@ _TREND_MAX_TOKENS = 4096
 # note下書き（🆕 テンプレート準拠の多章立て記事、ユーザー指示）は _TREND_MAX_TOKENS では
 # 本文が途中で切れ body_markdown が空になる事象が実測で発生したため、大きめに確保する。
 _NOTE_MAX_TOKENS = 8192
+# ニュースセンチメント判定（🆕）は enum/number + 短い reasoning のみの軽量出力のため小さくてよい。
+_NEWS_SENTIMENT_MAX_TOKENS = 512
 
 
 class AnthropicClient:
@@ -202,6 +207,16 @@ class AnthropicClient:
             model=resolve_model("note_publish", "anthropic"),
             tool_schema=_NOTE_TOOL_SCHEMA,
             max_tokens=_NOTE_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_news_sentiment(self, *, ticker: str, prompt: str) -> JsonDict:
+        """forced tool-use でニュース見出しのセンチメント・影響度を取得する（本文非使用）."""
+        return await self._forced_tool_call(
+            feature="news_sentiment",
+            model=resolve_model("news_sentiment", "anthropic"),
+            tool_schema=_NEWS_SENTIMENT_TOOL_SCHEMA,
+            max_tokens=_NEWS_SENTIMENT_MAX_TOKENS,
             prompt=prompt,
         )
 

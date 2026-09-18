@@ -129,6 +129,21 @@ async def test_propose_portfolio_signal_parses_structured_json(
     assert out == payload
 
 
+async def test_propose_news_sentiment_parses_structured_json(
+    client: GeminiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "sentiment_label": "strongly_negative",
+        "sentiment_score": -0.9,
+        "impact_score": 80,
+        "confidence": 75,
+        "reasoning": "不祥事報道の見出しが多数。",
+    }
+    _mock_client(monkeypatch, _candidate_response(payload))
+    out = await client.propose_news_sentiment(ticker="7203", prompt="...")
+    assert out == payload
+
+
 async def test_sends_response_schema_and_api_key(client: GeminiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_client(monkeypatch, _candidate_response({"should_include": False}))
     await client.propose_stock_pick(ticker="7203", prompt="prompt-text")

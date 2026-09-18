@@ -172,6 +172,13 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
 
     monkeypatch.setattr(orch, "get_brand_note", fake_brand)
 
+    async def fake_news_sentiment(_code: str) -> None:
+        return None
+
+    # ニュースセンチメント（🆕）は既定 None（ニュース無し相当）。個別に挙動を検証する
+    # テストのみ `orch.get_llm_news_sentiment` を上書きする。
+    monkeypatch.setattr(orch, "get_llm_news_sentiment", fake_news_sentiment)
+
     async def fake_digest() -> tuple[()]:
         return ()
 

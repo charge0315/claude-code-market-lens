@@ -14,7 +14,8 @@ from backend.services.llm.types import FeatureId, JsonDict
 
 
 class LLMProvider(Protocol):
-    """4 機能（stock_pick/portfolio_signal/eod_review/trend_analyzer）共通の LLM クライアント形状."""
+    """6 機能（stock_pick/portfolio_signal/eod_review/trend_analyzer/note_publish/news_sentiment）
+    共通の LLM クライアント形状."""
 
     provider_id: str
 
@@ -34,3 +35,5 @@ class LLMProvider(Protocol):
     async def propose_trends(self, *, prompt: str) -> JsonDict: ...
 
     async def propose_daily_note(self, *, prompt: str) -> JsonDict: ...
+
+    async def propose_news_sentiment(self, *, ticker: str, prompt: str) -> JsonDict: ...

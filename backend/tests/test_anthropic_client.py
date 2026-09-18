@@ -101,6 +101,25 @@ async def test_propose_stock_pick_returns_tool_input(client: AnthropicClient, mo
     assert out == payload
 
 
+async def test_propose_news_sentiment_returns_tool_input(
+    client: AnthropicClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload: dict[str, object] = {
+        "sentiment_label": "negative",
+        "sentiment_score": -0.4,
+        "impact_score": 55,
+        "confidence": 60,
+        "reasoning": "業績下方修正の見出しが複数あり弱含み。",
+    }
+
+    async def fake_create(**_kw: object) -> _Resp:
+        return _Resp([_ToolBlock(payload)])
+
+    _install_create(monkeypatch, client, fake_create)
+    out = await client.propose_news_sentiment(ticker="7203", prompt="...")
+    assert out == payload
+
+
 def test_model_for_falls_back_to_provider_default(client: AnthropicClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.services.llm import registry as reg
 

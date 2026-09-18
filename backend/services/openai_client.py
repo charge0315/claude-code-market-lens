@@ -28,6 +28,7 @@ from backend.services.circuit_breaker import CircuitBreaker
 from backend.services.llm.registry import resolve_model
 from backend.services.llm.schemas import (
     EOD_REVIEW_SCHEMA,
+    NEWS_SENTIMENT_SCHEMA,
     NOTE_SCHEMA,
     PORTFOLIO_SIGNAL_SCHEMA,
     STOCK_PICK_SCHEMA,
@@ -55,12 +56,15 @@ _TREND_MAX_TOKENS = 4096
 # note下書き（🆕 テンプレート準拠の多章立て記事、ユーザー指示）は _TREND_MAX_TOKENS では
 # 本文が途中で切れ body_markdown が空になる事象が実測で発生したため、大きめに確保する。
 _NOTE_MAX_TOKENS = 8192
+# ニュースセンチメント判定（🆕）は enum/number + 短い reasoning のみの軽量出力のため小さくてよい。
+_NEWS_SENTIMENT_MAX_TOKENS = 512
 
 _STOCK_PICK_STRICT_SCHEMA: JsonDict = _strict(STOCK_PICK_SCHEMA)
 _PORTFOLIO_SIGNAL_STRICT_SCHEMA: JsonDict = _strict(PORTFOLIO_SIGNAL_SCHEMA)
 _EOD_REVIEW_STRICT_SCHEMA: JsonDict = _strict(EOD_REVIEW_SCHEMA)
 _TREND_STRICT_SCHEMA: JsonDict = _strict(TREND_SCHEMA)
 _NOTE_STRICT_SCHEMA: JsonDict = _strict(NOTE_SCHEMA)
+_NEWS_SENTIMENT_STRICT_SCHEMA: JsonDict = _strict(NEWS_SENTIMENT_SCHEMA)
 
 
 class OpenAIClient:
@@ -210,6 +214,17 @@ class OpenAIClient:
             schema_name="submit_daily_note",
             schema=_NOTE_STRICT_SCHEMA,
             max_tokens=_NOTE_MAX_TOKENS,
+            prompt=prompt,
+        )
+
+    async def propose_news_sentiment(self, *, ticker: str, prompt: str) -> JsonDict:  # noqa: ARG002
+        """forced structured-output でニュース見出しのセンチメント・影響度を取得する（本文非使用）."""
+        return await self._structured_response(
+            feature="news_sentiment_openai",
+            model=resolve_model("news_sentiment", "openai"),
+            schema_name="propose_news_sentiment",
+            schema=_NEWS_SENTIMENT_STRICT_SCHEMA,
+            max_tokens=_NEWS_SENTIMENT_MAX_TOKENS,
             prompt=prompt,
         )
 

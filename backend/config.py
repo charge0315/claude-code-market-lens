@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     llm_provider_note_publish: Literal["anthropic", "openai", "gemini"] = Field(
         default="anthropic", validation_alias="LLM_PROVIDER_NOTE_PUBLISH"
     )
+    # news_sentiment（🆕 ニュース見出しセンチメント判定、隔離LLM呼び出し）も note_publish と同じく
+    # 公式/シャドウ設定UIには出さない（比較表示の使い道が薄く、二重LLM呼び出しはコスト削減という
+    # 導入目的と矛盾するため）。
+    llm_provider_news_sentiment: Literal["anthropic", "openai", "gemini"] = Field(
+        default="anthropic", validation_alias="LLM_PROVIDER_NEWS_SENTIMENT"
+    )
     # 「シャドウ」= 公式パイプラインと同一プロンプトを並行判定させ、比較表示のみに使う
     # チャレンジャー（複数併用可）。既定は導入前の Gemini shadow 挙動と完全一致させる。
     llm_shadow_providers_stock_pick: Annotated[list[str], NoDecode] = Field(
@@ -114,6 +120,9 @@ class Settings(BaseSettings):
     llm_model_note_publish_anthropic: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_ANTHROPIC")
     llm_model_note_publish_openai: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_OPENAI")
     llm_model_note_publish_gemini: str = Field(default="", validation_alias="LLM_MODEL_NOTE_PUBLISH_GEMINI")
+    llm_model_news_sentiment_anthropic: str = Field(default="", validation_alias="LLM_MODEL_NEWS_SENTIMENT_ANTHROPIC")
+    llm_model_news_sentiment_openai: str = Field(default="", validation_alias="LLM_MODEL_NEWS_SENTIMENT_OPENAI")
+    llm_model_news_sentiment_gemini: str = Field(default="", validation_alias="LLM_MODEL_NEWS_SENTIMENT_GEMINI")
 
     # --- DB ---
     database_url: str = Field(default="sqlite+aiosqlite:///./data/alpha_forge.db", validation_alias="DATABASE_URL")

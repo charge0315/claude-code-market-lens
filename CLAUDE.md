@@ -57,6 +57,7 @@
 ## プロンプトインジェクション防御（全ソース）
 
 - 外部由来テキスト（Vault 本文・ニュース本文・四季報本文）は **LLM プロンプトへ注入しない**。注入するのは frontmatter / 構造化フィールドのみ。境界は `services/vault/` と `services/picks/*_prompt` に集約しテストで固定。ナレッジベース・ベクトル検索（`services/vault/knowledge_search_client.py`、外部 kb_creator サービス）も同じ境界に従う: 検索結果は関連ノートの発見（`note_path`/`doc_type`/`score`）にのみ使い、本文（`text`）はクライアント関数の戻り値に含めない。プロンプトへ載せるのは、発見した note_path から `brand_notes_service`/`daily_note_service` で改めて取得した frontmatter のみ。
+- ニュース見出しの LLM センチメント判定（🆕 `services/scoring/llm_news_sentiment_service.py`）も同じ境界原則に従う: 見出し本文を読むのはこの隔離 LLM 呼び出し（feature `news_sentiment`）だけに限定し、`propose_stock_pick` 本体のプロンプトへは enum/number（`sentiment_label`/`sentiment_score`/`impact_score`/`confidence`）のみを転送する。自由記述の `reasoning` は `rationale_struct` への保存（人間向け表示専用）に留め、他の LLM 呼び出しへは絶対に転送しない（隔離 LLM 自身が見出し中の指示文に影響される「間接インジェクションのロンダリング」を防ぐため）。
 - Vault（`VAULT_ROOT`、既定 `C:\Users\charg\Documents\Personal Space\10_Stock`）は**読み取り専用**が原則。書き込みは Market Lens と衝突しない Alpha Forge 専用マーカーに限定し、実行前にユーザー確認。
 - 銘柄ナレッジ = `Tickers/<code>_<name>.md` の frontmatter 財務指標。日次 = `Daily/YYYY-MM-DD.md` の frontmatter のみ（本文の morning/evening ブロックは Market Lens 出力なので入力に使わない＝自己参照ループ防止）。
 

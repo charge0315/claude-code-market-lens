@@ -23,6 +23,11 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> WiredState:
         return None
 
     monkeypatch.setattr(orch, "get_brand_note", fake_brand)
+
+    async def fake_news_sentiment(_code: str) -> None:
+        return None
+
+    monkeypatch.setattr(orch, "get_llm_news_sentiment", fake_news_sentiment)
     return state
 
 
