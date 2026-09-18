@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   approveNote,
   fetchTodayNote,
@@ -60,6 +60,10 @@ export function DailyNoteReview(): ReactNode {
   const [copied, setCopied] = useState(false);
   const [publishedUrlInput, setPublishedUrlInput] = useState('');
   const [sourcePicks, setSourcePicks] = useState<PickSummary[]>([]);
+  // note.com はリッチテキストエディタで Markdown 記法をそのまま解釈しないため、既定表示は
+  // 「本文をコピー」と同じ変換（チャートトリガー挿入 + HTML化）を通した貼り付け済みプレビュー
+  // にする。生の Markdown（## や ** が文字のまま見える形）は「編集」タブでのみ見せる。
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
 
   const load = useCallback(() => {
     fetchTodayNote()
@@ -153,6 +157,13 @@ export function DailyNoteReview(): ReactNode {
       .finally(() => setBusy(false));
   };
 
+  // 「本文をコピー」でクリップボードへ渡す HTML と全く同じ変換をプレビュー表示にも使う
+  // （見えているものと貼り付けられるものを一致させる）。
+  const previewHtml = useMemo(
+    () => markdownToHtml(insertNoteComChartTriggers(body, sourcePicks.map((p) => p.symbol))),
+    [body, sourcePicks],
+  );
+
   const handleCopy = (): void => {
     copyNoteToClipboard(
       title,
@@ -217,15 +228,50 @@ export function DailyNoteReview(): ReactNode {
         タイトル
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={note.status === 'published'} />
       </label>
-      <label className="daily-note-field">
-        本文（Markdown）
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={14}
-          disabled={note.status === 'published'}
-        />
-      </label>
+      <div className="daily-note-field">
+        <div className="daily-note-field-header">
+          <span>本文</span>
+          {note.status !== 'published' && (
+            <div className="daily-note-view-toggle" role="group" aria-label="本文の表示形式">
+              <button
+                type="button"
+                className={viewMode === 'preview' ? 'is-active' : undefined}
+                aria-pressed={viewMode === 'preview'}
+                onClick={() => setViewMode('preview')}
+              >
+                note.comプレビュー
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'edit' ? 'is-active' : undefined}
+                aria-pressed={viewMode === 'edit'}
+                onClick={() => setViewMode('edit')}
+              >
+                Markdown編集
+              </button>
+            </div>
+          )}
+        </div>
+        {viewMode === 'edit' && note.status !== 'published' ? (
+          <textarea
+            aria-label="本文（Markdown）"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={14}
+          />
+        ) : (
+          // note.com へ貼り付けたときの見え方（見出し・太字・表・チャートトリガー行込み）の
+          // プレビュー。生成元はこのアプリ自身の LLM 出力のみで外部由来テキストではないが、
+          // 念のため markdownToHtml は全テキストを escapeHtml してから太字/斜体タグを足すため
+          // 生 HTML タグの混入では実行可能なマークアップにならない。
+          <div
+            className="daily-note-preview"
+            role="region"
+            aria-label="本文プレビュー（note.com貼り付け形式）"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        )}
+      </div>
 
       {sourcePicks.length > 0 && (
         <div className="daily-note-charts">

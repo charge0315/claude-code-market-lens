@@ -131,3 +131,29 @@ async def test_ledger_and_eval_endpoints(client: AsyncClient) -> None:
     assert weekly["success"]
     assert weekly["data"]["window_days"] == 7
     assert isinstance(weekly["data"]["metric_deltas"], list)
+
+
+async def test_list_eval_snapshots_for_date_filters_by_computed_at(migrated_db: Path) -> None:
+    """🆕 P30: 日次パイプラインログが「本日算出された評価指標」だけを取得できること."""
+    await eval_db.insert_eval_snapshot(
+        scope="mid_term",
+        metric_name="win_rate",
+        metric_value=0.55,
+        sample_n=20,
+        horizon_days=20,
+        computed_at="2026-09-18T16:48:00+09:00",
+    )
+    await eval_db.insert_eval_snapshot(
+        scope="short_term",
+        metric_name="ic",
+        metric_value=0.12,
+        sample_n=15,
+        horizon_days=3,
+        computed_at="2026-09-17T16:48:00+09:00",
+    )
+
+    rows = await eval_db.list_eval_snapshots_for_date("2026-09-18")
+
+    assert len(rows) == 1
+    assert rows[0]["scope"] == "mid_term"
+    assert rows[0]["metric_name"] == "win_rate"

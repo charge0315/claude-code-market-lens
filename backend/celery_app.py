@@ -123,6 +123,12 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         # JST 08:15（note下書き生成の後、同じ台帳データから個人用アーカイブを作る）。
         "schedule": crontab(hour=23, minute=15),
     },
+    # 🆕 P30: 日次パイプラインログ。その日のピック生成（07:30〜）・決着解決（16:38）・
+    # 評価指標算出（16:48）・PITスナップショット（16:45/16:50）が出揃った後に発火する。
+    "generate-pipeline-log": {
+        "task": "backend.tasks.generate_pipeline_log_task",
+        "schedule": crontab(hour=8, minute=0),  # JST 17:00
+    },
     # 銘柄別モデル日次学習バッチ（P9）。xgboost/random_forest は5分おき常時発火
     # （run-portfolio-monitor と同じ間隔、`per_ticker_training_service` 内部の当日上限・
     # 時間予算で1firingあたりの負荷を抑える）。lstm/transformer は torch 学習で重いため

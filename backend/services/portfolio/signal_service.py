@@ -16,7 +16,7 @@ import logging
 
 from backend.models.portfolio import PortfolioHolding
 from backend.services.data.data_fetcher import get_stock_data
-from backend.services.db.portfolio_signal_db import insert_signal
+from backend.services.db.portfolio_signal_db import insert_signal, supersede_pending
 from backend.services.db.portfolio_signal_shadow_db import insert_shadow
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
@@ -184,6 +184,9 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
     stop = round(bracket.stop, 2)
     target = round(bracket.target, 2)
     rationale = str(raw.get("reasoning") or "定量分析に基づく判定")
+    # 承認待ちキューに古い判定が積み上がらないよう、新規判定の挿入直前に同一銘柄の未承認
+    # （status='proposed'）判定を削除する（最新の1件だけを承認待ちに残す、CLAUDE.md 承認制）。
+    await supersede_pending(holding.symbol)
     signal_id = await insert_signal(
         symbol=holding.symbol,
         action=action,

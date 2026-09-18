@@ -25,7 +25,8 @@ backend/
 ├── services/
 │   ├── data/      jquants / yfinance / trend / quote_service / market_indices_service
 │   ├── vault/     brand_notes / news_digest / daily_note / knowledge_search_client
-│   ├── vault_report/ 🆕 P28、個人用Vaultアーカイブレポート（report_generator/report_service/vault_writer/chart_svg）
+│   ├── vault_report/ 🆕 P28、個人用Vaultアーカイブレポート（report_generator/report_service/vault_writer/chart_svg）。
+│   │              🆕 P30 で日次パイプラインログ（pipeline_log_generator/pipeline_log_service）を追加
 │   ├── scoring/   technical / fundamental / sentiment / recommender / ml_score_provider
 │   ├── picks/     pipeline / bracket / shadow_picks（🔧 P27、旧 gemini_picks） / *_prompt
 │   ├── notes/     🆕 P28、note下書き生成(note_generator)・状態管理(note_service)・
@@ -68,11 +69,12 @@ frontend/src/
 ## 4. 継続学習ループの実データフロー
 
 1. **寄り付き前（JST 07:30/07:32、当初 08:50/08:52 から前倒し。P28、下記参照）**: celery-beat がピック生成 → 推論オーケストレータが中長期・短期を実行 → 各ステージのトレースを `inference_traces` へ、最終ピックを `prediction_ledger` へ（`feature_snapshot` 完全版）。続けて JST 08:05 に note下書き自動生成（`services/notes/`）、08:15 に個人用Vaultアーカイブレポート生成（`services/vault_report/`）が同じ台帳データから実行され、いずれも寄り付き（9:00）前に完了する（`plans/04` P28）。
-2. **場中（9:00–15:30 JST、5分おき）**: 保有銘柄を AI が評価 → `portfolio_signals` へ `proposed` で記録 → `action != hold` なら `notifications` へ記録 + Web Push。人間が承認/却下/実約定報告するまでアプリは一切発注しない。
+2. **場中（9:00–15:30 JST、5分おき）**: 保有銘柄を AI が評価 → 同一銘柄の未承認（`proposed`）判定があれば新規判定の挿入直前に削除し（🆕 P30、`supersede_pending`）最新1件だけを承認待ちキューに残してから `portfolio_signals` へ `proposed` で記録 → `action != hold` なら `notifications` へ記録 + Web Push。人間が承認/却下/実約定報告するまでアプリは一切発注しない。
 3. **大引け後（16:31 JST）**: 当日の `portfolio_signals` を集計し EOD レビュー（`eod_reviews`）を生成。学習教訓は要約として保存するのみで、翌日のプロンプトへの自動注入は行っていない（`plans/04` P7d のスコープ判断）。
 4. **夜間（16:38/16:48 JST）**: 決着記録（複数ホライズン）→ 評価指標再集計（較正・IC・成績）。
 5. **週次（日曜 03:30/03:45 JST）**: PSI ドリフト計測 → challenger 昇格評価（提案のみ、`model_promotions` へログ）。実際の champion 差し替えは `POST /api/registry/promotions/{id}/apply` の人手承認でのみ行う（`MODEL_AUTO_PROMOTE=false` 固定）。
 6. **月次（1日 04:00 JST）**: 断面プール分類器（`lane="ml_pool"`）の再学習。
+7. **日次ログ（17:00 JST、🆕 P30）**: その日の候補プール（`pick_pool_snapshots`）・推論トレース（`inference_traces`）・予測台帳・決着記録・評価指標・再学習/昇格ゲート結果・champion 差し替えの有無を1本のMarkdownへまとめ、`services/vault_report/pipeline_log_service.py` が `Daily/AlphaForge/<日付>/pipeline_log.md` へ保存する（個人用の実行ログ、Vaultへの書き込みのみで読み戻しはしない）。
 
 ## 5. リアルタイム配信の実装方式
 

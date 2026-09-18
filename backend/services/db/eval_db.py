@@ -76,6 +76,19 @@ async def list_eval_snapshots(
         return [dict(r._mapping) for r in result]
 
 
+async def list_eval_snapshots_for_date(date: str) -> list[dict[str, object]]:
+    """指定日（`computed_at` の日付部分）に算出された評価指標を返す（🆕 P30、日次パイプラインログ用）."""
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                "SELECT * FROM eval_snapshots WHERE substr(computed_at, 1, 10) = :date "
+                "ORDER BY scope ASC, horizon_days ASC, metric_name ASC"
+            ),
+            {"date": date},
+        )
+        return [dict(r._mapping) for r in result]
+
+
 async def upsert_calibration_curve(
     *,
     scope: str,

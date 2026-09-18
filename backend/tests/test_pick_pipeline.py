@@ -222,6 +222,22 @@ async def test_happy_path_writes_ledger(wired: WiredState, migrated_db: Path) ->
     assert "atr_14" in cast("dict[str, object]", raw["feature_snapshot"])
 
 
+async def test_run_picks_persists_pool_snapshots(wired: WiredState, migrated_db: Path) -> None:
+    """候補プール全銘柄の4分析+MLスコア・合成スコアが `pick_pool_snapshots` へ残ること（🆕 P30）."""
+    from backend.services.db.pick_pool_snapshot_db import list_pool_snapshots_for_date
+
+    result = await pp.run_picks("mid_term")
+
+    rows = await list_pool_snapshots_for_date(result.issued_at[:10], horizon_type="mid_term")
+    assert {r["symbol"] for r in rows} == {"7203", "6758"}
+    # 候補が2銘柄・ショートリスト枠は12（mid_term）のため全銘柄がショートリスト入りする。
+    assert all(r["is_shortlisted"] for r in rows)
+    assert all(r["composite_score"] == 62.0 for r in rows)
+    assert all(cast("dict[str, object]", r["score_breakdown"])["technical"] == 60.0 for r in rows)
+    assert all(r["trend_score"] == 55.0 for r in rows)
+    assert all(r["batch_run_id"] == result.run_id for r in rows)
+
+
 async def test_e1_recommender_sell_is_hard_excluded(wired: WiredState, migrated_db: Path) -> None:
     wired.recs = {"7203": _rec("7203", recommendation="SELL", direction="bearish")}
     result = await pp.run_picks("mid_term")

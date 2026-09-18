@@ -100,6 +100,31 @@ async def set_status(signal_id: str, status: str) -> bool:
         return result.rowcount > 0
 
 
+async def supersede_pending(symbol: str) -> int:
+    """指定銘柄の未承認（`status='proposed'`）判定を全て削除し、削除件数を返す.
+
+    `run_portfolio_monitor` が場中 5 分おきに保有銘柄を再評価するたびに新規 `proposed` 行を
+    追加すると、承認されないまま古い判定が「承認待ち」キューに積み上がる（1 銘柄あたり最大
+    ~78 件/日）。新しい判定を挿入する直前に呼び出すことで、古い未承認判定を消し、直後に挿入
+    する最新の1件だけが「承認待ち」に残るようにする（承認済み/却下済み/実約定済みの履歴には
+    触れない）。
+    """
+    async with get_db() as db:
+        await db.execute(
+            text("""
+                DELETE FROM portfolio_signal_shadows WHERE signal_id IN (
+                    SELECT signal_id FROM portfolio_signals WHERE symbol = :symbol AND status = 'proposed'
+                )
+                """),
+            {"symbol": symbol},
+        )
+        result = await db.execute(
+            text("DELETE FROM portfolio_signals WHERE symbol = :symbol AND status = 'proposed'"),
+            {"symbol": symbol},
+        )
+        return result.rowcount
+
+
 async def set_fill_report(signal_id: str, fill_report_json: str) -> bool:
     """実約定結果を記録し `status="executed"` にする。対象行が無ければ False."""
     async with get_db() as db:

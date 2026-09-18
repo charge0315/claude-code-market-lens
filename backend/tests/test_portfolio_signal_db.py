@@ -10,7 +10,9 @@ from backend.services.db.portfolio_signal_db import (
     list_signals,
     set_fill_report,
     set_status,
+    supersede_pending,
 )
+from backend.services.db.portfolio_signal_shadow_db import get_shadows_for_signals, insert_shadow
 
 
 async def test_insert_signal_defaults_to_proposed(migrated_db: Path) -> None:
@@ -110,3 +112,43 @@ async def test_set_fill_report_marks_executed(migrated_db: Path) -> None:
 
 async def test_set_fill_report_unknown_returns_false(migrated_db: Path) -> None:
     assert await set_fill_report("does-not-exist", "{}") is False
+
+
+async def test_supersede_pending_deletes_only_proposed_for_symbol(migrated_db: Path) -> None:
+    stale = await insert_signal(symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x")
+    other_symbol = await insert_signal(
+        symbol="6758", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    approved_same_symbol = await insert_signal(
+        symbol="7203", action="trim", stop=900.0, target=1100.0, confidence=60.0, rationale="x"
+    )
+    await set_status(approved_same_symbol, "approved")
+
+    deleted = await supersede_pending("7203")
+
+    assert deleted == 1
+    assert await get_signal(stale) is None
+    assert await get_signal(other_symbol) is not None
+    row = await get_signal(approved_same_symbol)
+    assert row is not None and row["status"] == "approved"
+
+
+async def test_supersede_pending_also_removes_shadow_judgments(migrated_db: Path) -> None:
+    stale = await insert_signal(symbol="7203", action="hold", stop=900.0, target=1100.0, confidence=60.0, rationale="x")
+    await insert_shadow(
+        signal_id=stale,
+        challenger_version="gemini:test",
+        action="hold",
+        stop=900.0,
+        target=1100.0,
+        confidence=55.0,
+        reasoning="x",
+    )
+
+    await supersede_pending("7203")
+
+    assert await get_shadows_for_signals([stale]) == {}
+
+
+async def test_supersede_pending_no_rows_returns_zero(migrated_db: Path) -> None:
+    assert await supersede_pending("7203") == 0

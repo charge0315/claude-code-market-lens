@@ -108,6 +108,34 @@ async def list_recent_runs(*, horizon_type: str | None = None, limit: int = 50) 
     return [_parse_payload(r) for r in ordered]
 
 
+async def list_runs_for_date(date: str, *, horizon_type: str | None = None) -> dict[str, list[dict[str, object]]]:
+    """指定日（`started_at` の日付部分）の全 run を `{run_id: [stage_row, ...]}` で返す（🆕 P30）.
+
+    各 run のステージ列は `stage_seq` 昇順（`list_trace_events` と同じ並び）。日次パイプライン
+    ログが「LLM深堀りのログ・見解」「3値ブラケット値」「検証ゲートの結果」を run_id ごとに
+    再構成するための取得経路。
+    """
+    clause = "AND horizon_type = :horizon_type" if horizon_type else ""
+    params: dict[str, object] = {"date": date}
+    if horizon_type:
+        params["horizon_type"] = horizon_type
+    async with get_db() as db:
+        result = await db.execute(
+            text(f"""
+                SELECT * FROM inference_traces
+                WHERE substr(started_at, 1, 10) = :date {clause}
+                ORDER BY run_id ASC, stage_seq ASC, event_at ASC
+                """),  # noqa: S608 - clause は定数リテラルのみ、値は全てバインド  # nosec B608
+            params,
+        )
+        rows = [dict(r._mapping) for r in result]
+
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["run_id"]), []).append(_parse_payload(row))
+    return grouped
+
+
 async def attach_pick_id(run_id: str, pick_id: str) -> None:
     """ピック確定後、その run の全イベント行へ pick_id を紐付ける."""
     async with get_db() as db:

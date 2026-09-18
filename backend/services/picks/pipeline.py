@@ -29,6 +29,7 @@ from backend.models.inference import InferenceOutcome
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
 from backend.services.data.trend.context import render_trend_context
+from backend.services.db.pick_pool_snapshot_db import insert_pool_snapshots
 from backend.services.inference.orchestrator import record_shadow_judgments, run_inference
 from backend.services.jst_time import JST
 from backend.services.learning.panel_feature_service import get_cached_panel_context
@@ -185,6 +186,27 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         scored.append((code, rec, atr, trend_score))
     scored.sort(key=lambda s: _num(s[1].get("composite_score")) or 0.0, reverse=True)
     shortlist = scored[: cfg["shortlist"]]
+    shortlisted_codes = {code for code, _rec, _atr, _trend in shortlist}
+    # 🆕 P30: 候補プール全銘柄の4分析+MLスコア・合成スコアを永続化する（日次パイプラインログ用）。
+    # 従来はこの `scored` がバッチ実行中のみのローカル変数で、実行後に失われていた。
+    await insert_pool_snapshots(
+        [
+            {
+                "batch_run_id": run_id,
+                "horizon_type": horizon_type,
+                "issued_at": issued_at,
+                "symbol": code,
+                "composite_score": _num(rec.get("composite_score")),
+                "direction": rec.get("direction"),
+                "concordance": _num(rec.get("concordance")),
+                "score_breakdown": rec.get("score_breakdown"),
+                "trend_score": trend,
+                "ml_prediction_rate": _num(rec.get("ml_prediction_rate")),
+                "is_shortlisted": code in shortlisted_codes,
+            }
+            for code, rec, _atr, trend in scored
+        ]
+    )
 
     picks: list[LedgerEntry] = []
     rejected: list[RejectedPick] = []

@@ -80,14 +80,35 @@ describe('DailyNoteReview', () => {
     expect(mockGenerateNote).toHaveBeenCalled();
   });
 
-  it('下書きがあればタイトル・本文・ステータスを表示する', async () => {
+  it('下書きがあればタイトル・本文（note.comプレビュー）・ステータスを表示する', async () => {
     mockFetchTodayNote.mockResolvedValue(makeNote());
 
     render(<DailyNoteReview />);
 
     expect(await screen.findByDisplayValue('本日のAI分析ノート')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('本日は強気優勢の展開でした。')).toBeInTheDocument();
+    // 既定はプレビュー表示（note.comへ貼り付けたときの見た目）で、生のMarkdownテキストボックスは出さない。
+    expect(screen.getByText('本日は強気優勢の展開でした。')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('本日は強気優勢の展開でした。')).not.toBeInTheDocument();
     expect(screen.getByText('未承認')).toBeInTheDocument();
+  });
+
+  it('プレビューはMarkdown記法を変換して表示し、Markdown編集タブで生のテキストを編集できる', async () => {
+    mockFetchTodayNote.mockResolvedValue(
+      makeNote({ body_markdown: '## 見出し\n\n**強調**テキストです。' }),
+    );
+    const user = userEvent.setup();
+
+    render(<DailyNoteReview />);
+    await screen.findByDisplayValue('本日のAI分析ノート');
+
+    // 既定のプレビューでは "##"/"**" が文字として見えず、見出し要素・強調要素へ変換される。
+    expect(screen.getByRole('heading', { level: 2, name: '見出し' })).toBeInTheDocument();
+    expect(screen.queryByText(/##\s*見出し/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\*\*強調\*\*/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Markdown編集' }));
+
+    expect(screen.getByLabelText('本文（Markdown）')).toHaveValue('## 見出し\n\n**強調**テキストです。');
   });
 
   it('価格表現の警告があれば注意文を出す', async () => {

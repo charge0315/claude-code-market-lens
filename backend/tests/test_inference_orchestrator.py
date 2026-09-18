@@ -207,6 +207,57 @@ async def test_low_confidence_after_value_trap_cap_fails_at_verify(wired: WiredS
     assert events[-1]["stage_status"] == "failed"
 
 
+async def test_list_runs_for_date_groups_stage_events_by_run(migrated_db: Path) -> None:
+    """🆕 P30: 日次パイプラインログが run_id ごとの全ステージを再構成できること."""
+    await trace_db.insert_trace_event(
+        run_id="run-a",
+        symbol="7203",
+        horizon_type="mid_term",
+        status="running",
+        stage="collect",
+        stage_status="done",
+        stage_seq=1,
+        payload={"current_price": 1000.0},
+        started_at="2026-09-18T07:30:00+09:00",
+        event_at="2026-09-18T07:30:01+09:00",
+    )
+    await trace_db.insert_trace_event(
+        run_id="run-a",
+        symbol="7203",
+        horizon_type="mid_term",
+        status="done",
+        stage="verify",
+        stage_status="done",
+        stage_seq=2,
+        payload={"confidence": 70.0},
+        started_at="2026-09-18T07:30:00+09:00",
+        finished_at="2026-09-18T07:30:02+09:00",
+        event_at="2026-09-18T07:30:02+09:00",
+        pick_id="pick-1",
+    )
+    await trace_db.insert_trace_event(
+        run_id="run-b",
+        symbol="6758",
+        horizon_type="short_term",
+        status="rejected",
+        stage="collect",
+        stage_status="failed",
+        stage_seq=1,
+        payload={},
+        started_at="2026-09-17T07:30:00+09:00",
+        event_at="2026-09-17T07:30:01+09:00",
+    )
+
+    by_run = await trace_db.list_runs_for_date("2026-09-18")
+
+    assert set(by_run.keys()) == {"run-a"}
+    assert [e["stage"] for e in by_run["run-a"]] == ["collect", "verify"]
+    assert by_run["run-a"][1]["pick_id"] == "pick-1"
+
+    scoped = await trace_db.list_runs_for_date("2026-09-18", horizon_type="short_term")
+    assert scoped == {}
+
+
 async def test_related_daily_frontmatter_flows_into_prompt_without_body_text(
     migrated_db: Path, vault_dirs: VaultDirs, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -20,3 +20,19 @@ class VaultReportResult(BaseModel):
     mid_term_count: int
     short_term_count: int
     chart_count: int
+
+
+class PipelineLogResult(BaseModel):
+    """日次パイプラインログ生成結果（🆕 P30、保存先パスと件数のみ）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    log_date: str
+    log_path: str
+    candidate_count: int
+    shortlisted_count: int
+    ledger_count: int
+    resolved_outcome_count: int
+    eval_metric_count: int
+    promotion_count: int
+    champion_swap_count: int

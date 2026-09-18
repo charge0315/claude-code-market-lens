@@ -1393,6 +1393,96 @@
         }
       }
     },
+    "/api/registry/pit-coverage": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "PIT特徴量スナップショットの収集進捗",
+        "description": "Vault由来ファンダメンタル・ニュースセンチメントの日次スナップショット収集進捗を返す（🆕 P29）.\n\nグループ（ファンダメンタル / keywordセンチメント / LLMセンチメント）ごとに、学習パネルへの\n投入に必要な `PIT_MIN_COVERAGE_DAYS` 営業日に対してあと何日分の収集が必要かを示す。",
+        "operationId": "pit_coverage_api_registry_pit_coverage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PitCoverageStatus_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/ablations": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "ソースアブレーション評価履歴",
+        "description": "四半期ごとのソースアブレーション（除外時 − 全部入りのホールドアウト指標差分）を返す（🆕 P29）.\n\n「Vault由来の特徴量を足して本当に良くなったか」の客観的な判定材料（`source_ablations`）。",
+        "operationId": "ablations_api_registry_ablations_get",
+        "parameters": [
+          {
+            "name": "quarter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "例: \"2026Q3\"",
+              "title": "Quarter"
+            },
+            "description": "例: \"2026Q3\""
+          },
+          {
+            "name": "excluded_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Excluded Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_SourceAblationEntry__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inference/runs": {
       "get": {
         "tags": [
@@ -3617,6 +3707,50 @@
         ],
         "title": "ApiResponse[PickRunResult]"
       },
+      "ApiResponse_PitCoverageStatus_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PitCoverageStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[PitCoverageStatus]"
+      },
       "ApiResponse_PortfolioRiskReport_": {
         "properties": {
           "success": {
@@ -4624,6 +4758,54 @@
           "success"
         ],
         "title": "ApiResponse[list[ShadowPickSummary]]"
+      },
+      "ApiResponse_list_SourceAblationEntry__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SourceAblationEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[SourceAblationEntry]]"
       },
       "ApiResponse_list_TickerInfo__": {
         "properties": {
@@ -5935,6 +6117,67 @@
         "title": "PickSummary",
         "description": "API 応答用のピック要約（`feature_snapshot` は含めない）."
       },
+      "PitCoverageStatus": {
+        "properties": {
+          "features_enabled": {
+            "type": "boolean",
+            "title": "Features Enabled"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/PitGroupCoverage"
+            },
+            "type": "array",
+            "title": "Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "features_enabled",
+          "groups"
+        ],
+        "title": "PitCoverageStatus",
+        "description": "PIT 特徴量スナップショットの収集進捗一覧（🆕 P29）."
+      },
+      "PitGroupCoverage": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "collected_days": {
+            "type": "integer",
+            "title": "Collected Days"
+          },
+          "min_coverage_days": {
+            "type": "integer",
+            "title": "Min Coverage Days"
+          },
+          "remaining_days": {
+            "type": "integer",
+            "title": "Remaining Days"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "label",
+          "collected_days",
+          "min_coverage_days",
+          "remaining_days",
+          "ready"
+        ],
+        "title": "PitGroupCoverage",
+        "description": "PIT（point-in-time）特徴量 1 グループぶんの収集進捗（🆕 P29）.\n\n`collected_days` は `pit_fundamental_snapshots` / `pit_sentiment_snapshots` に\nスナップショットが存在するユニーク営業日数（`services/registry/pit_coverage_service.py`）。\n`ready` は学習パネルへの投入可否（`PIT_MIN_COVERAGE_DAYS` を満たすか）の目安であり、\n実際のゲート判定（`panel_feature_service._apply_coverage_gate`）は被覆率\n（`PIT_MIN_COVERAGE_RATIO`）も見るため、こちらは「あと何営業日で条件を満たすか」の\n分かりやすい進捗表示専用（かんたん/詳細タブ共通）。"
+      },
       "PortfolioHolding": {
         "properties": {
           "holding_id": {
@@ -6936,6 +7179,50 @@
         ],
         "title": "ShadowPredictionSummary",
         "description": "`shadow_predictions` の1行分（🆕 P12: Gemini 等 challenger LLM の比較用判定）.\n\n公式パイプライン（Anthropic）とは独立した表示専用の判定であり、昇格・確度較正には関与しない。"
+      },
+      "SourceAblationEntry": {
+        "properties": {
+          "ablation_id": {
+            "type": "string",
+            "title": "Ablation Id"
+          },
+          "computed_at": {
+            "type": "string",
+            "title": "Computed At"
+          },
+          "quarter": {
+            "type": "string",
+            "title": "Quarter"
+          },
+          "excluded_source": {
+            "type": "string",
+            "title": "Excluded Source"
+          },
+          "metric_name": {
+            "type": "string",
+            "title": "Metric Name"
+          },
+          "metric_delta": {
+            "type": "number",
+            "title": "Metric Delta"
+          },
+          "sample_n": {
+            "type": "integer",
+            "title": "Sample N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ablation_id",
+          "computed_at",
+          "quarter",
+          "excluded_source",
+          "metric_name",
+          "metric_delta",
+          "sample_n"
+        ],
+        "title": "SourceAblationEntry",
+        "description": "`source_ablations` の 1 行（🆕 P29、ソース除外時のホールドアウト指標差分）."
       },
       "StockNote": {
         "properties": {

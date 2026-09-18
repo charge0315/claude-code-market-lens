@@ -36,3 +36,12 @@ def write_report(report_date: str, *, html: str, charts: dict[str, str]) -> Path
         (charts_dir / f"{symbol}.svg").write_text(svg, encoding="utf-8")
 
     return report_dir
+
+
+def write_pipeline_log(log_date: str, markdown: str) -> Path:
+    """`pipeline_log.md` を書き込み、保存先パスを返す（🆕 P30、既存ファイルは上書き）."""
+    report_dir = report_dir_for_date(log_date)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    log_path = report_dir / "pipeline_log.md"
+    log_path.write_text(markdown, encoding="utf-8")
+    return log_path
