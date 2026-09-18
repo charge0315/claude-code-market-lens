@@ -15,6 +15,9 @@ import { ModelQualityChart } from '@/components/model-lab/ModelQualityChart';
 import { ModelQualitySummaryLine } from '@/components/model-lab/ModelQualitySummaryLine';
 import { TrainingTrendChart } from '@/components/model-lab/TrainingTrendChart';
 import { TrainingTrendSummaryLine } from '@/components/model-lab/TrainingTrendSummaryLine';
+import { PitCoveragePanel } from '@/components/model-lab/PitCoveragePanel';
+import { PitCoverageSummaryLine } from '@/components/model-lab/PitCoverageSummaryLine';
+import { AblationPanel } from '@/components/model-lab/AblationPanel';
 
 // 🆕 P14: 初心者は「かんたん」タブ（学習トリガー中心）だけで完結できるようにし、
 // champion/challenger 比較・PSI ドリフト・成長曲線等の既存の上級者向けセクションは
@@ -70,6 +73,13 @@ function SimpleTab(): ReactNode {
         </h2>
         <p className="model-lab-as-of">日ごとに何銘柄のモデルを学習・更新できたかの推移です。</p>
         <TrainingTrendSummaryLine />
+      </section>
+
+      <section aria-labelledby="simple-pit-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <h2 id="simple-pit-heading" style={H2_STYLE}>
+          Vault情報の学習活用
+        </h2>
+        <PitCoverageSummaryLine />
       </section>
     </>
   );
@@ -243,6 +253,47 @@ function AdvancedTab(): ReactNode {
           問題が起きている可能性があります。
         </p>
         <TrainingTrendChart />
+      </section>
+
+      <section aria-labelledby="pit-coverage-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <div className="model-lab-heading-row">
+          <h2 id="pit-coverage-heading" style={H2_STYLE}>
+            Vault特徴量（PIT）の収集進捗
+          </h2>
+          <InfoPopoverButton title="PIT（point-in-time）特徴量とは">
+            <div className="ml-info-body">
+              <p>
+                Obsidian Vaultに補完された銘柄の決算情報・ニュースセンチメントを、AIの学習（断面プールモデル）へ
+                取り込むための日次スナップショットです。Vaultのノートは日々上書きされる「現在値」のため、
+                過去の学習データへそのまま結合すると未来の情報が混ざってしまいます（意図しない先読み）。
+              </p>
+              <p>
+                そのため、今日から先の値を毎日記録し、必要な営業日数（既定60営業日）が貯まったグループから
+                順に自動的に学習特徴量へ組み込まれます。
+              </p>
+            </div>
+          </InfoPopoverButton>
+        </div>
+        <PitCoveragePanel />
+      </section>
+
+      <section aria-labelledby="ablation-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <div className="model-lab-heading-row">
+          <h2 id="ablation-heading" style={H2_STYLE}>
+            ソースアブレーション評価
+          </h2>
+          <InfoPopoverButton title="ソースアブレーション評価とは">
+            <div className="ml-info-body">
+              <p>
+                ある情報源（例: Vault決算情報）を除外して再学習し、含めた場合と比べて予測精度がどれだけ
+                変わるかを四半期ごとに測定します。「Vault由来の特徴量を足して本当に良くなったか」を確認できる
+                唯一の客観的な材料です。
+              </p>
+              <p>差分がマイナスであるほど、その情報源が精度に貢献していることを意味します。</p>
+            </div>
+          </InfoPopoverButton>
+        </div>
+        <AblationPanel />
       </section>
     </>
   );

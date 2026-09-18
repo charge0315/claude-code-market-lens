@@ -17,9 +17,16 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.registry import ModelCoverage, QualityDistribution, TrainingTrendPoint
+from backend.models.registry import (
+    ModelCoverage,
+    PitCoverageStatus,
+    QualityDistribution,
+    SourceAblationEntry,
+    TrainingTrendPoint,
+)
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
+from backend.services.db.source_ablation_db import list_ablations
 from backend.services.db.training_batch_db import get_attempted_tickers
 from backend.services.jst_time import today_jst
 from backend.services.learning.per_ticker_training_service import (
@@ -29,7 +36,7 @@ from backend.services.learning.per_ticker_training_service import (
     run_daily_training_batch,
 )
 from backend.services.learning.pool_model import POOL_LANE
-from backend.services.registry import model_stats_service
+from backend.services.registry import model_stats_service, pit_coverage_service
 from backend.services.registry.promotion import apply_promotion, evaluate_ml_pool_promotion, evaluate_promotion
 
 logger = logging.getLogger(__name__)
@@ -290,3 +297,28 @@ async def drift(
 ) -> ApiResponse[list[dict]]:
     """特徴量分布ドリフト（PSI）の履歴を古い順で返す（モデルラボの推移グラフ用）."""
     return ApiResponse.ok(await list_drift_snapshots(feature_name=feature, limit=limit))
+
+
+@router.get(
+    "/pit-coverage", response_model=ApiResponse[PitCoverageStatus], summary="PIT特徴量スナップショットの収集進捗"
+)
+async def pit_coverage() -> ApiResponse[PitCoverageStatus]:
+    """Vault由来ファンダメンタル・ニュースセンチメントの日次スナップショット収集進捗を返す（🆕 P29）.
+
+    グループ（ファンダメンタル / keywordセンチメント / LLMセンチメント）ごとに、学習パネルへの
+    投入に必要な `PIT_MIN_COVERAGE_DAYS` 営業日に対してあと何日分の収集が必要かを示す。
+    """
+    return ApiResponse.ok(await pit_coverage_service.build_pit_coverage_status())
+
+
+@router.get("/ablations", response_model=ApiResponse[list[SourceAblationEntry]], summary="ソースアブレーション評価履歴")
+async def ablations(
+    quarter: str | None = Query(default=None, description='例: "2026Q3"'),
+    excluded_source: str | None = Query(default=None),
+) -> ApiResponse[list[SourceAblationEntry]]:
+    """四半期ごとのソースアブレーション（除外時 − 全部入りのホールドアウト指標差分）を返す（🆕 P29）.
+
+    「Vault由来の特徴量を足して本当に良くなったか」の客観的な判定材料（`source_ablations`）。
+    """
+    rows = await list_ablations(quarter=quarter, excluded_source=excluded_source)
+    return ApiResponse.ok([SourceAblationEntry(**row) for row in rows])

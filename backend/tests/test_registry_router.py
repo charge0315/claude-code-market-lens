@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.models.pick import LedgerEntry, SubScores
-from backend.services.db import drift_db, pick_outcome_db
+from backend.services.db import drift_db, pick_outcome_db, pit_snapshot_db, source_ablation_db
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.registry import model_registry as mr
 
@@ -447,3 +447,104 @@ async def test_evaluate_promotion_routes_ml_pool_lane_to_holdout_gate(migrated_d
     body = res.json()
     assert body["success"] is True
     assert body["data"]["verdict"] == "propose_promote"
+
+
+# --- PIT特徴量スナップショット・ソースアブレーション（🆕 P29）---
+
+
+async def test_pit_coverage_endpoint_returns_three_groups(migrated_db: Path) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/pit-coverage")
+
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["features_enabled"] is False
+    groups = {g["group"] for g in body["data"]["groups"]}
+    assert groups == {"pit_fundamental", "pit_sentiment_keyword", "pit_sentiment_llm"}
+
+
+async def test_pit_coverage_endpoint_reflects_collected_snapshots(migrated_db: Path) -> None:
+    await pit_snapshot_db.upsert_fundamental_snapshot(
+        snapshot_date="2026-09-17",
+        code="7203",
+        source="vault_frontmatter",
+        data_as_of=None,
+        per_forecast=None,
+        pbr=None,
+        roe=None,
+        equity_ratio=None,
+        dividend_yield_forecast=None,
+        eps_forecast=None,
+        bps=None,
+        market_cap_oku=None,
+        shares_outstanding=None,
+        last_earnings_date=None,
+        last_earnings_type=None,
+        sector33=None,
+        sector17=None,
+        scale_cat=None,
+        market=None,
+        extra=None,
+        created_at="2026-09-17T16:45:00+09:00",
+    )
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/pit-coverage")
+
+    body = res.json()
+    fund = next(g for g in body["data"]["groups"] if g["group"] == "pit_fundamental")
+    assert fund["collected_days"] == 1
+
+
+async def test_ablations_endpoint_returns_recorded_rows(migrated_db: Path) -> None:
+    await source_ablation_db.insert_ablation(
+        computed_at="2026-09-18T04:00:00+09:00",
+        quarter="2026Q3",
+        excluded_source="pit_fundamental",
+        metric_name="auc",
+        metric_delta=-0.03,
+        sample_n=120,
+    )
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/ablations")
+
+    body = res.json()
+    assert body["success"] is True
+    assert len(body["data"]) == 1
+    assert body["data"][0]["excluded_source"] == "pit_fundamental"
+    assert body["data"][0]["metric_delta"] == -0.03
+
+
+async def test_ablations_endpoint_filters_by_quarter(migrated_db: Path) -> None:
+    await source_ablation_db.insert_ablation(
+        computed_at="2026-09-18T04:00:00+09:00",
+        quarter="2026Q3",
+        excluded_source="pit_fundamental",
+        metric_name="auc",
+        metric_delta=-0.03,
+        sample_n=120,
+    )
+    await source_ablation_db.insert_ablation(
+        computed_at="2026-12-18T04:00:00+09:00",
+        quarter="2026Q4",
+        excluded_source="pit_fundamental",
+        metric_name="auc",
+        metric_delta=-0.01,
+        sample_n=130,
+    )
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/registry/ablations?quarter=2026Q3")
+
+    body = res.json()
+    assert len(body["data"]) == 1
+    assert body["data"][0]["quarter"] == "2026Q3"

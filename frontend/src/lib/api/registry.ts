@@ -149,3 +149,43 @@ export function fetchTrainingTrend(days?: number): Promise<TrainingTrendPoint[]>
   const qs = days ? `?days=${days}` : '';
   return api.get<TrainingTrendPoint[]>(`/registry/model-stats/training-trend${qs}`);
 }
+
+// PIT（point-in-time）特徴量スナップショット・ソースアブレーション（🆕 P29）。
+// Vault由来ファンダメンタル・ニュースセンチメントをML学習へ組み込むための日次収集台帳の
+// 進捗と、「Vaultを足して本当に良くなったか」の客観判定材料。
+
+export interface PitGroupCoverage {
+  group: string;
+  label: string;
+  collected_days: number;
+  min_coverage_days: number;
+  remaining_days: number;
+  ready: boolean;
+}
+
+export interface PitCoverageStatus {
+  features_enabled: boolean;
+  groups: PitGroupCoverage[];
+}
+
+export interface SourceAblationEntry {
+  ablation_id: string;
+  computed_at: string;
+  quarter: string;
+  excluded_source: string;
+  metric_name: string;
+  metric_delta: number;
+  sample_n: number;
+}
+
+export function fetchPitCoverage(): Promise<PitCoverageStatus> {
+  return api.get<PitCoverageStatus>('/registry/pit-coverage');
+}
+
+export function fetchAblations(params?: { quarter?: string; excludedSource?: string }): Promise<SourceAblationEntry[]> {
+  const q = new URLSearchParams();
+  if (params?.quarter) q.set('quarter', params.quarter);
+  if (params?.excludedSource) q.set('excluded_source', params.excludedSource);
+  const qs = q.toString();
+  return api.get<SourceAblationEntry[]>(`/registry/ablations${qs ? `?${qs}` : ''}`);
+}

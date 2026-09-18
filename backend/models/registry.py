@@ -87,6 +87,50 @@ class TrainingTrendPoint(BaseModel):
     failed_count: int
 
 
+class PitGroupCoverage(BaseModel):
+    """PIT（point-in-time）特徴量 1 グループぶんの収集進捗（🆕 P29）.
+
+    `collected_days` は `pit_fundamental_snapshots` / `pit_sentiment_snapshots` に
+    スナップショットが存在するユニーク営業日数（`services/registry/pit_coverage_service.py`）。
+    `ready` は学習パネルへの投入可否（`PIT_MIN_COVERAGE_DAYS` を満たすか）の目安であり、
+    実際のゲート判定（`panel_feature_service._apply_coverage_gate`）は被覆率
+    （`PIT_MIN_COVERAGE_RATIO`）も見るため、こちらは「あと何営業日で条件を満たすか」の
+    分かりやすい進捗表示専用（かんたん/詳細タブ共通）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    group: str
+    label: str
+    collected_days: int
+    min_coverage_days: int
+    remaining_days: int
+    ready: bool
+
+
+class PitCoverageStatus(BaseModel):
+    """PIT 特徴量スナップショットの収集進捗一覧（🆕 P29）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    features_enabled: bool
+    groups: list[PitGroupCoverage]
+
+
+class SourceAblationEntry(BaseModel):
+    """`source_ablations` の 1 行（🆕 P29、ソース除外時のホールドアウト指標差分）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ablation_id: str
+    computed_at: str
+    quarter: str
+    excluded_source: str
+    metric_name: str
+    metric_delta: float
+    sample_n: int
+
+
 class PromotionEntry(BaseModel):
     """`model_promotions` の 1 行（昇格ゲートの判定ログ）."""
 
