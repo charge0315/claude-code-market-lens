@@ -173,7 +173,10 @@ def test_render_trends_orders_by_momentum_and_returns_none_when_empty() -> None:
     ]
     block = context.render_trends(trends)
     assert block is not None
-    assert block.index("高モメンタム") < block.index("低モメンタム")
+    assert block.index("t2") < block.index("t1")
+    # 自由記述（theme_name/summary）はインジェクション対策のため転送しない。
+    assert "高モメンタム" not in block
+    assert "低モメンタム" not in block
 
 
 async def test_render_trend_context_none_without_snapshot(migrated_db: Path) -> None:

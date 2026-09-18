@@ -81,6 +81,7 @@ frontend/src/
 ## 6. セキュリティ境界（実装済み）
 
 - 外部由来テキスト（Vault 本文・ニュース本文）は LLM プロンプトへ注入しない。注入するのは frontmatter / 構造化フィールドのみ（`services/vault/` `services/picks/*_prompt`）。
+- 外部見出しを直接読む LLM 呼び出し（`services/scoring/llm_news_sentiment_service.py` / `services/data/trend/analyzer.py`）は隔離扱い。メインの `propose_stock_pick` プロンプトへ転送するのは enum/number/検証済み銘柄コードのみで、自由記述（`reasoning`/`summary`/`theme_name` 等）は転送しない（`services/data/trend/context.py`、2026-09-18 是正、`plans/05` 変更履歴）。
 - 継続学習の教師信号は自分の実測値のみ。
 - CSP は nonce ベース（`frontend/src/middleware.ts`）。
 - Vault は読み取り専用。
