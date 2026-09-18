@@ -21,9 +21,24 @@ def test_confidence_shrinkage_pulls_toward_neutral_for_few_articles() -> None:
 
 
 def test_get_news_sentiment_aggregates_and_shrinks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 🔧 yfinance 現行版のネスト形式（`content` 配下）。
     news: list[dict[str, object]] = [
-        {"title": "増益で急騰、最高値更新", "publisher": "X", "link": "u1", "providerPublishTime": 1_760_000_000},
-        {"title": "上方修正で買い優勢", "publisher": "X", "link": "u2", "providerPublishTime": 1_760_000_100},
+        {
+            "content": {
+                "title": "増益で急騰、最高値更新",
+                "provider": {"displayName": "X"},
+                "canonicalUrl": {"url": "u1"},
+                "pubDate": "2026-09-18T08:00:00Z",
+            }
+        },
+        {
+            "content": {
+                "title": "上方修正で買い優勢",
+                "provider": {"displayName": "X"},
+                "canonicalUrl": {"url": "u2"},
+                "pubDate": "2026-09-18T09:00:00Z",
+            }
+        },
     ]
 
     class FakeTicker:
@@ -40,6 +55,29 @@ def test_get_news_sentiment_aggregates_and_shrinks(monkeypatch: pytest.MonkeyPat
     # 2 件のみ → confidence 0.2、avg は raw(1.0) から中立寄りに縮小される。
     assert out["confidence"] == pytest.approx(0.2)
     assert 0.5 < out["average_score"] < out["raw_average_score"]
+    assert out["news"][0]["source"] == "X"
+    assert out["news"][0]["url"] == "u1"
+    assert out["news"][0]["published"] == "2026-09-18 08:00"
+
+
+def test_get_news_sentiment_supports_legacy_flat_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔧 旧フラット形式（`content` ネスト無し）も引き続き解釈できること（後方互換）."""
+    news: list[dict[str, object]] = [
+        {"title": "増益で急騰、最高値更新", "publisher": "X", "link": "u1", "providerPublishTime": 1_760_000_000}
+    ]
+
+    class FakeTicker:
+        def __init__(self, _s: str) -> None:
+            self.news = news
+
+    monkeypatch.setattr(sa.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(sa.stock_cache, "get_json", lambda _k: None)
+    monkeypatch.setattr(sa.stock_cache, "set_json", lambda *_a, **_k: None)
+
+    out = sa.get_news_sentiment("7203")
+    assert out["total"] == 1
+    assert out["news"][0]["source"] == "X"
+    assert out["news"][0]["url"] == "u1"
 
 
 def test_empty_news_returns_neutral_and_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:

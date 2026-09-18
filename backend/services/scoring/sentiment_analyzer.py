@@ -5,6 +5,12 @@ Market Lens `backend/services/sentiment_analyzer.py` から移植（import パ�
 
 FinBERT 等の本格 NLP は使わず見出しのキーワードカウントで判定するため、記事が少ない
 銘柄の断定的なスコアは信頼度シュリンケージで中立（0.5）へ引き戻す。
+
+🔧 yfinance のニュース応答は、以前は `title`/`publisher`/`link`/`providerPublishTime` が
+アイテム直下にあったが、現行版では `content` オブジェクトへネストされ（`content.title` /
+`content.provider.displayName` / `content.canonicalUrl.url` / `content.pubDate`(ISO8601)）、
+旧フィールド名では常に空文字列しか取れず全銘柄でニュース 0 件扱いになっていた
+（2026-09-18 実機確認で発覚）。`_extract_content` で両形式を吸収する。
 """
 
 from __future__ import annotations
@@ -89,6 +95,48 @@ def _apply_confidence_shrinkage(raw_score: float, article_count: int) -> float:
     return 0.5 + (raw_score - 0.5) * confidence
 
 
+def _extract_content(item: dict[str, object]) -> dict[str, object]:
+    """yfinance ニュース1件の実データを取り出す（新形式は `content` にネスト、旧形式は直下）."""
+    content = item.get("content")
+    return content if isinstance(content, dict) else item
+
+
+def _extract_source(content: dict[str, object]) -> str:
+    provider = content.get("provider")
+    if isinstance(provider, dict):
+        name = provider.get("displayName")
+        if isinstance(name, str) and name:
+            return name
+    publisher = content.get("publisher")
+    return publisher if isinstance(publisher, str) else ""
+
+
+def _extract_url(content: dict[str, object]) -> str:
+    for key in ("canonicalUrl", "clickThroughUrl"):
+        candidate = content.get(key)
+        if isinstance(candidate, dict):
+            url = candidate.get("url")
+            if isinstance(url, str) and url:
+                return url
+    link = content.get("link")
+    return link if isinstance(link, str) else ""
+
+
+def _extract_published(content: dict[str, object]) -> str:
+    pub_date = content.get("pubDate")
+    if isinstance(pub_date, str) and pub_date:
+        try:
+            parsed = datetime.datetime.fromisoformat(pub_date.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        else:
+            return parsed.strftime("%Y-%m-%d %H:%M")
+    pub_ts = content.get("providerPublishTime") or content.get("publishedTime")
+    if isinstance(pub_ts, (int, float)) and not isinstance(pub_ts, bool):
+        return datetime.datetime.fromtimestamp(pub_ts, tz=datetime.UTC).strftime("%Y-%m-%d %H:%M")
+    return ""
+
+
 def get_news_sentiment(ticker: str, max_items: int = 20) -> SentimentSummaryDict:
     """指定銘柄のニュースセンチメントを分析する（1 日キャッシュ、取得失敗はキャッシュしない）."""
     jt = ticker if ticker.endswith(".T") else f"{ticker}.T"
@@ -110,25 +158,20 @@ def get_news_sentiment(ticker: str, max_items: int = 20) -> SentimentSummaryDict
     pos_count = neg_count = neutral_count = 0
     score_total = 0.0
 
-    for item in raw_news[:max_items]:
+    for raw_item in raw_news[:max_items]:
+        item = _extract_content(raw_item)
         title = item.get("title", "")
-        if not title:
+        if not isinstance(title, str) or not title:
             continue
 
         score, label = _score_text(title)
 
-        pub_ts = item.get("providerPublishTime") or item.get("publishedTime")
-        if pub_ts:
-            pub_str = datetime.datetime.fromtimestamp(pub_ts, tz=datetime.UTC).strftime("%Y-%m-%d %H:%M")
-        else:
-            pub_str = ""
-
         news_items.append(
             {
                 "title": title,
-                "source": item.get("publisher", ""),
-                "published": pub_str,
-                "url": item.get("link", ""),
+                "source": _extract_source(item),
+                "published": _extract_published(item),
+                "url": _extract_url(item),
                 "score": score,
                 "label": label,
             }
