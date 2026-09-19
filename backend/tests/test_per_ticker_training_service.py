@@ -67,7 +67,7 @@ async def test_select_candidates_prioritizes_untrained_then_oldest(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
 
     await model_registry_db.upsert_model(
         version="v1", model_type="xgboost", ticker="2222", objective="regression", trained_at="2026-09-01T00:00:00"
@@ -84,7 +84,7 @@ async def test_select_candidates_prioritizes_untrained_then_oldest(
 
 async def test_select_candidates_excludes_attempted_today(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
 
     candidates = await svc._select_candidates({"1111"}, "xgboost")
 
@@ -198,7 +198,7 @@ async def test_run_daily_training_batch_trains_and_activates_untrained_tickers(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
@@ -218,7 +218,7 @@ async def test_run_daily_training_batch_stops_at_daily_limit(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)
 
@@ -243,7 +243,7 @@ async def test_run_daily_training_batch_skips_when_quota_already_reached(
         called = True
         return []
 
-    monkeypatch.setattr(svc, "_get_ticker_master", _fail_if_called)
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _fail_if_called)
 
     summary = await svc.run_daily_training_batch("xgboost")
 
@@ -256,7 +256,7 @@ async def test_run_daily_training_batch_records_failure_without_stopping_others(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
     async def _stock_data(ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
@@ -282,7 +282,7 @@ async def test_run_daily_training_batch_records_failure_without_stopping_others(
 async def test_override_none_preserves_existing_behavior(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """override 未指定（celery-beat の自動定期実行）は既存の _daily_ticker_limit のまま."""
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)
 
@@ -297,7 +297,7 @@ async def test_daily_limit_override_lets_manual_trigger_exceed_settings_limit(
 ) -> None:
     """手動トリガー（🆕 P14）は override で settings 由来の上限を超えて全銘柄まで学習できる."""
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 2)  # 自動定期実行の上限（無視されるはず）
 
@@ -309,7 +309,7 @@ async def test_daily_limit_override_lets_manual_trigger_exceed_settings_limit(
 
 async def test_max_duration_override_stops_batch_early(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
 
     summary = await svc.run_daily_training_batch("xgboost", daily_limit_override=10, max_duration_override=0.0)
@@ -346,7 +346,7 @@ async def test_interrupted_run_resumes_from_remaining_tickers_on_next_call(
     再度呼び出すだけで自然に続きから再開する（コード変更不要、この事実をテストで固定する）。
     """
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333", "4444"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
 
     # 1回目: 上限 2 件で「中断」をシミュレート（例: サーバ再起動でプロセスが落ちた想定）。
@@ -375,7 +375,7 @@ async def test_on_progress_emits_running_then_completed_events(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
     monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
     monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
 
@@ -396,7 +396,7 @@ async def test_on_progress_emits_failed_status_without_activation(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
 
     async def _empty(_ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
         return pd.DataFrame(), "yfinance"
@@ -415,7 +415,7 @@ async def test_on_progress_emits_failed_status_without_activation(
 async def test_successful_training_records_data_source(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """学習成功時の `training_batch_runs.data_source` が集計クエリから引けることを確認する."""
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111"]]
-    monkeypatch.setattr(svc, "_get_ticker_master", _async_return(universe))
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
 
     async def _jquants_sourced(_ticker: str, period: str = "5y") -> tuple[pd.DataFrame, str]:  # noqa: ARG001
         return _make_ohlcv(seed=1), "jquants"

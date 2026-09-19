@@ -208,6 +208,20 @@ async def list_picks(
     return summaries
 
 
+async def list_picked_symbols_since(issued_from: str) -> set[str]:
+    """指定日以降に発行されたピックの銘柄コード集合を返す（🆕 学習対象「ピックした銘柄」モード用）.
+
+    `list_picks` と異なりライブ株価（`fetch_quote_with_spark`）を一切引かない軽量版。
+    学習対象ユニバースの解決はバッチ処理の入口で毎回呼ばれるため、不要な外部 I/O を避ける。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text("SELECT DISTINCT symbol FROM prediction_ledger WHERE is_shadow = 0 AND issued_at >= :issued_from"),
+            {"issued_from": issued_from},
+        )
+        return {str(r[0]) for r in result}
+
+
 async def list_recent_outcome_reviews(*, since: str, limit: int = 20) -> list[dict[str, object]]:
     """直近に決着したピックへ銘柄名を補って返す（note下書きの前日レビュー章向け、CL-1）.
 

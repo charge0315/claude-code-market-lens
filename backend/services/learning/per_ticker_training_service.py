@@ -13,8 +13,8 @@ Market Lens `backend/services/training_batch_service.py` から移植、変更�
   Alpha Forge に手動学習 UI が無いため移植しない（全銘柄が常にバッチ対象）。
 - 分類器（objective="classification"）の出荷ゲートは無い。銘柄別4モデルは回帰専用
   （`per_ticker_predictor.py`/`dl/base.py` 参照）。
-- ユニバースは東証全銘柄（`data_fetcher._get_ticker_master()`、ユーザー確認済み仕様。
-  Market Lens 同様）。
+- ユニバースは東証全銘柄固定だったが、🆕 学習対象設定（`training_target_service.py`）により
+  ポートフォリオ銘柄/ピック銘柄/カスタムリストへ絞り込めるようにした（既定は従来通り全銘柄）。
 
 「1呼び出し（Celery beat の1firing）あたりの時間予算・1銘柄あたりタイムアウトを守りつつ、
 未学習優先→最も学習が古い順に候補を選び、当日上限まで学習する」という Market Lens の設計を
@@ -36,9 +36,9 @@ from dataclasses import dataclass
 from typing import Final, Literal
 
 from backend.config import settings
-from backend.services.data.data_fetcher import _get_ticker_master
 from backend.services.db import model_registry_db, training_batch_db
 from backend.services.jst_time import today_jst
+from backend.services.learning import training_target_service
 from backend.services.learning.dl.lstm import LSTMPredictor
 from backend.services.learning.dl.transformer import TransformerPredictor
 from backend.services.learning.per_ticker_predictor import RandomForestPredictor, XGBoostPredictor
@@ -452,12 +452,25 @@ async def _select_candidates(attempted_today: set[str], model_type: str) -> list
 
     当日そのモデルタイプで試行済み（成功/失敗問わず）の銘柄は除外する
     （失敗銘柄を同日中に繰り返し試行してループしないため。翌日、改めて最優先候補として再挑戦される）。
+
+    ユニバースは `training_target_service.resolve_training_universe()`（🆕 学習対象設定、
+    既定は従来通り東証全銘柄）。`custom` モードで新規追加された銘柄は、学習対象への追加日時が
+    最終学習日時より後なら「未学習」扱いに昇格させ最優先候補にする（要件6の差分学習）。
     """
-    universe = await _get_ticker_master()
+    universe = await training_target_service.resolve_training_universe()
     latest_trained = await training_batch_db.get_latest_trained_at_by_ticker(model_type)
+    priority_override = await training_target_service.get_priority_override_map()
 
     remaining = [t.code for t in universe if t.code not in attempted_today]
-    # 未学習（latest_trainedに無い）銘柄を最優先（Falseはtrue未満なので先頭に来る）、
-    # 学習済み銘柄同士は trained_at 昇順（最も古い＝最も長く再学習されていない銘柄を優先）。
-    remaining.sort(key=lambda code: (code in latest_trained, latest_trained.get(code, "")))
+
+    def sort_key(code: str) -> tuple[bool, str]:
+        trained_at = latest_trained.get(code)
+        added_at = priority_override.get(code)
+        if trained_at is not None and added_at is not None and added_at > trained_at:
+            trained_at = None
+        # 未学習（trained_atがNone）銘柄を最優先（Falseはtrue未満なので先頭に来る）、
+        # 学習済み銘柄同士は trained_at 昇順（最も古い＝最も長く再学習されていない銘柄を優先）。
+        return (trained_at is not None, trained_at or "")
+
+    remaining.sort(key=sort_key)
     return remaining

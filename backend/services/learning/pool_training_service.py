@@ -41,6 +41,7 @@ from backend.services.learning.panel_feature_service import (
 )
 from backend.services.learning.pool_labeling import POOL_HORIZON_DAYS
 from backend.services.learning.pool_model import POOL_LANE
+from backend.services.learning.training_target_service import resolve_training_universe
 from backend.services.ledger.eval_metrics import decile_return_spread, evaluate_classification
 from backend.services.registry.model_registry import bootstrap_champion_if_missing, ensure_registered
 
@@ -287,10 +288,16 @@ async def run_pool_training(*, as_of_dates: Sequence[str] | None = None, seed: i
     `services/registry/promotion.evaluate_ml_pool_promotion` の人手承認ゲートを経てから
     昇格する（🔧 Market Lens は 1 本しか無い前提で即 `activate_model` していたが、Alpha Forge
     は再学習後の自動切替をしない）。
+
+    ユニバースは 🆕 学習対象設定（`training_target_service.resolve_training_universe`、既定は
+    東証全銘柄）。プールモデルは月次フル再学習方式のため、per-ticker ローテーションのような
+    差分学習は適用されない（学習対象フィルタ自体は個別銘柄モデルと共通）。フィルタ結果が
+    空集合の場合は `build_panel` が空パネルを返し、下のラベル付き行不足パスで自然に `skipped` になる。
     """
     dates = list(as_of_dates) if as_of_dates is not None else default_as_of_dates()
 
-    panel = await build_panel(dates)
+    universe = await resolve_training_universe()
+    panel = await build_panel(dates, universe=universe)
     if panel.empty or "label" not in panel.columns or panel["label"].notna().sum() < _MIN_LABELED_ROWS:
         n_labeled = 0 if panel.empty or "label" not in panel.columns else int(panel["label"].notna().sum())
         logger.warning("プールモデル学習をスキップ: ラベル付き行 %d 件（J-Quants 未設定/データ不足）", n_labeled)
