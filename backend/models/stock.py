@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -16,6 +18,28 @@ class OhlcBar(BaseModel):
     low: float
     close: float
     volume: float
+
+
+class ChartEvent(BaseModel):
+    """テクニカル指標のクロスイベント 1 件（🆕、ローソク足チャートのマーカー表示用）.
+
+    `services/scoring/technical_analysis.detect_cross_events` の結果をそのまま公開する。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    date: str  # YYYY-MM-DD
+    kind: Literal["golden_cross", "dead_cross", "macd_bullish_cross", "macd_bearish_cross"]
+    label: str
+
+
+class OhlcResponse(BaseModel):
+    """`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    bars: list[OhlcBar]
+    events: list[ChartEvent]
 
 
 class Quote(BaseModel):

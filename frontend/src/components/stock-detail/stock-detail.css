@@ -83,9 +83,32 @@
   color: var(--color-text-primary);
 }
 
+.price-chart-canvas-wrap {
+  position: relative;
+}
+
 .price-chart-canvas {
   width: 100%;
   min-width: 0;
+}
+
+/* 🆕 GC/DC・MACDクロスのhoverツールチップ（lightweight-chartsにDOMツールチップ機構が
+   無いため独自実装。crosshairMoveの座標に追従させる）。 */
+.price-chart-tooltip {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, calc(-100% - var(--spacing-sm)));
+  max-width: 15rem;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  pointer-events: none;
+  white-space: normal;
 }
 
 .sub-score-panel {

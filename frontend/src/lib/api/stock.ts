@@ -13,8 +13,23 @@ export interface OhlcBar {
   volume: number;
 }
 
-export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo'): Promise<OhlcBar[]> {
-  return api.get<OhlcBar[]>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}`);
+// テクニカル指標のクロスイベント（🆕、ゴールデンクロス/デッドクロス・MACDクロス）。
+// チャート上のマーカー描画・hoverツールチップに使う。
+export type ChartEventKind = 'golden_cross' | 'dead_cross' | 'macd_bullish_cross' | 'macd_bearish_cross';
+
+export interface ChartEvent {
+  date: string; // YYYY-MM-DD
+  kind: ChartEventKind;
+  label: string;
+}
+
+export interface OhlcResponse {
+  bars: OhlcBar[];
+  events: ChartEvent[];
+}
+
+export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo'): Promise<OhlcResponse> {
+  return api.get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}`);
 }
 
 // 🆕 P26: ポートフォリオの買い/売りフォームが開いた時点の最新値を初期値にするための

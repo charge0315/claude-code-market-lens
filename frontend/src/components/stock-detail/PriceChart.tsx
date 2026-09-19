@@ -1,12 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { fetchOhlc, type OhlcPeriod } from '@/lib/api/stock';
+import {
+  CandlestickSeries,
+  createChart,
+  createSeriesMarkers,
+  type IChartApi,
+  type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type MouseEventParams,
+  type SeriesMarker,
+  type Time,
+} from 'lightweight-charts';
+import { fetchOhlc, type ChartEvent, type OhlcPeriod } from '@/lib/api/stock';
 import './stock-detail.css';
 
 // 日足ローソク足チャート。複数時間軸（分足等）は対象外 — 銘柄詳細の主目的は AI 思考トレースで
 // あり（CLAUDE.md の主要画面定義）、チャートは期間切り替えのみの補助情報という位置づけ。
+//
+// 🆕 ゴールデンクロス/デッドクロス・MACDクロスの兆候イベントをマーカーで示し、hoverすると
+// 簡単な説明をツールチップで表示する。マーカー色は国内証券標準の騰落色トークン
+// （--color-gain=赤/--color-loss=緑）を流用し、買い兆候=赤・警戒/売り兆候=緑で統一する。
 
 const PERIODS: ReadonlyArray<OhlcPeriod> = ['1mo', '3mo', '6mo', '1y', '2y'];
 const PERIOD_LABELS: Record<OhlcPeriod, string> = { '1mo': '1ヶ月', '3mo': '3ヶ月', '6mo': '6ヶ月', '1y': '1年', '2y': '2年' };
@@ -16,13 +30,30 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function isBearishEvent(kind: ChartEvent['kind']): boolean {
+  return kind === 'dead_cross' || kind === 'macd_bearish_cross';
+}
+
+// lightweight-charts の crosshair イベントが返す `Time`（string | number | BusinessDay）を
+// `events` の date（YYYY-MM-DD）と突き合わせられる文字列キーへ変換する。
+function timeToDateKey(time: Time): string {
+  if (typeof time === 'object') {
+    return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`;
+  }
+  return String(time);
+}
+
 export function PriceChart({ symbol }: { symbol: string }): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const eventsByDateRef = useRef<Map<string, ChartEvent>>(new Map());
   const [period, setPeriod] = useState<OhlcPeriod>('6mo');
   const [error, setError] = useState<string | null>(null);
   const [isEmpty, setIsEmpty] = useState(false);
+  const [hoverEvent, setHoverEvent] = useState<ChartEvent | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -41,7 +72,7 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
     });
     const gain = cssVar('--color-gain');
     const loss = cssVar('--color-loss');
-    seriesRef.current = chart.addSeries(CandlestickSeries, {
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: gain,
       downColor: loss,
       borderUpColor: gain,
@@ -49,7 +80,16 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       wickUpColor: gain,
       wickDownColor: loss,
     });
+    seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series);
     chartRef.current = chart;
+
+    const handleCrosshairMove = (param: MouseEventParams<Time>): void => {
+      const event = param.time ? eventsByDateRef.current.get(timeToDateKey(param.time)) : undefined;
+      setHoverEvent(event ?? null);
+      setHoverPos(event && param.point ? { x: param.point.x, y: param.point.y } : null);
+    };
+    chart.subscribeCrosshairMove(handleCrosshairMove);
 
     const handleResize = (): void => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -57,6 +97,9 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      markersRef.current?.detach();
+      markersRef.current = null;
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -65,11 +108,28 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
 
   useEffect(() => {
     fetchOhlc(symbol, period)
-      .then((bars) => {
+      .then(({ bars, events }) => {
         setIsEmpty(bars.length === 0);
+        setHoverEvent(null);
+        setHoverPos(null);
         seriesRef.current?.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
         // データの開始点（最も古い足）が左端から見えるよう、期間全体を表示領域に収める。
         chartRef.current?.timeScale().fitContent();
+
+        eventsByDateRef.current = new Map(events.map((e) => [e.date, e]));
+        const gain = cssVar('--color-gain');
+        const loss = cssVar('--color-loss');
+        const markers: SeriesMarker<Time>[] = events.map((e) => {
+          const bearish = isBearishEvent(e.kind);
+          return {
+            time: e.date,
+            position: bearish ? 'aboveBar' : 'belowBar',
+            color: bearish ? loss : gain,
+            shape: bearish ? 'arrowDown' : 'arrowUp',
+            id: `${e.kind}-${e.date}`,
+          };
+        });
+        markersRef.current?.setMarkers(markers);
       })
       .catch(() => setError('株価データの取得に失敗しました'));
   }, [symbol, period]);
@@ -93,7 +153,14 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       {error && <p className="signal-queue-error">{error}</p>}
       {isEmpty && !error && <p className="signal-queue-empty">株価データがありません</p>}
 
-      <div ref={containerRef} className="price-chart-canvas" role="img" aria-label={`${symbol} の日足ローソク足チャート`} />
+      <div className="price-chart-canvas-wrap">
+        <div ref={containerRef} className="price-chart-canvas" role="img" aria-label={`${symbol} の日足ローソク足チャート`} />
+        {hoverEvent && hoverPos && (
+          <div className="price-chart-tooltip" style={{ left: hoverPos.x, top: hoverPos.y }} role="tooltip">
+            {hoverEvent.label}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

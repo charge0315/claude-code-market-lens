@@ -68,7 +68,7 @@ const PICK: PickSummary = {
 describe('PicksBoard', () => {
   beforeEach(() => {
     // PickDetailPanel が埋め込む PriceChart のデータ取得（詳細ポップアップ表示時のみ発火）。
-    mockFetchOhlc.mockResolvedValue([]);
+    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
   });
 
   afterEach(() => {
