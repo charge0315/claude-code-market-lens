@@ -199,3 +199,52 @@
   font-family: var(--font-mono);
   min-width: 220px;
 }
+
+/* ============================================
+   学習対象設定（🆕、学習対象モード・並列数上限）
+   ============================================ */
+
+.training-target-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.training-target-modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin: 0;
+}
+
+.training-target-mode-option {
+  padding: var(--spacing-xs) 0;
+}
+
+.training-target-custom-list {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.training-target-custom-count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.training-target-workers-input {
+  min-width: 80px;
+  width: 80px;
+}
+
+.training-target-workers-hint {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-xs);
+}

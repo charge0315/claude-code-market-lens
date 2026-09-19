@@ -189,3 +189,67 @@ export function fetchAblations(params?: { quarter?: string; excludedSource?: str
   const qs = q.toString();
   return api.get<SourceAblationEntry[]>(`/registry/ablations${qs ? `?${qs}` : ''}`);
 }
+
+// 学習対象設定（🆕）: 継続学習パイプラインの候補選定を「ポートフォリオ銘柄/ピック銘柄/全銘柄/
+// カスタムリスト」の4モードで絞り込む設定と、CPU負荷対策の並列学習プロセス数上限。DB保存の
+// ため `.env` 方式（APIキー/LLMプロバイダ設定）と異なり保存後すぐ反映され、再起動は不要。
+
+export type TrainingTargetMode = 'portfolio' | 'picked' | 'all' | 'custom';
+
+export interface TrainingTargetSettings {
+  target_mode: TrainingTargetMode;
+  max_parallel_workers: number;
+}
+
+export interface TrainingTargetSettingsUpdate {
+  target_mode?: TrainingTargetMode;
+  max_parallel_workers?: number;
+}
+
+export function fetchTrainingTargetSettings(): Promise<TrainingTargetSettings> {
+  return api.get<TrainingTargetSettings>('/registry/training-settings');
+}
+
+export function updateTrainingTargetSettings(update: TrainingTargetSettingsUpdate): Promise<TrainingTargetSettings> {
+  return api.put<TrainingTargetSettings>('/registry/training-settings', update);
+}
+
+export interface TrainingTargetTicker {
+  code: string;
+  name: string;
+  sector: string | null;
+  added_at: string;
+}
+
+export function fetchTrainingTargetTickers(): Promise<TrainingTargetTicker[]> {
+  return api.get<TrainingTargetTicker[]>('/registry/training-target-tickers');
+}
+
+// カスタムリストの選択結果を全置換で保存する（ポップアップダイアログの「保存」ボタン用）。
+export function updateTrainingTargetTickers(codes: string[]): Promise<TrainingTargetTicker[]> {
+  return api.put<TrainingTargetTicker[]>('/registry/training-target-tickers', { codes });
+}
+
+export type TickerUniverseSort = 'code_asc' | 'volume_desc' | 'volume_asc';
+
+export interface TickerUniverseEntry {
+  code: string;
+  name: string;
+  sector: string | null;
+  /** 直近取引日の出来高。J-Quants 未設定時は null（出来高ソート UI は無効化する）。 */
+  volume: number | null;
+  in_custom_list: boolean;
+}
+
+export function fetchTickerUniverse(params?: {
+  sector?: string;
+  sort?: TickerUniverseSort;
+  q?: string;
+}): Promise<TickerUniverseEntry[]> {
+  const q = new URLSearchParams();
+  if (params?.sector) q.set('sector', params.sector);
+  if (params?.sort) q.set('sort', params.sort);
+  if (params?.q) q.set('q', params.q);
+  const qs = q.toString();
+  return api.get<TickerUniverseEntry[]>(`/registry/ticker-universe${qs ? `?${qs}` : ''}`);
+}

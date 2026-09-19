@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { PageShell } from '@/components/ui/PageShell';
 import { ApiKeysPanel } from '@/components/settings/ApiKeysPanel';
 import { LLMProviderPanel } from '@/components/settings/LLMProviderPanel';
+import { TrainingTargetPanel } from '@/components/settings/TrainingTargetPanel';
 
 export default function SettingsPage(): ReactNode {
   return (
@@ -28,6 +29,17 @@ export default function SettingsPage(): ReactNode {
           その機能は動作しません。保存後の反映には backend と celery worker / beat の再起動が必要です。
         </p>
         <LLMProviderPanel />
+      </section>
+
+      <section aria-labelledby="training-target-heading" style={{ marginTop: 'var(--spacing-xl)' }}>
+        <h2 id="training-target-heading" style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--spacing-sm)' }}>
+          学習対象・並列度設定
+        </h2>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-lg)' }}>
+          継続学習パイプラインが対象とする銘柄の範囲と、同時に実行する学習プロセス数の上限を設定します。
+          保存すると次回の学習バッチから即座に反映されます（再起動不要）。
+        </p>
+        <TrainingTargetPanel />
       </section>
     </PageShell>
   );

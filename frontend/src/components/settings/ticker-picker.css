@@ -1,0 +1,76 @@
+/* ============================================
+   学習対象銘柄リスト選択ポップアップ（🆕、TickerPickerDialog）
+   ============================================ */
+
+.ticker-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+
+.ticker-picker-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+}
+
+.ticker-picker-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.ticker-picker-filter-field select,
+.ticker-picker-filter-field input {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.ticker-picker-search {
+  flex: 1 1 220px;
+}
+
+.ticker-picker-search input {
+  width: 100%;
+}
+
+.ticker-picker-notice {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.ticker-picker-table {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ticker-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.ticker-picker-selected-count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .ticker-picker-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
