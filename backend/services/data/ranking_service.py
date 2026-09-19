@@ -122,7 +122,7 @@ async def _compute_rankings(pool_size: int) -> tuple[RankingsResponse, bool]:
 
     戻り値の第 2 要素は銘柄名解決が成功したかどうか（失敗回はキャッシュしない）。
     """
-    today_date, today_bars = await _resolve_latest_available()
+    today_date, today_bars = await resolve_latest_available()
     _, prev_bars = await _walk_back_with_subscription_fallback(
         datetime.date.fromisoformat(today_date) - datetime.timedelta(days=1)
     )
@@ -208,7 +208,7 @@ def _generate_breadth_comment(advancers: int, decliners: int) -> str:
 
 async def _compute_yearly_performance(pool_size: int) -> tuple[YearlyPerformanceResponse, bool]:
     """「本日」と「約 1 年前の取引日」の 2 回の一括取得から年間リターンを計算する."""
-    as_of_date, today_bars = await _resolve_latest_available()
+    as_of_date, today_bars = await resolve_latest_available()
     today = datetime.date.fromisoformat(as_of_date)
     target_base = today - datetime.timedelta(days=365)
     base_date, base_bars = await _walk_back_with_subscription_fallback(target_base)
@@ -261,8 +261,12 @@ async def _compute_yearly_performance(pool_size: int) -> tuple[YearlyPerformance
 # --- 共通ヘルパー ---
 
 
-async def _resolve_latest_available() -> tuple[str, list[JsonDict]]:
-    """契約プランの配信遅延を吸収し、実データが存在する直近取引日とその日の bars を解決する."""
+async def resolve_latest_available() -> tuple[str, list[JsonDict]]:
+    """契約プランの配信遅延を吸収し、実データが存在する直近取引日とその日の bars を解決する.
+
+    🆕 `ticker_universe_service.py`（学習対象設定の全銘柄一覧＋出来高 API）からも共有利用する
+    ため、モジュール外から呼べるよう公開名にしている（24 時間 TTL キャッシュ込みで再利用）。
+    """
     global _latest_date_cache
     async with _latest_date_lock:
         now = time.monotonic()

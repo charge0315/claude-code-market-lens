@@ -131,6 +131,46 @@ class SourceAblationEntry(BaseModel):
     sample_n: int
 
 
+TrainingTargetMode = Literal["portfolio", "picked", "all", "custom"]
+
+
+class TrainingTargetSettingsResponse(BaseModel):
+    """`GET/PUT /api/registry/training-settings` のレスポンス（🆕 学習対象設定）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target_mode: TrainingTargetMode
+    max_parallel_workers: int
+
+
+class TrainingTargetSettingsUpdateRequest(BaseModel):
+    """`PUT /api/registry/training-settings` のリクエストボディ（省略項目は現在値を維持）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target_mode: TrainingTargetMode | None = None
+    max_parallel_workers: int | None = None
+
+
+class TrainingTargetTickerEntry(BaseModel):
+    """カスタムリストの登録済み銘柄 1 件（🆕 学習対象設定、銘柄マスタで名称解決済み）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    name: str
+    sector: str | None
+    added_at: str
+
+
+class TrainingTargetTickersUpdateRequest(BaseModel):
+    """`PUT /api/registry/training-target-tickers` のリクエストボディ（全置換）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    codes: list[str]
+
+
 class PromotionEntry(BaseModel):
     """`model_promotions` の 1 行（昇格ゲートの判定ログ）."""
 

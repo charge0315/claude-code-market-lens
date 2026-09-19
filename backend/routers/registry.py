@@ -22,13 +22,21 @@ from backend.models.registry import (
     PitCoverageStatus,
     QualityDistribution,
     SourceAblationEntry,
+    TrainingTargetSettingsResponse,
+    TrainingTargetSettingsUpdateRequest,
+    TrainingTargetTickerEntry,
+    TrainingTargetTickersUpdateRequest,
     TrainingTrendPoint,
 )
+from backend.services.data.data_fetcher import _get_ticker_master
+from backend.services.data.ticker_universe_service import TickerUniverseEntry, TickerUniverseSort, list_ticker_universe
+from backend.services.db import training_target_db
 from backend.services.db.drift_db import list_drift_snapshots
 from backend.services.db.model_registry_db import list_champions, list_promotions
 from backend.services.db.source_ablation_db import list_ablations
 from backend.services.db.training_batch_db import get_attempted_tickers
 from backend.services.jst_time import today_jst
+from backend.services.learning import training_target_service
 from backend.services.learning.per_ticker_training_service import (
     ModelType,
     TrainingProgressEvent,
@@ -322,3 +330,92 @@ async def ablations(
     """
     rows = await list_ablations(quarter=quarter, excluded_source=excluded_source)
     return ApiResponse.ok([SourceAblationEntry(**row) for row in rows])
+
+
+# ---------------------------------------------------------------------------
+# 🆕 学習対象設定（ポートフォリオ/ピック銘柄/全銘柄/カスタムリスト・並列学習プロセス数上限）
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/training-settings", response_model=ApiResponse[TrainingTargetSettingsResponse], summary="学習対象設定を取得"
+)
+async def get_training_settings() -> ApiResponse[TrainingTargetSettingsResponse]:
+    """学習対象モード・並列学習プロセス数上限を返す（未保存なら `all`/4 の既定値）."""
+    settings = await training_target_service.get_settings()
+    return ApiResponse.ok(
+        TrainingTargetSettingsResponse(
+            target_mode=settings.target_mode, max_parallel_workers=settings.max_parallel_workers
+        )
+    )
+
+
+@router.put(
+    "/training-settings", response_model=ApiResponse[TrainingTargetSettingsResponse], summary="学習対象設定を更新"
+)
+async def update_training_settings(
+    req: TrainingTargetSettingsUpdateRequest,
+) -> ApiResponse[TrainingTargetSettingsResponse]:
+    """学習対象モード・並列数上限を更新する（DB即時反映、`.env` 方式と異なり再起動不要）."""
+    settings = await training_target_service.update_settings(
+        target_mode=req.target_mode, max_parallel_workers=req.max_parallel_workers
+    )
+    return ApiResponse.ok(
+        TrainingTargetSettingsResponse(
+            target_mode=settings.target_mode, max_parallel_workers=settings.max_parallel_workers
+        )
+    )
+
+
+async def _resolve_training_target_tickers() -> list[TrainingTargetTickerEntry]:
+    """カスタムリストの銘柄を銘柄マスタで名称・業種解決し、追加日時順で返す共通処理."""
+    added_at_map = await training_target_db.get_custom_ticker_added_at_map()
+    if not added_at_map:
+        return []
+    master_by_code = {t.code: t for t in await _get_ticker_master()}
+    entries = [
+        TrainingTargetTickerEntry(
+            code=code,
+            name=master_by_code[code].name if code in master_by_code else code,
+            sector=master_by_code[code].sector if code in master_by_code else None,
+            added_at=added_at,
+        )
+        for code, added_at in added_at_map.items()
+    ]
+    entries.sort(key=lambda e: e.added_at)
+    return entries
+
+
+@router.get(
+    "/training-target-tickers",
+    response_model=ApiResponse[list[TrainingTargetTickerEntry]],
+    summary="学習対象カスタムリストの一覧を取得",
+)
+async def get_training_target_tickers() -> ApiResponse[list[TrainingTargetTickerEntry]]:
+    """カスタムリストの銘柄一覧を返す（銘柄マスタに存在しないコードも `added_at` はそのまま返す）."""
+    return ApiResponse.ok(await _resolve_training_target_tickers())
+
+
+@router.put(
+    "/training-target-tickers",
+    response_model=ApiResponse[list[TrainingTargetTickerEntry]],
+    summary="学習対象カスタムリストを全置換",
+)
+async def update_training_target_tickers(
+    req: TrainingTargetTickersUpdateRequest,
+) -> ApiResponse[list[TrainingTargetTickerEntry]]:
+    """ポップアップダイアログのチェック結果を保存する（既存銘柄の追加日時は維持したまま全置換）."""
+    await training_target_db.replace_custom_tickers(req.codes)
+    return ApiResponse.ok(await _resolve_training_target_tickers())
+
+
+@router.get(
+    "/ticker-universe", response_model=ApiResponse[list[TickerUniverseEntry]], summary="全銘柄一覧（業種・出来高付き）"
+)
+async def ticker_universe(
+    sector: str | None = Query(default=None),
+    sort: TickerUniverseSort = Query(default="code_asc"),
+    q: str | None = Query(default=None),
+) -> ApiResponse[list[TickerUniverseEntry]]:
+    """カスタムリスト選択ダイアログ用の全銘柄一覧（業種フィルタ・出来高ソート・部分一致検索付き）を返す."""
+    return ApiResponse.ok(await list_ticker_universe(sector=sector, sort=sort, q=q))
