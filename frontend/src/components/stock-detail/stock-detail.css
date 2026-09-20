@@ -93,22 +93,55 @@
 }
 
 /* 🆕 GC/DC・MACDクロスのhoverツールチップ（lightweight-chartsにDOMツールチップ機構が
-   無いため独自実装。crosshairMoveの座標に追従させる）。 */
+   無いため独自実装。crosshairMoveの座標に追従させる）。
+   マーカー同様、ローソク足の騰落色（赤/緑）とは独立したブランドアクセント色で強調する
+   （data-signal属性で強気=オレンジ/弱気=オリーブを切り替え、上部にカラーバーを立てる）。 */
 .price-chart-tooltip {
+  --tooltip-accent: var(--color-accent-bright);
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   transform: translate(-50%, calc(-100% - var(--spacing-sm)));
-  max-width: 15rem;
+  max-width: 16rem;
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
+  border-top: 3px solid var(--tooltip-accent);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-xs);
-  line-height: 1.4;
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
   pointer-events: none;
   white-space: normal;
+  animation: price-chart-tooltip-in var(--transition-base) ease-out;
+}
+
+.price-chart-tooltip[data-signal='bearish'] {
+  --tooltip-accent: var(--color-accent-2-bright);
+}
+
+.price-chart-tooltip-title {
+  display: block;
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  color: var(--tooltip-accent);
+  margin-bottom: var(--spacing-xs);
+}
+
+.price-chart-tooltip-body {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+@keyframes price-chart-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - var(--spacing-sm) + 4px)) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - var(--spacing-sm))) scale(1);
+  }
 }
 
 .sub-score-panel {

@@ -26,6 +26,15 @@ const PERIODS: ReadonlyArray<OhlcPeriod> = ['1mo', '3mo', '6mo', '1y', '2y'];
 const PERIOD_LABELS: Record<OhlcPeriod, string> = { '1mo': '1ヶ月', '3mo': '3ヶ月', '6mo': '6ヶ月', '1y': '1年', '2y': '2年' };
 const CHART_HEIGHT = 300;
 
+// 🆕 ツールチップ見出し。`label`（バックエンド生成の説明文）とは別に、種別を一目で識別
+// できるよう短い名称を添える（同系色で埋もれるマーカー視認性の改善に合わせた強調表示）。
+const EVENT_TITLES: Record<ChartEvent['kind'], string> = {
+  golden_cross: 'ゴールデンクロス',
+  dead_cross: 'デッドクロス',
+  macd_bullish_cross: 'MACDゴールデンクロス',
+  macd_bearish_cross: 'MACDデッドクロス',
+};
+
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -117,15 +126,19 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
         chartRef.current?.timeScale().fitContent();
 
         eventsByDateRef.current = new Map(events.map((e) => [e.date, e]));
-        const gain = cssVar('--color-gain');
-        const loss = cssVar('--color-loss');
+        // ローソク足自体が --color-gain/--color-loss（赤/緑）を使うため、同じ色をマーカーに
+        // 流用すると同系色で埋もれて見えづらい（ユーザー指摘）。マーカーはブランドアクセント色
+        // （オレンジ=強気 / オリーブ=弱気）で塗り分け、価格の騰落色とは独立させて視認性を確保する。
+        const bullishMarker = cssVar('--color-accent-bright');
+        const bearishMarker = cssVar('--color-accent-2-bright');
         const markers: SeriesMarker<Time>[] = events.map((e) => {
           const bearish = isBearishEvent(e.kind);
           return {
             time: e.date,
             position: bearish ? 'aboveBar' : 'belowBar',
-            color: bearish ? loss : gain,
+            color: bearish ? bearishMarker : bullishMarker,
             shape: bearish ? 'arrowDown' : 'arrowUp',
+            size: 2,
             id: `${e.kind}-${e.date}`,
           };
         });
@@ -156,8 +169,14 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       <div className="price-chart-canvas-wrap">
         <div ref={containerRef} className="price-chart-canvas" role="img" aria-label={`${symbol} の日足ローソク足チャート`} />
         {hoverEvent && hoverPos && (
-          <div className="price-chart-tooltip" style={{ left: hoverPos.x, top: hoverPos.y }} role="tooltip">
-            {hoverEvent.label}
+          <div
+            className="price-chart-tooltip"
+            data-signal={isBearishEvent(hoverEvent.kind) ? 'bearish' : 'bullish'}
+            style={{ left: hoverPos.x, top: hoverPos.y }}
+            role="tooltip"
+          >
+            <strong className="price-chart-tooltip-title">{EVENT_TITLES[hoverEvent.kind]}</strong>
+            <p className="price-chart-tooltip-body">{hoverEvent.label}</p>
           </div>
         )}
       </div>

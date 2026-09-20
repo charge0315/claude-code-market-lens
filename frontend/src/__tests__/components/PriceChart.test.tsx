@@ -12,6 +12,7 @@ const mockFetchOhlc = fetchOhlc as jest.MockedFunction<typeof fetchOhlc>;
 
 const BAR: OhlcBar = { time: '2026-06-01', open: 1000, high: 1020, low: 990, close: 1010, volume: 1_000_000 };
 const GOLDEN_CROSS: ChartEvent = { date: '2026-06-01', kind: 'golden_cross', label: 'ゴールデンクロス（上昇トレンド転換の兆候です。）' };
+const DEAD_CROSS: ChartEvent = { date: '2026-06-01', kind: 'dead_cross', label: 'デッドクロス（下降トレンド転換の兆候です。）' };
 
 function response(overrides?: Partial<OhlcResponse>): OhlcResponse {
   return { bars: [BAR], events: [], ...overrides };
@@ -87,6 +88,36 @@ describe('PriceChart', () => {
     });
 
     expect(await screen.findByRole('tooltip')).toHaveTextContent(GOLDEN_CROSS.label);
+  });
+
+  it('ゴールデンクロスのツールチップは種別見出しとdata-signal="bullish"で強調される', async () => {
+    mockFetchOhlc.mockResolvedValue(response({ events: [GOLDEN_CROSS] }));
+
+    render(<PriceChart symbol="7203" />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
+
+    act(() => {
+      __emitCrosshairMove({ time: '2026-06-01', point: { x: 120, y: 40 } });
+    });
+
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveAttribute('data-signal', 'bullish');
+    expect(tooltip).toHaveTextContent('ゴールデンクロス');
+  });
+
+  it('デッドクロスのツールチップは種別見出しとdata-signal="bearish"で強調される', async () => {
+    mockFetchOhlc.mockResolvedValue(response({ events: [DEAD_CROSS] }));
+
+    render(<PriceChart symbol="7203" />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
+
+    act(() => {
+      __emitCrosshairMove({ time: '2026-06-01', point: { x: 120, y: 40 } });
+    });
+
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveAttribute('data-signal', 'bearish');
+    expect(tooltip).toHaveTextContent('デッドクロス');
   });
 
   it('BusinessDay形式のtimeでも日付を突き合わせてツールチップを表示する', async () => {
