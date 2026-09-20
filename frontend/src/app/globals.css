@@ -58,6 +58,31 @@ button:focus-visible {
   color: var(--color-flat);
 }
 
+/* --- タグ／バッジ共通ユーティリティ（"Organic" デザインシステムの .tag 系を移植）。
+   個々の feature CSS が独自にバッジを再定義する代わりに、複数画面で使う汎用タグは
+   ここに集約する。 --- */
+.tag-outline {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 3px var(--spacing-sm);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent-bright);
+}
+
+.tag-neutral {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 3px var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-800);
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

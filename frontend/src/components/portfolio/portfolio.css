@@ -3,34 +3,142 @@
    SignalQueue（承認キュー）/ EodReviewPanel 共通スタイル
    ============================================ */
 
+/* --- トータル収支（🆕 ユーザー指示: 評価額合計・評価損益・騰落率を大きく強調表示） --- */
+.portfolio-totals-card {
+  display: flex;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+  margin: var(--spacing-lg) 0;
+}
+
+.portfolio-totals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--spacing-lg);
+  width: 100%;
+}
+
+.portfolio-totals-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.portfolio-totals-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.portfolio-totals-value {
+  font-family: var(--font-display);
+  font-size: var(--font-size-4xl);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+@media (max-width: 640px) {
+  .portfolio-totals-value {
+    font-size: var(--font-size-3xl);
+  }
+}
+
+/* --- 保有銘柄カードグリッド（🔧 Organic デザイン導入: テーブル → カード） --- */
+.holdings-grid {
+  list-style: none;
+  margin: 0 0 var(--spacing-lg);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.holding-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.holding-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+}
+
+.holding-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.holding-card-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.holding-card-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.holding-card-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.holding-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.holding-card-acquired {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
 .signal-queue-tabs {
   display: inline-flex;
   flex-wrap: wrap;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 2px;
   margin-bottom: var(--spacing-md);
 }
 
 .signal-queue-tabs button {
-  background: var(--color-bg-tertiary);
+  background: none;
   color: var(--color-text-secondary);
   border: none;
+  border-radius: var(--radius-full);
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast);
 }
 
-.signal-queue-tabs button + button {
-  border-left: 1px solid var(--color-border);
-}
-
 .signal-queue-tabs button.is-active {
-  background: var(--color-accent);
-  color: var(--color-text-primary);
+  background: var(--color-accent-500);
+  color: #fff;
 }
 
 .signal-queue-error {
@@ -55,9 +163,9 @@
 
 .signal-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .signal-card-header {
@@ -68,14 +176,14 @@
 }
 
 .signal-card-symbol {
-  font-family: var(--font-mono);
-  font-weight: 700;
+  font-family: var(--font-display);
   font-size: var(--font-size-lg);
 }
 
 .signal-card-action {
   font-size: var(--font-size-xs);
-  padding: 2px var(--spacing-sm);
+  font-weight: 600;
+  padding: 3px var(--spacing-sm);
   border-radius: var(--radius-full);
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
@@ -100,15 +208,16 @@
 
 .signal-card-engine-badge {
   font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 0 var(--spacing-xs);
+  font-weight: 600;
+  color: var(--color-accent-bright);
+  background: none;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-full);
+  padding: 1px var(--spacing-sm);
 }
 
 .signal-card-engine-badge--shadow {
-  color: var(--color-accent-2, var(--color-text-muted));
+  color: var(--color-accent-2-bright, var(--color-text-muted));
   border-color: var(--color-accent-2, var(--color-border));
 }
 
@@ -152,16 +261,17 @@
 .signal-fill-form-actions button {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-lg);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
 .signal-card-actions button:first-child {
   background: var(--color-accent);
-  border-color: var(--color-accent);
+  color: var(--color-bg-primary);
 }
 
 .signal-card-actions button:disabled,
@@ -211,12 +321,13 @@
 }
 
 .eod-review-header button {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-accent);
+  color: var(--color-bg-primary);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-lg);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -246,9 +357,8 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-sm);
 }
 
@@ -290,8 +400,8 @@
   background: var(--color-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-sm);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
@@ -334,7 +444,7 @@
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-base);
 }
@@ -348,16 +458,17 @@
 .holding-form-actions button {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border: none;
+  border-radius: var(--radius-full);
   padding: var(--spacing-xs) var(--spacing-lg);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
 .holding-form-actions button[type='submit'] {
   background: var(--color-accent);
-  border-color: var(--color-accent);
+  color: var(--color-bg-primary);
 }
 
 .holding-form-actions button:disabled {
@@ -365,7 +476,7 @@
   cursor: not-allowed;
 }
 
-/* --- 保有銘柄テーブルの行内操作（🆕 P26） --- */
+/* --- 保有銘柄カードの操作ボタン（🆕 P26） --- */
 .holding-row-actions {
   display: flex;
   gap: var(--spacing-xs);
@@ -374,10 +485,11 @@
 .holding-row-actions button {
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 2px var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-xs);
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }

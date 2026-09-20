@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { PickDetailPanel } from '@/components/dashboard/PickDetailPanel';
 import {
@@ -12,7 +11,6 @@ import {
   expectedReturnPct as expectedReturnPctOf,
   formatYen,
   sparkColor,
-  truncate,
 } from '@/components/dashboard/pickDisplay';
 import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
 import { fetchPicks, runPicks, type HorizonType, type PickSummary } from '@/lib/api/picks';
@@ -94,110 +92,6 @@ export function PicksBoard(): ReactNode {
 
   const sortedPicks = useMemo(() => sortPicks(picks, sortKey), [picks, sortKey]);
 
-  const COLUMNS: ReadonlyArray<Column<PickSummary>> = [
-    {
-      key: 'symbol',
-      header: '銘柄',
-      render: (p) => (
-        <span className="pick-symbol-cell">
-          <span className="pick-symbol-row">
-            <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
-              {p.symbol}
-              {p.company_name && `（${p.company_name}）`}
-            </button>
-            <Sparkline values={p.spark} color={sparkColor(p.spark)} />
-          </span>
-          {/* 公式プロバイダは機能ごとに選択可能なため（`services/llm/registry.py`）、
-              個々のピックがどのプロバイダで生成されたかは永続化していない。ここでは
-              「stock_pick機能に現在設定されているプロバイダ」のモデル名を表示する近似値とする
-              （設定変更前に生成された過去ピックとはズレうる）。シャドウ判定は shadow_predictions
-              への比較用のみで、ここには載らない。 */}
-          <span className="pick-engine-badge" title={`このピックは${officialLabel}（公式プロバイダ）が生成しました`}>
-            {officialLabel}
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'current_price',
-      header: '現在値 / 前日比',
-      numeric: true,
-      render: (p) =>
-        p.current_price === null ? (
-          '—'
-        ) : (
-          <span className="pick-current-price-cell">
-            <span>{formatYen(p.current_price)}</span>
-            {p.change_pct !== null && (
-              <span style={{ color: directionColor(p.change_pct > 0 ? 'bullish' : p.change_pct < 0 ? 'bearish' : 'neutral') }}>
-                {p.change_pct > 0 ? '+' : ''}
-                {p.change_pct.toFixed(2)}%
-              </span>
-            )}
-          </span>
-        ),
-    },
-    {
-      key: 'direction',
-      header: '方向',
-      render: (p) => <span style={{ color: directionColor(p.direction) }}>{DIRECTION_LABELS[p.direction]}</span>,
-    },
-    { key: 'entry', header: '推奨買値', numeric: true, render: (p) => formatYen(p.entry) },
-    { key: 'stop', header: '推奨損切値', numeric: true, render: (p) => formatYen(p.stop) },
-    {
-      key: 'target',
-      header: '推奨売値',
-      numeric: true,
-      render: (p) => (
-        <span className="pick-target-cell">
-          <span>{formatYen(p.target)}</span>
-          <span className="pick-target-return">想定 {expectedReturnPct(p) >= 0 ? '+' : ''}{expectedReturnPct(p).toFixed(1)}%</span>
-        </span>
-      ),
-    },
-    {
-      key: 'confidence',
-      header: 'AI信頼度',
-      numeric: true,
-      render: (p) => (
-        <span className="pick-confidence-cell">
-          <span>
-            {p.confidence.toFixed(0)}（{BUCKET_LABELS[p.confidence_bucket]}）
-          </span>
-          <span className="pick-confidence-bar" aria-hidden="true">
-            <span className="pick-confidence-bar-fill" style={{ width: `${Math.min(100, Math.max(0, p.confidence))}%` }} />
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'rationale_text',
-      header: '根拠プレビュー',
-      render: (p) => (
-        <span className="pick-rationale-cell">
-          <span title={p.rationale_text}>{truncate(p.rationale_text)}</span>
-          {p.reasoning_tags.length > 0 && (
-            <span className="pick-tag-list">
-              {p.reasoning_tags.map((tag) => (
-                <span key={tag} className="pick-tag-chip">
-                  {tag}
-                </span>
-              ))}
-            </span>
-          )}
-          <span className="pick-action-group">
-            <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
-              詳細
-            </button>
-            <button type="button" onClick={() => setAddHoldingPick(p)}>
-              ポートフォリオに追加
-            </button>
-          </span>
-        </span>
-      ),
-    },
-  ];
-
   return (
     <div className="picks-board">
       <div className="picks-board-toolbar">
@@ -240,13 +134,115 @@ export function PicksBoard(): ReactNode {
 
       {error && <p className="signal-queue-error">{error}</p>}
 
-      <DataTable
-        caption="本日の AI 銘柄ピック（並び替え可能）"
-        columns={COLUMNS}
-        rows={sortedPicks}
-        rowKey={(p) => p.pick_id}
-        emptyMessage="本日のピックはまだありません"
-      />
+      {sortedPicks.length === 0 ? (
+        <p className="data-table-empty">本日のピックはまだありません</p>
+      ) : (
+        <ul className="pick-card-list" aria-label="本日の AI 銘柄ピック（並び替え可能）">
+          {sortedPicks.map((p) => (
+            <li key={p.pick_id} className="pick-card">
+              <div className="pick-card-header">
+                <div className="pick-symbol-cell">
+                  <span className="pick-symbol-row">
+                    <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
+                      {p.symbol}
+                      {p.company_name && `（${p.company_name}）`}
+                    </button>
+                    <Sparkline values={p.spark} color={sparkColor(p.spark)} />
+                  </span>
+                  {/* 公式プロバイダは機能ごとに選択可能なため（`services/llm/registry.py`）、
+                      個々のピックがどのプロバイダで生成されたかは永続化していない。ここでは
+                      「stock_pick機能に現在設定されているプロバイダ」のモデル名を表示する近似値とする
+                      （設定変更前に生成された過去ピックとはズレうる）。シャドウ判定は shadow_predictions
+                      への比較用のみで、ここには載らない。 */}
+                  <span className="pick-engine-badge" title={`このピックは${officialLabel}（公式プロバイダ）が生成しました`}>
+                    {officialLabel}
+                  </span>
+                </div>
+                <div className="pick-current-price-cell">
+                  {p.current_price === null ? (
+                    <span>—</span>
+                  ) : (
+                    <>
+                      <span className="pick-card-price">{formatYen(p.current_price)}</span>
+                      {p.change_pct !== null && (
+                        <span
+                          style={{
+                            color: directionColor(p.change_pct > 0 ? 'bullish' : p.change_pct < 0 ? 'bearish' : 'neutral'),
+                          }}
+                        >
+                          {p.change_pct > 0 ? '+' : ''}
+                          {p.change_pct.toFixed(2)}%
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="pick-card-bracket-row">
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">方向</span>
+                  <span className="pick-card-direction" style={{ color: directionColor(p.direction) }}>
+                    {DIRECTION_LABELS[p.direction]}
+                  </span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨買値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.entry)}</span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨損切値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.stop)}</span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨売値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.target)}</span>
+                  <span className="pick-target-return">
+                    想定 {expectedReturnPct(p) >= 0 ? '+' : ''}
+                    {expectedReturnPct(p).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="pick-card-bracket-item pick-card-bracket-item-wide">
+                  <span className="pick-card-bracket-label">
+                    AI信頼度{' '}
+                    <span className="pick-card-bracket-value">
+                      {p.confidence.toFixed(0)}（{BUCKET_LABELS[p.confidence_bucket]}）
+                    </span>
+                  </span>
+                  <span className="pick-confidence-bar" aria-hidden="true">
+                    <span
+                      className="pick-confidence-bar-fill"
+                      style={{ width: `${Math.min(100, Math.max(0, p.confidence))}%` }}
+                    />
+                  </span>
+                </div>
+              </div>
+
+              <p className="pick-card-rationale">{p.rationale_text}</p>
+
+              <div className="pick-card-footer">
+                {p.reasoning_tags.length > 0 && (
+                  <span className="pick-tag-list">
+                    {p.reasoning_tags.map((tag) => (
+                      <span key={tag} className="pick-tag-chip">
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                <span className="pick-action-group">
+                  <button type="button" onClick={() => setDetailModalPickId(p.pick_id)}>
+                    詳細
+                  </button>
+                  <button type="button" onClick={() => setAddHoldingPick(p)}>
+                    ポートフォリオに追加
+                  </button>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {noteModalSymbol && (
         <Modal title={`ナレッジベースノート: ${noteModalSymbol}`} onClose={() => setNoteModalSymbol(null)}>

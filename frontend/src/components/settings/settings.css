@@ -11,8 +11,8 @@
 .api-keys-restart-notice {
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
-  background: var(--color-accent-dim);
-  border: 1px solid var(--color-border-active);
+  background: var(--color-accent-100);
+  border: none;
   border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
   margin: 0;
@@ -29,8 +29,7 @@
 
 .api-keys-row {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-sm);
   display: flex;
@@ -47,8 +46,8 @@
 }
 
 .api-keys-label {
+  font-family: var(--font-display);
   font-size: var(--font-size-lg);
-  font-weight: 600;
   color: var(--color-text-primary);
 }
 
@@ -62,14 +61,13 @@
 }
 
 .api-keys-tag-ok {
-  color: var(--color-accent-bright);
-  background: var(--color-accent-dim);
+  color: var(--color-accent-800);
+  background: var(--color-accent-100);
 }
 
 .api-keys-tag-empty {
   color: var(--color-text-muted);
   background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
 }
 
 .api-keys-row-form {
@@ -84,19 +82,20 @@
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
 }
 
 .api-keys-panel button {
   background: var(--color-accent);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
+  color: var(--color-bg-primary);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-lg);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -109,7 +108,6 @@
 .api-keys-reveal-btn {
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
 }
 
 @media (max-width: 640px) {
@@ -139,8 +137,8 @@
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-sm);
   width: fit-content;
 }
@@ -193,8 +191,8 @@
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
   min-width: 220px;
@@ -214,9 +212,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
+  border: 1px solid var(--color-neutral-300);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
   margin: 0;
 }
 

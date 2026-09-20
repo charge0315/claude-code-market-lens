@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { PickDetailPanel } from '@/components/dashboard/PickDetailPanel';
 import {
@@ -47,108 +46,6 @@ export function ShadowPicksBoard(): ReactNode {
 
   const sortedPicks = [...picks].sort((a, b) => b.confidence - a.confidence);
 
-  const COLUMNS: ReadonlyArray<Column<ShadowPickSummary>> = [
-    {
-      key: 'symbol',
-      header: '銘柄',
-      render: (p) => (
-        <span className="pick-symbol-cell">
-          <span className="pick-symbol-row">
-            <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
-              {p.symbol}
-              {p.company_name && `（${p.company_name}）`}
-            </button>
-            <Sparkline values={p.spark} color={sparkColor(p.spark)} />
-          </span>
-          <span className="pick-engine-badge" title={`このピックは ${p.challenger_version} が生成しました`}>
-            {challengerProviderLabel(p.challenger_version)}
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'current_price',
-      header: '現在値 / 前日比',
-      numeric: true,
-      render: (p) =>
-        p.current_price === null ? (
-          '—'
-        ) : (
-          <span className="pick-current-price-cell">
-            <span>{formatYen(p.current_price)}</span>
-            {p.change_pct !== null && (
-              <span style={{ color: directionColor(p.change_pct > 0 ? 'bullish' : p.change_pct < 0 ? 'bearish' : 'neutral') }}>
-                {p.change_pct > 0 ? '+' : ''}
-                {p.change_pct.toFixed(2)}%
-              </span>
-            )}
-          </span>
-        ),
-    },
-    {
-      key: 'direction',
-      header: '方向',
-      render: (p) => <span style={{ color: directionColor(p.direction) }}>{DIRECTION_LABELS[p.direction]}</span>,
-    },
-    { key: 'entry', header: '推奨買値', numeric: true, render: (p) => formatYen(p.entry) },
-    { key: 'stop', header: '推奨損切値', numeric: true, render: (p) => formatYen(p.stop) },
-    {
-      key: 'target',
-      header: '推奨売値',
-      numeric: true,
-      render: (p) => (
-        <span className="pick-target-cell">
-          <span>{formatYen(p.target)}</span>
-          <span className="pick-target-return">
-            想定 {expectedReturnPct(p.entry, p.target) >= 0 ? '+' : ''}
-            {expectedReturnPct(p.entry, p.target).toFixed(1)}%
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'confidence',
-      header: '確度',
-      numeric: true,
-      render: (p) => (
-        <span className="pick-confidence-cell">
-          <span>{p.confidence.toFixed(0)}</span>
-          <span className="pick-confidence-bar" aria-hidden="true">
-            <span className="pick-confidence-bar-fill" style={{ width: `${Math.min(100, Math.max(0, p.confidence))}%` }} />
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'reasoning',
-      header: '根拠プレビュー',
-      render: (p) => (
-        <span className="pick-rationale-cell">
-          {p.reasoning && <span title={p.reasoning}>{p.reasoning.length > 50 ? `${p.reasoning.slice(0, 50)}…` : p.reasoning}</span>}
-          {p.risk_factors.length > 0 && (
-            <span className="pick-tag-list">
-              {p.risk_factors.map((tag) => (
-                <span key={tag} className="pick-tag-chip">
-                  {tag}
-                </span>
-              ))}
-            </span>
-          )}
-          <span className="pick-action-group">
-            {p.pick_id && (
-              <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
-                {officialLabel}版と比較
-              </button>
-            )}
-            <button type="button" onClick={() => setAddHoldingPick(p)}>
-              ポートフォリオに追加
-            </button>
-          </span>
-        </span>
-      ),
-    },
-  ];
-
   return (
     <div className="picks-board">
       <div className="picks-board-toolbar">
@@ -180,13 +77,107 @@ export function ShadowPicksBoard(): ReactNode {
 
       {error && <p className="signal-queue-error">{error}</p>}
 
-      <DataTable
-        caption="シャドウ（challenger LLM）による銘柄ピック一覧（比較参考用）"
-        columns={COLUMNS}
-        rows={sortedPicks}
-        rowKey={(p) => p.shadow_id}
-        emptyMessage="本日のシャドウ判定はまだありません"
-      />
+      {sortedPicks.length === 0 ? (
+        <p className="data-table-empty">本日のシャドウ判定はまだありません</p>
+      ) : (
+        <ul className="pick-card-list" aria-label="シャドウ（challenger LLM）による銘柄ピック一覧（比較参考用）">
+          {sortedPicks.map((p) => (
+            <li key={p.shadow_id} className="pick-card pick-card-shadow">
+              <div className="pick-card-header">
+                <div className="pick-symbol-cell">
+                  <span className="pick-symbol-row">
+                    <button type="button" className="pick-symbol-link" onClick={() => setNoteModalSymbol(p.symbol)}>
+                      {p.symbol}
+                      {p.company_name && `（${p.company_name}）`}
+                    </button>
+                    <Sparkline values={p.spark} color={sparkColor(p.spark)} />
+                  </span>
+                  <span className="pick-engine-badge" title={`このピックは ${p.challenger_version} が生成しました`}>
+                    {challengerProviderLabel(p.challenger_version)}
+                  </span>
+                </div>
+                <div className="pick-current-price-cell">
+                  {p.current_price === null ? (
+                    <span>—</span>
+                  ) : (
+                    <>
+                      <span className="pick-card-price">{formatYen(p.current_price)}</span>
+                      {p.change_pct !== null && (
+                        <span
+                          style={{
+                            color: directionColor(p.change_pct > 0 ? 'bullish' : p.change_pct < 0 ? 'bearish' : 'neutral'),
+                          }}
+                        >
+                          {p.change_pct > 0 ? '+' : ''}
+                          {p.change_pct.toFixed(2)}%
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="pick-card-bracket-row">
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">方向</span>
+                  <span className="pick-card-direction" style={{ color: directionColor(p.direction) }}>
+                    {DIRECTION_LABELS[p.direction]}
+                  </span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨買値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.entry)}</span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨損切値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.stop)}</span>
+                </div>
+                <div className="pick-card-bracket-item">
+                  <span className="pick-card-bracket-label">推奨売値</span>
+                  <span className="pick-card-bracket-value">{formatYen(p.target)}</span>
+                  <span className="pick-target-return">
+                    想定 {expectedReturnPct(p.entry, p.target) >= 0 ? '+' : ''}
+                    {expectedReturnPct(p.entry, p.target).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="pick-card-bracket-item pick-card-bracket-item-wide">
+                  <span className="pick-card-bracket-label">確度 {p.confidence.toFixed(0)}</span>
+                  <span className="pick-confidence-bar" aria-hidden="true">
+                    <span
+                      className="pick-confidence-bar-fill"
+                      style={{ width: `${Math.min(100, Math.max(0, p.confidence))}%` }}
+                    />
+                  </span>
+                </div>
+              </div>
+
+              {p.reasoning && <p className="pick-card-rationale">{p.reasoning}</p>}
+
+              <div className="pick-card-footer">
+                {p.risk_factors.length > 0 && (
+                  <span className="pick-tag-list">
+                    {p.risk_factors.map((tag) => (
+                      <span key={tag} className="pick-tag-chip">
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                <span className="pick-action-group">
+                  {p.pick_id && (
+                    <button type="button" onClick={() => setOfficialPickId(p.pick_id)}>
+                      {officialLabel}版と比較
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setAddHoldingPick(p)}>
+                    ポートフォリオに追加
+                  </button>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {noteModalSymbol && (
         <Modal title={`ナレッジベースノート: ${noteModalSymbol}`} onClose={() => setNoteModalSymbol(null)}>

@@ -40,6 +40,40 @@
   --color-accent-2-bright: #56633f;
   --color-accent-2-dim: rgba(122, 138, 94, 0.16);
 
+  /* --- トーナルランプ（"Organic" デザインシステムより移植。OKLCH で生成された
+     共通の明度スケール。タグ背景/文字色の組、進捗バー、ドーナツチャート等の
+     多段階の濃淡が要る箇所で使用。--color-accent 等の単色トークンとは独立で、
+     置き換えるものではない）。 --- */
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+
+  --color-accent-100: #fff2eb;
+  --color-accent-200: #ffe1d0;
+  --color-accent-300: #ffc6a5;
+  --color-accent-400: #f6a06b;
+  --color-accent-500: #d67f48;
+  --color-accent-600: #b2622d;
+  --color-accent-700: #8c491a;
+  --color-accent-800: #643312;
+  --color-accent-900: #402310;
+
+  --color-accent-2-100: #f0fae1;
+  --color-accent-2-200: #e1eecc;
+  --color-accent-2-300: #ccdbb2;
+  --color-accent-2-400: #aebf92;
+  --color-accent-2-500: #8fa073;
+  --color-accent-2-600: #728157;
+  --color-accent-2-700: #56633f;
+  --color-accent-2-800: #3d472b;
+  --color-accent-2-900: #272e1b;
+
   /* --- セマンティックパレット（方向に依存しない literal な色）
      明るいクリーム背景で本文サイズの文字色として使っても WCAG AA（4.5:1 以上）を
      満たすよう、ダークテーマ時より一段深いトーンに調整（用途・意味は変えない）。 --- */
@@ -74,10 +108,13 @@
   --spacing-2xl: 28px;
   --spacing-3xl: 40px;
 
-  /* --- タイポグラフィ --- */
+  /* --- タイポグラフィ（"Organic" デザインシステム: 見出し=Caprasimo・本文=Figtree）。
+     実体は app/layout.tsx の next/font/google が生成する --font-heading-family /
+     --font-body-family。ここでは意味的な別名として --font-display / --font-ui を経由し、
+     フォント未読み込み時のフォールバックのみここに書く。 --- */
   --font-mono: 'Consolas', 'Roboto Mono', 'SF Mono', 'JetBrains Mono', monospace;
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-  --font-display: 'Archivo Black', 'Arial Black', sans-serif;
+  --font-ui: var(--font-body-family), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  --font-display: var(--font-heading-family), 'Archivo Black', 'Arial Black', sans-serif;
   --font-size-xs: 0.6875rem;
   --font-size-sm: 0.75rem;
   --font-size-base: 0.8125rem;
@@ -85,6 +122,7 @@
   --font-size-xl: 1rem;
   --font-size-2xl: 1.25rem;
   --font-size-3xl: 1.5rem;
+  --font-size-4xl: 2rem;
 
   /* --- 角丸（"Organic" デザインシステムの値を踏襲） --- */
   --radius-sm: 8px;

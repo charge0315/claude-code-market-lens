@@ -59,8 +59,7 @@
 /* --- 詳細タブの成長曲線・エクイティカーブ・較正曲線をカード化（🔧 P24） --- */
 .model-lab-detail-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-sm);
 }
@@ -109,13 +108,13 @@
 
 .model-lab-chart {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   box-shadow: var(--shadow-sm);
 }
 
 .model-lab-subheading {
+  font-family: var(--font-display);
   font-size: var(--font-size-lg);
   margin: var(--spacing-xl) 0 var(--spacing-sm);
 }
@@ -131,11 +130,12 @@
 
 .model-lab-panel button {
   background: var(--color-accent);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-sm);
-  padding: 2px var(--spacing-sm);
+  color: var(--color-bg-primary);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 3px var(--spacing-md);
   font-size: var(--font-size-xs);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -164,11 +164,11 @@
   grid-template-columns: 1fr auto auto;
   gap: var(--spacing-md);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-sm);
 }
 
 .weekly-learning-label {
@@ -190,8 +190,7 @@
   flex-direction: column;
   gap: var(--spacing-xs);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-sm);
 }
@@ -204,8 +203,8 @@
 }
 
 .training-trigger-label {
+  font-family: var(--font-display);
   font-size: var(--font-size-lg);
-  font-weight: 600;
   color: var(--color-text-primary);
 }
 
@@ -384,8 +383,7 @@
 .training-run-log {
   margin-top: var(--spacing-xl);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   box-shadow: var(--shadow-sm);
 }
@@ -404,15 +402,15 @@
 
 /* --- 「かんたん」タブの導入説明（🆕 P14、BeginnerIntro） --- */
 .model-lab-beginner-intro {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: var(--color-accent-100);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   margin-bottom: var(--spacing-xl);
   box-shadow: var(--shadow-sm);
 }
 
 .model-lab-beginner-intro-title {
+  font-family: var(--font-display);
   font-size: var(--font-size-lg);
   margin: 0 0 var(--spacing-sm);
 }
@@ -463,8 +461,7 @@
   align-items: center;
   gap: 2px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-sm);
   box-shadow: var(--shadow-sm);
 }
@@ -493,28 +490,27 @@
 /* --- かんたん/詳細タブ（🆕 P14、ModelLabTabs） --- */
 .model-lab-tab-bar {
   display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 2px;
   margin-bottom: var(--spacing-xl);
 }
 
 .model-lab-tab-bar button {
-  background: var(--color-bg-tertiary);
+  background: none;
   color: var(--color-text-secondary);
   border: none;
+  border-radius: var(--radius-full);
   padding: var(--spacing-sm) var(--spacing-lg);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
-.model-lab-tab-bar button + button {
-  border-left: 1px solid var(--color-border);
-}
-
 .model-lab-tab-bar button.is-active {
-  background: var(--color-accent);
-  color: var(--color-text-primary);
+  background: var(--color-accent-500);
+  color: #fff;
 }
 
 /* --- 汎用ステータスピル（🔧 P19、ChampionsPanel の判定・DriftPanel の状態表示で共用） --- */

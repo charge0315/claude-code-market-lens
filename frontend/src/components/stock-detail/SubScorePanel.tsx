@@ -22,12 +22,14 @@ export function SubScorePanel({ pick }: { pick: PickDetail }): ReactNode {
     <div className="sub-score-panel">
       <ul className="sub-score-list" aria-label={`${pick.symbol} の4分析内訳`}>
         {rows.map((row) => (
-          <li key={row.key} className="sub-score-row">
-            <span className="sub-score-label">{row.label}</span>
+          <li key={row.key} className="sub-score-card">
+            <div className="sub-score-card-header">
+              <span className="sub-score-label">{row.label}</span>
+              <span className="sub-score-value num">{row.value.toFixed(0)}</span>
+            </div>
             <span className="sub-score-track">
               <span className="sub-score-fill" style={{ width: `${Math.max(0, Math.min(100, row.value))}%` }} />
             </span>
-            <span className="sub-score-value num">{row.value.toFixed(0)}</span>
           </li>
         ))}
       </ul>

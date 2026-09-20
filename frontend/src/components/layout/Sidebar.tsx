@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import './sidebar.css';
 
@@ -10,10 +12,12 @@ import './sidebar.css';
 interface NavItem {
   href: string;
   label: string;
+  icon?: ReactNode;
 }
 
 export function Sidebar({ items }: { items: ReadonlyArray<NavItem> }): ReactNode {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!open) return;
@@ -48,16 +52,31 @@ export function Sidebar({ items }: { items: ReadonlyArray<NavItem> }): ReactNode
         aria-label="メインナビゲーション"
         className={open ? 'app-sidebar is-open' : 'app-sidebar'}
       >
-        <div className="app-sidebar-brand">ALPHA FORGE</div>
+        <div className="app-sidebar-brand">
+          <span className="app-sidebar-logo" aria-hidden="true">A</span>
+          <span>ALPHA FORGE</span>
+        </div>
         <nav>
           <ul className="app-sidebar-nav">
-            {items.map((item) => (
-              <li key={item.href}>
-                <a href={item.href} onClick={() => setOpen(false)}>
-                  {item.label}
-                </a>
-              </li>
-            ))}
+            {items.map((item) => {
+              const active = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => setOpen(false)}
+                  >
+                    {item.icon && (
+                      <span className="app-sidebar-nav-icon" aria-hidden="true">
+                        {item.icon}
+                      </span>
+                    )}
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       </aside>
