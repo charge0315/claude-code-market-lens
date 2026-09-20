@@ -196,7 +196,7 @@ export function SignalQueue(): ReactNode {
                 </div>
               </dl>
 
-              {signal.shadow_signals.map((shadow) => (
+              {(signal.shadow_signals ?? []).map((shadow) => (
                 <div key={shadow.shadow_id} className="signal-card-shadow">
                   <div className="signal-card-header">
                     <span className="signal-card-engine-badge signal-card-engine-badge--shadow">

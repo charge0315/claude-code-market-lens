@@ -17,6 +17,7 @@ test('承認キューで承認→実約定報告まで操作できる（proposed
     target: 3200,
     confidence: 72,
     rationale: 'テスト根拠テキスト',
+    shadow_signals: [],
   };
 
   await page.route('**/api/portfolio', async (route) => {
