@@ -66,22 +66,26 @@ export function PortfolioOverview(): ReactNode {
         }
       />
 
-      <dl className="signal-card-bracket" style={{ margin: 'var(--spacing-lg) 0' }}>
-        <div>
-          <dt>評価額合計</dt>
-          <dd>{formatYen(summary.total_value)}</dd>
-        </div>
-        <div>
-          <dt>評価損益</dt>
-          <dd style={{ color: directionColor(summary.total_gain_loss) }}>{formatYen(summary.total_gain_loss)}</dd>
-        </div>
-        <div>
-          <dt>騰落率</dt>
-          <dd style={{ color: directionColor(summary.total_return_pct) }}>
-            {(summary.total_return_pct * 100).toFixed(2)}%
-          </dd>
-        </div>
-      </dl>
+      <div className="portfolio-totals-card">
+        <dl className="portfolio-totals-grid">
+          <div className="portfolio-totals-item">
+            <dt className="portfolio-totals-label">評価額合計</dt>
+            <dd className="portfolio-totals-value">{formatYen(summary.total_value)}</dd>
+          </div>
+          <div className="portfolio-totals-item">
+            <dt className="portfolio-totals-label">評価損益</dt>
+            <dd className="portfolio-totals-value" style={{ color: directionColor(summary.total_gain_loss) }}>
+              {formatYen(summary.total_gain_loss)}
+            </dd>
+          </div>
+          <div className="portfolio-totals-item">
+            <dt className="portfolio-totals-label">騰落率</dt>
+            <dd className="portfolio-totals-value" style={{ color: directionColor(summary.total_return_pct) }}>
+              {(summary.total_return_pct * 100).toFixed(2)}%
+            </dd>
+          </div>
+        </dl>
+      </div>
 
       <HoldingsTable holdings={summary.holdings} onSell={setSellTarget} onDelete={handleDelete} />
 
