@@ -14,7 +14,7 @@ export default async function StockDetailPage({
   const selectedSymbol = symbol ?? null;
 
   return (
-    <PageShell title="銘柄詳細" phase="P8">
+    <PageShell title="銘柄詳細">
       <p>ピック銘柄一覧 + チャート（期間切替）+ 4 分析内訳 + AI 思考トレース（ライブ / リプレイ）。</p>
 
       <section aria-labelledby="stock-search-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>

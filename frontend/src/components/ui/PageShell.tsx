@@ -1,18 +1,14 @@
 import type { ReactNode } from 'react';
 
-// 各画面の見出しと導入。`phase` は未実装フェーズの案内表示用（🔧 P13: 実装済みの画面
-// （ダッシュボード等）では省略してよいよう任意化した — 完成済み機能に「実装予定」の
-// 案内を出し続けるのは実態と乖離するため）。
+// 各画面の見出しと導入。
 export function PageShell({
   title,
   badge,
-  phase,
   children,
 }: {
   title: string;
   /** 見出し横に添える小さなラベル（例: 「自動学習ダッシュボード」）。任意。 */
   badge?: string;
-  phase?: string;
   children?: ReactNode;
 }): ReactNode {
   return (
@@ -36,13 +32,6 @@ export function PageShell({
           </span>
         )}
       </div>
-      {phase && (
-        <p
-          style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-xl)' }}
-        >
-          {phase} で実装予定
-        </p>
-      )}
       {children}
     </section>
   );

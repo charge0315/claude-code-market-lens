@@ -6,7 +6,7 @@ import { EodReviewPanel } from '@/components/portfolio/EodReviewPanel';
 
 export default function PortfolioPage(): ReactNode {
   return (
-    <PageShell title="ポートフォリオ" phase="P7">
+    <PageShell title="ポートフォリオ">
       <p>保有一覧、AI 判定（継続保有 / 一部利確 / 損切 / 買い増し）、承認キュー、大引け後レビュー。</p>
 
       <section aria-labelledby="holdings-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>

@@ -61,6 +61,12 @@ frontend/src/
   （`services/llm/` 新設、Anthropic/OpenAI/Gemini対応、`plans/04` P27・`plans/05` §2c）・
   note下書き自動生成・Obsidian/SingleHTML/WordPress WXR書き出し + 個人用Vaultアーカイブ
   レポート（`services/notes/` `services/vault_report/` 新設、`plans/04` P28・`plans/05` §2d）。
+- P32（2026-09-20）: ユーザー提供の Claude Design モックアップに基づき、見出し=Caprasimo・
+  本文=Figtree フォントとトーナルカラーを全画面へ適用し、AIピック・保有銘柄・4分析内訳を
+  `DataTable` 行からカード形式へ構造変更。ダッシュボードにポートフォリオ概況ウィジェット
+  （`PortfolioSummarySection`）を新設し、ポートフォリオ画面本体のトータル収支を大きな見出しで
+  強調表示（`plans/04` P32・`plans/05` §2b 参照）。上げ赤/下げ緑のドメイン規約はモックアップの
+  ブランド配色（テラコッタ/セージ）に流されず据え置いた。
 
 ## 3. 推論オーケストレータの実行順（計画からの変更点）
 

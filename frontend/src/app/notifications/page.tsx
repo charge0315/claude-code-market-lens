@@ -5,7 +5,7 @@ import { DailyNoteReview } from '@/components/notes/DailyNoteReview';
 
 export default function NotificationsPage(): ReactNode {
   return (
-    <PageShell title="通知センター" phase="P7">
+    <PageShell title="通知センター">
       <section>
         <h2>本日のnote下書き</h2>
         <p>AIが本日のピック分析結果から生成した有料note記事の下書き。確認・編集して承認し、note.comへは手動投稿する。</p>
