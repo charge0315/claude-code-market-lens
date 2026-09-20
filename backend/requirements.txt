@@ -8,6 +8,9 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.2
 
+# 東証の祝日判定（🆕、国民の休日・振替休日・秋分の日等の天文計算込み。ネットワーク不要）。
+jpholiday==1.0.3
+
 # DB / マイグレーション
 SQLAlchemy[asyncio]==2.0.44
 aiosqlite==0.21.0

@@ -67,6 +67,17 @@ def test_run_picks_task_skips_on_weekend_without_touching_ledger(monkeypatch: py
     assert result == {"status": "skipped_non_trading_day", "picks": 0, "rejected": 0}
 
 
+def test_run_picks_task_skips_on_national_holiday_weekday(monkeypatch: pytest.MonkeyPatch) -> None:
+    """曜日は平日でも祝日（2026-09-21 敬老の日）なら skip する."""
+    _freeze(monkeypatch, "2026-09-21T07:30:00+09:00")  # 月曜・敬老の日
+    run_calls = _wire(monkeypatch, existing_today=False)
+
+    result = tasks.run_picks_task("mid_term")
+
+    assert run_calls == []
+    assert result == {"status": "skipped_non_trading_day", "picks": 0, "rejected": 0}
+
+
 def test_run_picks_task_skips_when_already_issued_today(monkeypatch: pytest.MonkeyPatch) -> None:
     _freeze(monkeypatch, "2026-06-02T07:30:00+09:00")  # 火曜
     run_calls = _wire(monkeypatch, existing_today=True)

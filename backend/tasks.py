@@ -12,24 +12,36 @@ import asyncio
 import logging
 from datetime import datetime, time
 
+import jpholiday
+
 from backend.celery_app import celery_app
 from backend.services.jst_time import JST
 
 logger = logging.getLogger(__name__)
 
-# 東証の立会時間（大引け 15:00、監視は 15:30 まで。祝日は非対応 — `plans/01_PRD` PF-2）。
+# 東証の立会時間（大引け 15:00、監視は 15:30 まで）。
 _MARKET_OPEN_JST = time(9, 0)
 _MARKET_CLOSE_JST = time(15, 30)
 
 
 def _is_weekday_jst() -> bool:
-    """現在の曜日が JST 基準で平日かを判定する（祝日は非対応）."""
+    """現在の曜日が JST 基準で平日かを判定する（祝日は含まない — 休場日判定は `_is_trading_day_jst`）."""
     return datetime.now(JST).weekday() < 5  # 5=土, 6=日
 
 
+def _is_trading_day_jst() -> bool:
+    """現在日が JST 基準で東証の営業日（平日かつ祝日でない）かを判定する.
+
+    `jpholiday`（国民の休日・振替休日・秋分の日等の天文計算込み、ネットワーク不要）で祝日判定。
+    2026-09-21〜23（敬老の日・国民の休日・秋分の日の3連休）は `_is_weekday_jst` だけでは
+    検出できず、`run_picks_task` 等が誤発火しうると判明したため導入した。
+    """
+    return _is_weekday_jst() and not jpholiday.is_holiday(datetime.now(JST).date())
+
+
 def _is_market_hours_jst() -> bool:
-    """現在時刻が JST 基準の平日・東証立会時間内かを判定する（祝日は非対応）."""
-    if not _is_weekday_jst():
+    """現在時刻が JST 基準の営業日・東証立会時間内かを判定する."""
+    if not _is_trading_day_jst():
         return False
     return _MARKET_OPEN_JST <= datetime.now(JST).time() <= _MARKET_CLOSE_JST
 
@@ -45,16 +57,18 @@ def run_picks_task(horizon_type: str) -> dict[str, object]:
     """指定系統（mid_term / short_term）のピックを生成し台帳化する（JST 07:30/07:32）.
 
     celery-beat は長時間停止後の再起動時、due 判定した全エントリを即時発火する
-    （2026-09-20 に実際発生）。この際、休場日（土日）にもかかわらず本タスクが平日判定
-    （`_is_weekday_jst`）を持たなかったため、金曜終値ベースの無効なピックが実際に生成される
-    事故も同日発生した。`pipeline.run_picks` 自体はこれらのガードを持たない（`POST
-    /api/picks/run` 経由の手動再生成は意図的に休場日でも毎回新規生成させたいため）ので、
-    beat 起点の本タスクでのみ「休場日なら skip」「本日分の既存ピックがあれば skip」を行う。
+    （2026-09-20 に実際発生）。この際、休場日（土日）にもかかわらず本タスクが休場日判定を
+    持たなかったため、金曜終値ベースの無効なピックが実際に生成される事故も同日発生した。
+    さらに直後の 2026-09-21〜23（敬老の日・国民の休日・秋分の日の3連休）は曜日だけでは
+    休場日と判定できないため、`_is_trading_day_jst`（祝日込み）で判定する。`pipeline.run_picks`
+    自体はこれらのガードを持たない（`POST /api/picks/run` 経由の手動再生成は意図的に休場日でも
+    毎回新規生成させたいため）ので、beat 起点の本タスクでのみ「休場日なら skip」「本日分の
+    既存ピックがあれば skip」を行う。
     """
     from backend.services.ledger import prediction_ledger as pl
     from backend.services.picks.pipeline import run_picks
 
-    if not _is_weekday_jst():
+    if not _is_trading_day_jst():
         return {"status": "skipped_non_trading_day", "picks": 0, "rejected": 0}
 
     async def _run() -> dict[str, object]:

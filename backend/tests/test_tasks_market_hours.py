@@ -54,6 +54,26 @@ def test_market_open_and_close_boundaries_are_inclusive(monkeypatch: pytest.Monk
     assert tasks._is_market_hours_jst() is True
 
 
+@pytest.mark.parametrize(
+    "iso",
+    [
+        "2026-09-21T10:00:00+09:00",  # 月曜・敬老の日
+        "2026-09-22T10:00:00+09:00",  # 火曜・国民の休日（敬老の日と秋分の日に挟まれる）
+        "2026-09-23T10:00:00+09:00",  # 水曜・秋分の日
+    ],
+)
+def test_national_holiday_is_weekday_but_not_trading_day(monkeypatch: pytest.MonkeyPatch, iso: str) -> None:
+    """曜日だけでは検出できない祝日（2026-09-21〜23の3連休）を `_is_trading_day_jst` で除外する.
+
+    `_is_weekday_jst` だけに頼っていた `run_picks_task` が、この3連休で誤発火することが
+    2026-09-20（前日の日曜誤発火インシデント）判明時に発覚した。
+    """
+    _freeze(monkeypatch, iso)
+    assert tasks._is_weekday_jst() is True  # 曜日だけなら平日
+    assert tasks._is_trading_day_jst() is False
+    assert tasks._is_market_hours_jst() is False
+
+
 def test_run_portfolio_monitor_task_noops_outside_market_hours(monkeypatch: pytest.MonkeyPatch) -> None:
     _freeze(monkeypatch, "2026-06-06T10:00:00+09:00")  # 土曜
     assert tasks.run_portfolio_monitor_task() is None
