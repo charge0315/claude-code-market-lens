@@ -30,11 +30,13 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Literal
 
 from backend.config import settings
@@ -340,6 +342,29 @@ async def run_daily_training_batch(
     )
 
 
+# backend/services/learning/per_ticker_training_service.py → プロジェクトルートまで4階層上。
+_PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
+
+
+def _ensure_project_root_on_child_pythonpath() -> None:
+    """`ProcessPoolExecutor` が spawn する子プロセスへ `backend` パッケージを確実に見せる.
+
+    `celery.exe`（console-script 起動、`-m celery` ではない）配下で `ProcessPoolExecutor` を
+    使うと、子プロセスの起動時に `sys.path` へプロジェクトルートが引き継がれず
+    `ModuleNotFoundError: No module named 'backend'` で即クラッシュする事例が実際に発生した
+    （2026-09-20、celery worker）。`uvicorn -m` 経路では発生しなかったことから、multiprocessing
+    の spawn ブートストラップが `sys.path` をどう再構築するかは起動方法（`-m` か console-script
+    か）に依存すると判明した。OS 環境変数の `PYTHONPATH` はその実装詳細に関わらず子プロセスへ
+    確実に継承されるため、これで対策する。
+    """
+    existing = os.environ.get("PYTHONPATH", "")
+    root = str(_PROJECT_ROOT)
+    entries = existing.split(os.pathsep) if existing else []
+    if root in entries:
+        return
+    os.environ["PYTHONPATH"] = os.pathsep.join([root, *entries]) if entries else root
+
+
 def _create_worker_pool(max_workers: int) -> ProcessPoolExecutor | None:
     """学習バッチ用のプロセスプールを生成する（テストから差し替え可能にするための間接層）.
 
@@ -350,6 +375,7 @@ def _create_worker_pool(max_workers: int) -> ProcessPoolExecutor | None:
     ため、monkeypatch によるモデル保存先の隔離（`_isolated_per_ticker_model_dir` 等）が
     子プロセスへ引き継がれず、テストの独立性が壊れてしまうため。
     """
+    _ensure_project_root_on_child_pythonpath()
     return ProcessPoolExecutor(max_workers=max_workers)
 
 

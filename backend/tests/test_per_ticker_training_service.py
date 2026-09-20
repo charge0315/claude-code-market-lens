@@ -512,6 +512,46 @@ async def test_create_worker_pool_builds_process_pool_executor_with_requested_si
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+def test_ensure_project_root_on_child_pythonpath_sets_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`PYTHONPATH` 未設定なら、子プロセスが `backend` を import できるようプロジェクトルートを設定する.
+
+    `celery.exe`（console-script 起動、`-m` ではない）配下で `ProcessPoolExecutor` を使うと、
+    子プロセスの起動時に `sys.path` へプロジェクトルートが引き継がれず
+    `ModuleNotFoundError: No module named 'backend'` で即クラッシュする事例が実際に発生した
+    （2026-09-20、celery worker）。OS 環境変数の `PYTHONPATH` は multiprocessing の spawn
+    ブートストラップの実装詳細に関わらず子プロセスへ確実に継承されるため、これで対策する。
+    """
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    svc._ensure_project_root_on_child_pythonpath()
+
+    import os
+
+    assert os.environ["PYTHONPATH"] == str(svc._PROJECT_ROOT)
+
+
+def test_ensure_project_root_on_child_pythonpath_preserves_existing_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の `PYTHONPATH` を破壊せず、プロジェクトルートを先頭に追記する."""
+    import os
+
+    monkeypatch.setenv("PYTHONPATH", "C:\\some\\other\\path")
+
+    svc._ensure_project_root_on_child_pythonpath()
+
+    assert os.environ["PYTHONPATH"] == f"{svc._PROJECT_ROOT}{os.pathsep}C:\\some\\other\\path"
+
+
+def test_ensure_project_root_on_child_pythonpath_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既にプロジェクトルートが含まれていれば重複追加しない."""
+    import os
+
+    monkeypatch.setenv("PYTHONPATH", str(svc._PROJECT_ROOT))
+
+    svc._ensure_project_root_on_child_pythonpath()
+
+    assert os.environ["PYTHONPATH"] == str(svc._PROJECT_ROOT)
+
+
 async def test_run_daily_training_batch_processes_in_windows_of_max_parallel_workers(
     migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

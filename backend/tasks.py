@@ -45,12 +45,17 @@ def run_picks_task(horizon_type: str) -> dict[str, object]:
     """指定系統（mid_term / short_term）のピックを生成し台帳化する（JST 07:30/07:32）.
 
     celery-beat は長時間停止後の再起動時、due 判定した全エントリを即時発火する
-    （2026-09-20 に実際発生）。`pipeline.run_picks` 自体は同日冪等ガードを持たない
-    （`POST /api/picks/run` 経由の手動再生成は意図的に毎回新規生成させたいため）ので、
-    beat 起点の本タスクでのみ「本日分の既存ピックがあれば skip」を行う。
+    （2026-09-20 に実際発生）。この際、休場日（土日）にもかかわらず本タスクが平日判定
+    （`_is_weekday_jst`）を持たなかったため、金曜終値ベースの無効なピックが実際に生成される
+    事故も同日発生した。`pipeline.run_picks` 自体はこれらのガードを持たない（`POST
+    /api/picks/run` 経由の手動再生成は意図的に休場日でも毎回新規生成させたいため）ので、
+    beat 起点の本タスクでのみ「休場日なら skip」「本日分の既存ピックがあれば skip」を行う。
     """
     from backend.services.ledger import prediction_ledger as pl
     from backend.services.picks.pipeline import run_picks
+
+    if not _is_weekday_jst():
+        return {"status": "skipped_non_trading_day", "picks": 0, "rejected": 0}
 
     async def _run() -> dict[str, object]:
         today = datetime.now(JST).date().isoformat()
