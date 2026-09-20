@@ -82,8 +82,12 @@ async def get_champion(lane: str) -> str | None:
         return str(row[0]) if row is not None else None
 
 
-async def set_champion(lane: str, version: str, *, promoted_by: str = "manual") -> None:
-    """系統の champion を差し替える（`model_registry` に存在するバージョンのみ許可、FK 制約）."""
+async def set_champion(lane: str, version: str, *, promoted_by: str = "manual", promoted_at: str | None = None) -> None:
+    """系統の champion を差し替える（`model_registry` に存在するバージョンのみ許可、FK 制約）.
+
+    `promoted_at` は省略時のみ現在時刻（JST）を使う。`upsert_model` の `trained_at` と同様、
+    テストで日付をこちらから固定できるようにするための任意引数（本番呼び出しは全て省略）。
+    """
     async with get_db() as db:
         await db.execute(
             text("""
@@ -97,7 +101,7 @@ async def set_champion(lane: str, version: str, *, promoted_by: str = "manual") 
             {
                 "lane": lane,
                 "version": version,
-                "promoted_at": datetime.now(JST).isoformat(timespec="seconds"),
+                "promoted_at": promoted_at or datetime.now(JST).isoformat(timespec="seconds"),
                 "promoted_by": promoted_by,
             },
         )

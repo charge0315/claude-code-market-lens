@@ -154,7 +154,9 @@ async def test_build_pipeline_log_markdown_includes_all_sections(migrated_db: Pa
         rationale={"reason": "ホールドアウト超過・較正非劣化・ペーパー成績非劣化のすべてを満たした"},
         evaluated_at=f"{_DATE}T03:45:00+09:00",
     )
-    await model_registry_db.set_champion("mid_term", "challenger-1", promoted_by="api_approval")
+    await model_registry_db.set_champion(
+        "mid_term", "challenger-1", promoted_by="api_approval", promoted_at=f"{_DATE}T04:00:00+09:00"
+    )
 
     markdown, counts = await build_pipeline_log_markdown(_DATE)
 
