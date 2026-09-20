@@ -64,10 +64,11 @@ _last_results: dict[ModelType, dict[str, object]] = {}
 
 @dataclass
 class _ProgressState:
-    """実行中バッチの進捗（🆕 P17）: 処理中の銘柄・残り推定時間・既存比等の元データ."""
+    """実行中バッチの進捗（🆕 P17、🔧 並列学習で複数銘柄が同時に running になりうる）:
+    処理中の銘柄群・残り推定時間・既存比等の元データ."""
 
     started_at: float = field(default_factory=time.monotonic)
-    current_ticker: str | None = None
+    current_tickers: list[str] = field(default_factory=list)
     total: int = 0
     processed: int = 0
     completed: int = 0
@@ -87,9 +88,10 @@ def _make_on_progress(model_type: ModelType) -> Callable[[TrainingProgressEvent]
         state = _progress.setdefault(model_type, _ProgressState())
         state.total = event.total
         if event.status == "running":
-            state.current_ticker = event.ticker
+            state.current_tickers.append(event.ticker)
             return
-        state.current_ticker = None
+        if event.ticker in state.current_tickers:
+            state.current_tickers.remove(event.ticker)
         state.processed = event.processed
         if event.status == "completed":
             state.completed += 1
@@ -222,8 +224,9 @@ async def run_training(req: TrainingRunRequest) -> ApiResponse[dict]:
 def _build_progress_payload(model_type: ModelType) -> dict[str, object] | None:
     """`_progress` の生状態から `GET /training/status` へ返す進捗ペイロードを組み立てる（🆕 P17）.
 
-    処理中の銘柄・進捗率・残り推定時間（今回の処理速度からの単純な線形見積り）・
-    既存比（品質ゲート通過率）を計算する。バッチが実行中でない場合は None。
+    処理中の銘柄群（🔧 並列学習により複数になりうる）・進捗率・残り推定時間
+    （今回の処理速度からの単純な線形見積り）・既存比（品質ゲート通過率）を計算する。
+    バッチが実行中でない場合は None。
     """
     state = _progress.get(model_type)
     if state is None:
@@ -235,7 +238,7 @@ def _build_progress_payload(model_type: ModelType) -> dict[str, object] | None:
     promotion_rate_pct = (state.activated / state.completed * 100) if state.completed > 0 else None
 
     return {
-        "current_ticker": state.current_ticker,
+        "current_tickers": list(state.current_tickers),
         "processed": processed,
         "total": total,
         "failed_this_run": state.failed,

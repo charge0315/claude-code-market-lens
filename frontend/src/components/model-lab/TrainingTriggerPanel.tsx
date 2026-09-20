@@ -181,7 +181,8 @@ export function TrainingTriggerPanel(): ReactNode {
     const status = statuses[value];
     if (status?.running) {
       const p = status.progress;
-      const ticker = p?.current_ticker ?? '…';
+      const tickers = p?.current_tickers ?? [];
+      const ticker = tickers.length > 0 ? tickers.join('、') : '…';
       return `${label}: 実行中（${ticker} を処理中、${p?.processed ?? 0}/${p?.total ?? 0}件）`;
     }
     const result = status?.last_result;
@@ -270,7 +271,11 @@ export function TrainingTriggerPanel(): ReactNode {
               <div className="training-stat-grid">
                 <div className="training-stat">
                   <span className="training-stat-label">処理中の銘柄</span>
-                  <span className="training-stat-value">{running ? (progress?.current_ticker ?? '—') : '—'}</span>
+                  <span className="training-stat-value">
+                    {running && progress?.current_tickers && progress.current_tickers.length > 0
+                      ? progress.current_tickers.join('、')
+                      : '—'}
+                  </span>
                 </div>
                 <div className="training-stat">
                   <span className="training-stat-label">精度スコア（既存比）</span>

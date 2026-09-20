@@ -20,6 +20,7 @@ from backend.models.stocks import TickerInfo
 from backend.services.db import model_registry_db, training_batch_db
 from backend.services.jst_time import today_jst
 from backend.services.learning import per_ticker_training_service as svc
+from backend.services.learning import training_target_service
 
 _T = TypeVar("_T")
 
@@ -92,7 +93,8 @@ async def test_select_candidates_excludes_attempted_today(migrated_db: Path, mon
 
 
 # ---------------------------------------------------------------------------
-# _apply_quality_gate
+# _apply_quality_gate_from_worker_result（🆕 CPU再評価は子プロセス側で完了済みという前提で
+# DB read/write のみを行う。旧 _apply_quality_gate の判定ロジック自体は変更していない）
 # ---------------------------------------------------------------------------
 
 
@@ -105,7 +107,15 @@ async def test_quality_gate_adopts_first_model_for_ticker_unconditionally(migrat
         val_metrics={"rmse": 0.02, "skill": 0.1},
     )
 
-    adopted = await svc._apply_quality_gate("7203", "xgboost", "v1", {"rmse": 0.02, "skill": 0.1}, df=None)
+    adopted = await svc._apply_quality_gate_from_worker_result(
+        "7203",
+        "xgboost",
+        "v1",
+        {"rmse": 0.02, "skill": 0.1},
+        existing_version=None,
+        existing_row=None,
+        comparison_rmse=None,
+    )
 
     assert adopted is True
     assert await model_registry_db.get_champion("xgboost:7203") == "v1"
@@ -120,15 +130,23 @@ async def test_quality_gate_rejects_when_skill_non_positive(migrated_db: Path) -
         val_metrics={"rmse": 0.02, "skill": -0.1},
     )
 
-    adopted = await svc._apply_quality_gate("7203", "xgboost", "v1", {"rmse": 0.02, "skill": -0.1}, df=None)
+    adopted = await svc._apply_quality_gate_from_worker_result(
+        "7203",
+        "xgboost",
+        "v1",
+        {"rmse": 0.02, "skill": -0.1},
+        existing_version=None,
+        existing_row=None,
+        comparison_rmse=None,
+    )
 
     assert adopted is False
     assert await model_registry_db.get_champion("xgboost:7203") is None
 
 
 async def test_quality_gate_rejects_worse_challenger_falling_back_to_recorded_rmse(migrated_db: Path) -> None:
-    # 既存 champion（artifact_path="" のため _reevaluate_existing_on_window は必ず None を
-    # 返し、記録済み val_metrics の rmse へフォールバックする）。
+    # 子プロセスでの既存championの再評価に失敗した状況を模す（comparison_rmse=None）。
+    # この場合は記録済み val_metrics の rmse（0.01）へフォールバックして比較する。
     await model_registry_db.upsert_model(
         version="existing",
         model_type="xgboost",
@@ -137,7 +155,8 @@ async def test_quality_gate_rejects_worse_challenger_falling_back_to_recorded_rm
         artifact_path="",
         val_metrics={"rmse": 0.01, "skill": 0.2},
     )
-    await svc._apply_quality_gate("7203", "xgboost", "existing", {"rmse": 0.01, "skill": 0.2}, df=None)
+    await model_registry_db.set_champion("xgboost:7203", "existing", promoted_by="quality_gate")
+    existing_row = await model_registry_db.get_model("existing")
 
     challenger_metrics: dict[str, float | str | int | bool] = {
         "rmse": 0.05,
@@ -152,13 +171,25 @@ async def test_quality_gate_rejects_worse_challenger_falling_back_to_recorded_rm
         objective="regression",
         val_metrics=challenger_metrics,
     )
-    adopted = await svc._apply_quality_gate("7203", "xgboost", "challenger", challenger_metrics, df=None)
+    adopted = await svc._apply_quality_gate_from_worker_result(
+        "7203",
+        "xgboost",
+        "challenger",
+        challenger_metrics,
+        existing_version="existing",
+        existing_row=existing_row,
+        comparison_rmse=None,
+    )
 
     assert adopted is False
     assert await model_registry_db.get_champion("xgboost:7203") == "existing"
 
 
-async def test_quality_gate_adopts_better_or_equal_challenger(migrated_db: Path) -> None:
+async def test_quality_gate_adopts_better_or_equal_challenger_using_subprocess_comparison_rmse(
+    migrated_db: Path,
+) -> None:
+    # comparison_rmse（子プロセスが同一窓で再評価した既存championのRMSE）が渡された場合、
+    # 記録済み val_metrics の rmse（0.05）ではなくこちらを比較に使うことを確認する。
     await model_registry_db.upsert_model(
         version="existing",
         model_type="xgboost",
@@ -167,7 +198,7 @@ async def test_quality_gate_adopts_better_or_equal_challenger(migrated_db: Path)
         artifact_path="",
         val_metrics={"rmse": 0.05, "skill": 0.1},
     )
-    await svc._apply_quality_gate("7203", "xgboost", "existing", {"rmse": 0.05, "skill": 0.1}, df=None)
+    existing_row = await model_registry_db.get_model("existing")
 
     challenger_metrics: dict[str, float | str | int | bool] = {
         "rmse": 0.01,
@@ -182,10 +213,38 @@ async def test_quality_gate_adopts_better_or_equal_challenger(migrated_db: Path)
         objective="regression",
         val_metrics=challenger_metrics,
     )
-    adopted = await svc._apply_quality_gate("7203", "xgboost", "challenger", challenger_metrics, df=None)
+    adopted = await svc._apply_quality_gate_from_worker_result(
+        "7203",
+        "xgboost",
+        "challenger",
+        challenger_metrics,
+        existing_version="existing",
+        existing_row=existing_row,
+        comparison_rmse=0.02,
+    )
 
     assert adopted is True
     assert await model_registry_db.get_champion("xgboost:7203") == "challenger"
+
+
+async def test_quality_gate_adopts_when_existing_champion_row_missing(migrated_db: Path) -> None:
+    """既存 champion のレジストリ行が見つからない（データ不整合）場合は安全側で採用する."""
+    await model_registry_db.upsert_model(
+        version="new-version", model_type="xgboost", ticker="7203", objective="regression"
+    )
+
+    adopted = await svc._apply_quality_gate_from_worker_result(
+        "7203",
+        "xgboost",
+        "new-version",
+        {"rmse": 0.05, "skill": 0.1},
+        existing_version="missing-version",
+        existing_row=None,
+        comparison_rmse=None,
+    )
+
+    assert adopted is True
+    assert await model_registry_db.get_champion("xgboost:7203") == "new-version"
 
 
 # ---------------------------------------------------------------------------
@@ -426,3 +485,81 @@ async def test_successful_training_records_data_source(migrated_db: Path, monkey
 
     breakdown = await training_batch_db.get_latest_data_source_by_model_type()
     assert breakdown["xgboost"] == {"jquants": 1}
+
+
+# ---------------------------------------------------------------------------
+# 🆕 並列学習（ProcessPoolExecutor、学習対象設定の max_parallel_workers）
+# ---------------------------------------------------------------------------
+
+
+async def test_create_worker_pool_builds_process_pool_executor_with_requested_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本番経路の `_create_worker_pool` が `ProcessPoolExecutor` を返すことを確認する.
+
+    autouse fixture（`_use_thread_pool_for_training_batch`）が `monkeypatch` を共有するため、
+    ここで一度 undo して素の実装（本番相当）へ戻してから呼び出す。
+    """
+    from concurrent.futures import ProcessPoolExecutor
+
+    monkeypatch.undo()
+
+    pool = svc._create_worker_pool(3)
+    assert isinstance(pool, ProcessPoolExecutor)
+    try:
+        assert pool._max_workers == 3  # type: ignore[attr-defined] # noqa: SLF001 - 実際に指定サイズで生成されたことの確認用
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+async def test_run_daily_training_batch_processes_in_windows_of_max_parallel_workers(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`max_parallel_workers` ぶんずつ「running」イベントがまとめて発火するウィンドウ処理を確認する.
+
+    5銘柄・max_parallel_workers=2 なら、ウィンドウは [2銘柄, 2銘柄, 1銘柄] の3回に分かれ、
+    各ウィンドウ内では running イベント群がまとめて先に発火してから completed イベント群が
+    続く（ウィンドウをまたいだ running/completed の入れ替わりは起きない）。
+    """
+    tickers = ["1111", "2222", "3333", "4444", "5555"]
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in tickers]
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+    monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
+    await training_target_service.update_settings(max_parallel_workers=2)
+
+    events: list[svc.TrainingProgressEvent] = []
+    summary = await svc.run_daily_training_batch("xgboost", on_progress=events.append)
+
+    assert summary.trained_this_call == 5
+    statuses = [(e.ticker, e.status) for e in events]
+    assert statuses == [
+        ("1111", "running"),
+        ("2222", "running"),
+        ("1111", "completed"),
+        ("2222", "completed"),
+        ("3333", "running"),
+        ("4444", "running"),
+        ("3333", "completed"),
+        ("4444", "completed"),
+        ("5555", "running"),
+        ("5555", "completed"),
+    ]
+
+
+async def test_run_daily_training_batch_uses_default_four_workers_when_unset(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """学習対象設定が未保存でも並列数上限は既定の4になる（学習対象設定の後方互換フォールバック）."""
+    tickers = ["1111", "2222", "3333"]
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in tickers]
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
+    monkeypatch.setattr(svc, "fetch_training_ohlcv", _fake_fetch_training_ohlcv)
+    monkeypatch.setattr(svc, "_daily_ticker_limit", lambda model_type: 10)
+
+    events: list[svc.TrainingProgressEvent] = []
+    await svc.run_daily_training_batch("xgboost", on_progress=events.append)
+
+    running_tickers = [e.ticker for e in events if e.status == "running"]
+    # 3銘柄が既定の並列数上限（4）に収まるため、1ウィンドウで全銘柄の running が先に揃う。
+    assert running_tickers == tickers

@@ -127,7 +127,7 @@ describe('TrainingTriggerPanel', () => {
       progress:
         modelType === 'xgboost'
           ? {
-              current_ticker: '7203',
+              current_tickers: ['7203'],
               processed: 10,
               total: 40,
               failed_this_run: 1,
@@ -149,6 +149,33 @@ describe('TrainingTriggerPanel', () => {
     expect(screen.getByText(/実行中 1\/4 モデル/)).toBeInTheDocument();
   });
 
+  it('🆕 並列学習で複数銘柄が同時に処理中のときは一覧で表示する', async () => {
+    mockStart.mockResolvedValue({ model_type: 'xgboost', status: 'started' } as TrainingRunAck);
+    mockStatus.mockImplementation(async (modelType) => ({
+      model_type: modelType,
+      running: modelType === 'xgboost',
+      attempted_today: 100,
+      last_result: null,
+      progress:
+        modelType === 'xgboost'
+          ? {
+              current_tickers: ['7203', '6758'],
+              processed: 10,
+              total: 40,
+              failed_this_run: 0,
+              eta_seconds: 5400,
+              promotion_rate_pct: 80,
+            }
+          : null,
+    }));
+    const user = userEvent.setup();
+
+    render(<TrainingTriggerPanel />);
+    await user.click(startButtonFor('XGBoost'));
+
+    expect(await screen.findByText('7203、6758')).toBeInTheDocument();
+  });
+
   it('マウント時に実行中のバッチがあれば表示・ポーリングを復元する（他画面から戻ってきた場合）', async () => {
     mockStatus.mockImplementation(async (modelType) => ({
       model_type: modelType,
@@ -158,7 +185,7 @@ describe('TrainingTriggerPanel', () => {
       progress:
         modelType === 'xgboost'
           ? {
-              current_ticker: '7203',
+              current_tickers: ['7203'],
               processed: 10,
               total: 40,
               failed_this_run: 0,

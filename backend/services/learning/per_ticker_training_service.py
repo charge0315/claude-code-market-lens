@@ -27,11 +27,13 @@ Market Lens `backend/services/training_batch_service.py` から移植、変更�
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -44,6 +46,7 @@ from backend.services.learning.dl.transformer import TransformerPredictor
 from backend.services.learning.per_ticker_predictor import RandomForestPredictor, XGBoostPredictor
 from backend.services.learning.predictor_protocol import PredictorProtocol
 from backend.services.learning.training_data_source import fetch_training_ohlcv
+from backend.services.learning.training_worker import TrainWorkerResult, train_ticker_in_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +201,12 @@ async def run_daily_training_batch(
     呼び出し元（`routers/registry.py`）がこれを使ってインメモリの進捗状態
     （処理中の銘柄・残り推定時間・既存比等）を更新し、`GET /training/status` で
     ポーリング可能にする。celery-beat 経路では渡されず、動作に影響しない。
+
+    🆕 学習対象設定の並列数上限（既定4）ぶんずつ「ウィンドウ」単位で並列学習する
+    （`training_target_service.get_settings().max_parallel_workers`）。ウィンドウ内の
+    データ取得（I/O）は `asyncio.gather` で並列化し、CPU バウンドな学習・保存は
+    `_create_worker_pool` が返すプロセスプールへ委譲する（`training_worker.py` 参照）。
+    並列数の変更は次回のバッチ呼び出しから反映される（実行中バッチはそのまま完走する）。
     """
     run_date = today_jst()
     limit = daily_limit_override if daily_limit_override is not None else _daily_ticker_limit(model_type)
@@ -223,76 +232,102 @@ async def run_daily_training_batch(
     activated = 0
     start = time.monotonic()
 
-    for ticker in candidates:
-        if len(attempted_today) + trained + failed >= limit:
-            break
-        if time.monotonic() - start >= budget:
-            break
+    max_parallel_workers = (await training_target_service.get_settings()).max_parallel_workers
+    pool = _create_worker_pool(max_parallel_workers)
+    try:
+        remaining = list(candidates)
+        while remaining:
+            already_processed = len(attempted_today) + trained + failed
+            if already_processed >= limit:
+                break
+            if time.monotonic() - start >= budget:
+                break
 
-        if on_progress is not None:
-            on_progress(
-                TrainingProgressEvent(ticker=ticker, processed=trained + failed, total=planned_total, status="running")
-            )
+            window = remaining[:max_parallel_workers]
+            remaining = remaining[max_parallel_workers:]
+            window = window[: limit - already_processed]
+            if not window:
+                break
 
-        version = f"{_BATCH_VERSION_PREFIX}{uuid.uuid4()}"
-        try:
-            new_metrics, df, data_source = await asyncio.wait_for(
-                _train_and_register(ticker, model_type, version), timeout=timeout
-            )
-        except TimeoutError:
-            logger.warning("日次学習バッチ[%s]: %s の学習が%.0f秒でタイムアウトしました", model_type, ticker, timeout)
-            await training_batch_db.insert_training_batch_run(
-                run_date=run_date,
-                ticker=ticker,
-                model_type=model_type,
-                status="failed",
-                error=f"タイムアウト（{timeout:.0f}秒）",
-            )
-            failed += 1
-            if on_progress is not None:
-                on_progress(
-                    TrainingProgressEvent(
-                        ticker=ticker, processed=trained + failed, total=planned_total, status="failed"
+            for ticker in window:
+                if on_progress is not None:
+                    on_progress(
+                        TrainingProgressEvent(
+                            ticker=ticker, processed=trained + failed, total=planned_total, status="running"
+                        )
                     )
-                )
-            continue
-        except Exception as exc:  # noqa: BLE001 - 1銘柄の失敗で全体を止めない
-            logger.warning("日次学習バッチ[%s]: %s の学習に失敗しました: %s", model_type, ticker, exc, exc_info=True)
-            await training_batch_db.insert_training_batch_run(
-                run_date=run_date, ticker=ticker, model_type=model_type, status="failed", error=str(exc)
-            )
-            failed += 1
-            if on_progress is not None:
-                on_progress(
-                    TrainingProgressEvent(
-                        ticker=ticker, processed=trained + failed, total=planned_total, status="failed"
-                    )
-                )
-            continue
 
-        await training_batch_db.insert_training_batch_run(
-            run_date=run_date,
-            ticker=ticker,
-            model_type=model_type,
-            status="completed",
-            error=None,
-            data_source=data_source,
-        )
-        trained += 1
-        promoted = await _apply_quality_gate(ticker, model_type, version, new_metrics, df)
-        if promoted:
-            activated += 1
-        if on_progress is not None:
-            on_progress(
-                TrainingProgressEvent(
+            versions = {ticker: f"{_BATCH_VERSION_PREFIX}{uuid.uuid4()}" for ticker in window}
+            outcomes = await asyncio.gather(
+                *(
+                    asyncio.wait_for(_process_ticker(ticker, model_type, versions[ticker], pool), timeout=timeout)
+                    for ticker in window
+                ),
+                return_exceptions=True,
+            )
+
+            for ticker, outcome in zip(window, outcomes, strict=True):
+                if isinstance(outcome, BaseException):
+                    if isinstance(outcome, TimeoutError):
+                        logger.warning(
+                            "日次学習バッチ[%s]: %s の学習が%.0f秒でタイムアウトしました", model_type, ticker, timeout
+                        )
+                        error = f"タイムアウト（{timeout:.0f}秒）"
+                    else:
+                        logger.warning(
+                            "日次学習バッチ[%s]: %s の学習に失敗しました: %s",
+                            model_type,
+                            ticker,
+                            outcome,
+                            exc_info=outcome,
+                        )
+                        error = str(outcome)
+                    await training_batch_db.insert_training_batch_run(
+                        run_date=run_date, ticker=ticker, model_type=model_type, status="failed", error=error
+                    )
+                    failed += 1
+                    if on_progress is not None:
+                        on_progress(
+                            TrainingProgressEvent(
+                                ticker=ticker, processed=trained + failed, total=planned_total, status="failed"
+                            )
+                        )
+                    continue
+
+                await training_batch_db.insert_training_batch_run(
+                    run_date=run_date,
                     ticker=ticker,
-                    processed=trained + failed,
-                    total=planned_total,
+                    model_type=model_type,
                     status="completed",
-                    activated=promoted,
-                    data_source=data_source,
+                    error=None,
+                    data_source=outcome.data_source,
                 )
-            )
+                trained += 1
+                promoted = await _apply_quality_gate_from_worker_result(
+                    ticker,
+                    model_type,
+                    versions[ticker],
+                    outcome.worker_result.metrics,
+                    existing_version=outcome.existing_version,
+                    existing_row=outcome.existing_row,
+                    comparison_rmse=outcome.worker_result.comparison_rmse,
+                )
+                if promoted:
+                    activated += 1
+                if on_progress is not None:
+                    on_progress(
+                        TrainingProgressEvent(
+                            ticker=ticker,
+                            processed=trained + failed,
+                            total=planned_total,
+                            status="completed",
+                            activated=promoted,
+                            data_source=outcome.data_source,
+                        )
+                    )
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     total_attempted_today = len(attempted_today) + trained + failed
     return TrainingBatchSummary(
@@ -305,38 +340,73 @@ async def run_daily_training_batch(
     )
 
 
-async def _train_and_register(
-    ticker: str, model_type: str, version: str
-) -> tuple[dict[str, float | str | int | bool], object, str]:
-    """1銘柄を学習し、`model_registry` へ登録する（champion 化は品質ゲートに委ねる）.
+def _create_worker_pool(max_workers: int) -> ProcessPoolExecutor | None:
+    """学習バッチ用のプロセスプールを生成する（テストから差し替え可能にするための間接層）.
 
-    戻り値の第2要素（学習に使った OHLCV データフレーム）は、品質ゲートが既存 champion を
-    同じ検証窓で再評価する際、追加のネットワーク取得なしに再利用するために返す
-    （`get_stock_data` は TTL キャッシュ済みのため実害はほぼ無いが、素朴に再利用する）。
-    第3要素は実際に採用したデータソース（🆕 P17、"yfinance"/"jquants"）。
+    `None` を返すと `loop.run_in_executor` は既定のスレッドプール（イベントループ共有、
+    同一プロセス内）を使う。テストでは autouse fixture（`conftest.py` の
+    `_use_thread_pool_for_training_batch`）がこの関数を `None` を返すよう差し替える —
+    `ProcessPoolExecutor` の `spawn` は子プロセスを新規 Python インタプリタとして起動する
+    ため、monkeypatch によるモデル保存先の隔離（`_isolated_per_ticker_model_dir` 等）が
+    子プロセスへ引き継がれず、テストの独立性が壊れてしまうため。
+    """
+    return ProcessPoolExecutor(max_workers=max_workers)
+
+
+@dataclass(frozen=True)
+class _TickerTrainOutcome:
+    """1銘柄ぶんの学習結果（親プロセス側で品質ゲート判定・DB書き込みに使う）."""
+
+    worker_result: TrainWorkerResult
+    data_source: str
+    existing_version: str | None
+    existing_row: dict[str, object] | None
+
+
+async def _process_ticker(
+    ticker: str, model_type: str, version: str, pool: ProcessPoolExecutor | None
+) -> _TickerTrainOutcome:
+    """1銘柄のデータ取得（親プロセス I/O）→ 学習（子プロセス/スレッド CPU）→ 登録を行う.
 
     データ取得は yfinance を優先し、履歴が不十分な場合は J-Quants にフォールバックする
-    （🆕 P14、`training_data_source.fetch_training_ohlcv` 参照）。
+    （🆕 P14、`training_data_source.fetch_training_ohlcv` 参照）。既存 champion の
+    アーティファクトパスは学習前にここ（親プロセス）で DB から解決し、子プロセスへ渡す
+    （子プロセスは DB に一切アクセスしない設計、`training_worker.py` docstring 参照）。
     """
     df, data_source = await fetch_training_ohlcv(ticker, period=_TRAINING_PERIOD)
     if df.empty:
         raise ValueError(f"株価データが取得できません: {ticker}")
 
-    predictor = get_predictor(model_type)
-    metrics = await asyncio.to_thread(predictor.train, df, {}, forecast_horizon=FORECAST_HORIZON_DAYS)
-    artifact_path = await asyncio.to_thread(predictor.save, version)
+    lane = _lane(model_type, ticker)
+    existing_version = await model_registry_db.get_champion(lane)
+    existing_row = await model_registry_db.get_model(existing_version) if existing_version is not None else None
+    existing_artifact_path = existing_row.get("artifact_path") if existing_row is not None else None
+
+    loop = asyncio.get_running_loop()
+    worker = functools.partial(
+        train_ticker_in_subprocess,
+        ticker=ticker,
+        model_type=model_type,
+        version=version,
+        df=df,
+        forecast_horizon=FORECAST_HORIZON_DAYS,
+        existing_artifact_path=str(existing_artifact_path) if existing_artifact_path else None,
+    )
+    result = await loop.run_in_executor(pool, worker)
 
     await model_registry_db.upsert_model(
         version=version,
         model_type=model_type,
         ticker=ticker,
         objective="regression",
-        artifact_path=artifact_path,
-        val_metrics=metrics,
+        artifact_path=result.artifact_path,
+        val_metrics=result.metrics,
         feature_list=[],
         trained_at=None,
     )
-    return metrics, df, data_source
+    return _TickerTrainOutcome(
+        worker_result=result, data_source=data_source, existing_version=existing_version, existing_row=existing_row
+    )
 
 
 def _rmse_from_val_metrics(row: dict[str, object]) -> float | None:
@@ -352,40 +422,21 @@ def _rmse_from_val_metrics(row: dict[str, object]) -> float | None:
     return float(rmse) if isinstance(rmse, int | float) and not isinstance(rmse, bool) and rmse >= 0 else None
 
 
-async def _reevaluate_existing_on_window(
-    model_type: str, existing_row: dict[str, object], new_metrics: dict[str, float | str | int | bool], df: object
-) -> float | None:
-    """既存 champion を新モデルと同じ eval 窓（eval_start〜eval_end）で再評価する.
-
-    日次バッチは実行日が1日ずれるだけで学習・検証ウィンドウ全体もずれるため、
-    「記録済みの既存RMSE」と「新モデルのRMSE」を単純比較すると、たまたま静かな検証窓を
-    引いた側が有利になる。既存 champion を新モデルの評価窓に合わせて再評価し、
-    フェアな比較にする。再評価できない場合は None を返し、呼び出し元は記録済み値へ
-    フォールバックする（安全側 — 再評価できないことは品質ゲートを無効化する理由にしない）。
-    """
-    eval_start = new_metrics.get("eval_start")
-    eval_end = new_metrics.get("eval_end")
-    if not isinstance(eval_start, str) or not isinstance(eval_end, str):
-        return None
-
-    artifact_path = existing_row.get("artifact_path")
-    if not artifact_path:
-        return None
-
-    try:
-        predictor = get_predictor(model_type)
-        await asyncio.to_thread(predictor.load, str(artifact_path))
-        rewindow_metrics = await asyncio.to_thread(predictor.evaluate_on, df, eval_start, eval_end)
-        return rewindow_metrics.get("rmse")
-    except Exception:
-        logger.debug("既存 champion の再評価に失敗しました。記録済みRMSEにフォールバックします。", exc_info=True)
-        return None
-
-
-async def _apply_quality_gate(
-    ticker: str, model_type: str, version: str, new_metrics: dict[str, float | str | int | bool], df: object
+async def _apply_quality_gate_from_worker_result(
+    ticker: str,
+    model_type: str,
+    version: str,
+    new_metrics: dict[str, float | str | int | bool],
+    *,
+    existing_version: str | None,
+    existing_row: dict[str, object] | None,
+    comparison_rmse: float | None,
 ) -> bool:
     """新モデルが既存 champion より悪化していないか検証し、悪化していなければ champion にする.
+
+    既存 champion の同一窓再評価（CPU バウンド）は `train_ticker_in_subprocess`
+    （子プロセス側、🆕）で完了済みのため、ここでは比較判定と DB 書き込みのみを行う
+    （旧 `_apply_quality_gate` の DB 相当部分。判定ロジック自体は変更していない）。
 
     - ナイーブ予測（変化率0）より悪いモデル（skill<=0）は既存 champion の有無に関わらず
       無条件で却下する（Market Lens のオフライン検証で active XGBoost の74%がナイーブ予測
@@ -393,7 +444,8 @@ async def _apply_quality_gate(
     - この銘柄・モデルタイプで champion が未設定（初めての学習）なら、比較のしようがないため
       無条件で champion にする。
     - champion が既にある場合、新モデルの RMSE が（同じ窓で再評価した）既存以下なら champion
-      を差し替える。
+      を差し替える。`comparison_rmse` が None（子プロセスでの再評価に失敗）の場合は記録済み
+      RMSE（`_rmse_from_val_metrics`）へフォールバックする。
 
     Returns
     -------
@@ -412,7 +464,6 @@ async def _apply_quality_gate(
         return False
 
     lane = _lane(model_type, ticker)
-    existing_version = await model_registry_db.get_champion(lane)
     if existing_version is None:
         await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
         return True
@@ -422,17 +473,14 @@ async def _apply_quality_gate(
         logger.info("日次学習バッチ[%s]: %s は新モデルのRMSEが取得できず却下されました。", model_type, ticker)
         return False
 
-    existing_row = await model_registry_db.get_model(existing_version)
     if existing_row is None:
         # 既存 champion のレジストリ行が見つからない（データ不整合）場合は安全側で採用する
         await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
         return True
 
-    comparison_rmse = await _reevaluate_existing_on_window(model_type, existing_row, new_metrics, df)
-    if comparison_rmse is None:
-        comparison_rmse = _rmse_from_val_metrics(existing_row)
+    resolved_comparison_rmse = comparison_rmse if comparison_rmse is not None else _rmse_from_val_metrics(existing_row)
 
-    if comparison_rmse is None or new_rmse <= comparison_rmse:
+    if resolved_comparison_rmse is None or new_rmse <= resolved_comparison_rmse:
         await model_registry_db.set_champion(lane, version, promoted_by="quality_gate")
         return True
 
@@ -442,7 +490,7 @@ async def _apply_quality_gate(
         model_type,
         ticker,
         new_rmse,
-        comparison_rmse,
+        resolved_comparison_rmse,
     )
     return False
 

@@ -78,7 +78,8 @@ export interface TrainingRunAck {
 
 // 実行中バッチのライブ進捗（🆕 P17）。バッチが実行中でない場合は null。
 export interface TrainingProgress {
-  current_ticker: string | null;
+  // 🔧 学習対象設定の並列数上限ぶん、同時に複数銘柄が running になりうる（🆕 並列学習）。
+  current_tickers: string[];
   processed: number;
   total: number;
   failed_this_run: number;

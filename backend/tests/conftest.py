@@ -69,6 +69,23 @@ def _isolated_per_ticker_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(dl_base, "_DEFAULT_MODEL_DIR", tmp_path / "models")
 
 
+@pytest.fixture(autouse=True)
+def _use_thread_pool_for_training_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🆕 日次学習バッチの並列化（`ProcessPoolExecutor`）をテストでは無効化する.
+
+    `ProcessPoolExecutor` は `spawn` で子プロセスを新しい Python インタプリタとして
+    起動するため、`_isolated_per_ticker_model_dir` 等の monkeypatch によるモデル保存先の
+    隔離は子プロセスへ一切引き継がれない（引き継がれると、テストが本物の `data/models/`
+    へ書き込んでしまう）。`_create_worker_pool` が `None` を返すと
+    `loop.run_in_executor(None, ...)` は同一プロセス内のデフォルトスレッドプールを使うため、
+    monkeypatch が正しく効いたまま「ウィンドウ単位の並列処理」というオーケストレーション
+    ロジック自体はテストできる（実プロセス分離そのものは対象外、手動検証に委ねる）。
+    """
+    from backend.services.learning import per_ticker_training_service
+
+    monkeypatch.setattr(per_ticker_training_service, "_create_worker_pool", lambda _max_workers: None)
+
+
 @pytest.fixture
 def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """このテスト関数専用の SQLite ファイルへ `settings.database_url` を差し替える."""
