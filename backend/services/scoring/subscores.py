@@ -16,6 +16,7 @@ from backend.services.scoring.technical_analysis import (
     calculate_bollinger_bands,
     calculate_macd,
     calculate_rsi,
+    detect_cross_events,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 # RSI/MACD/BB の方向が食い違う場合のみ追加減点し、「シグナルが対立している」ことを
 # スコアに反映させる（MACD 単体の重み ±12 の 8 割程度）。
 _CONFLICT_PENALTY = 10.0
+
+# チャート（`/api/stock/{symbol}/ohlc`）の GC/DC・MACDクロスのマーカーと同じ検出結果を
+# LLM の判断材料（`recommendation.technical_signals`）にも反映する際の「直近」とみなす
+# 営業日数の窓（🆕、ユーザー指示）。長すぎると鮮度の無い過去イベントまで拾ってしまう。
+_RECENT_CROSS_EVENT_LOOKBACK_DAYS = 10
 
 # ROE マイナス（収益性ゼロ以下）× PBR > 3 倍（資産価値の 3 倍超で購入）が同時成立する銘柄は
 # 「バリュートラップ」（割安ではなく割高な不採算銘柄）とみなし追加減点する。
@@ -64,6 +70,26 @@ def is_value_trap(roe: float | None, pbr: float | None) -> bool:
     return roe is not None and roe < 0 and pbr is not None and pbr > _VALUE_TRAP_PBR_THRESHOLD
 
 
+def _recent_cross_event(df: pd.DataFrame) -> dict[str, object] | None:
+    """直近 `_RECENT_CROSS_EVENT_LOOKBACK_DAYS` 営業日以内に発生した兆候イベント（あれば最新の1件）を返す.
+
+    UI のチャート（GC/DC・MACDクロスのマーカー、`detect_cross_events`）と同じ検出結果を、
+    人間だけでなく LLM の判断材料にも使えるようにする（🆕、ユーザー指示）。
+    """
+    events = detect_cross_events(df)
+    if not events:
+        return None
+    date_strs = [ts.isoformat()[:10] if hasattr(ts, "isoformat") else str(ts) for ts in df.index]
+    latest = events[-1]
+    try:
+        days_ago = len(date_strs) - 1 - date_strs.index(latest["date"])
+    except ValueError:
+        return None
+    if days_ago > _RECENT_CROSS_EVENT_LOOKBACK_DAYS:
+        return None
+    return {"kind": latest["kind"], "date": latest["date"], "days_ago": days_ago, "label": latest["label"]}
+
+
 def compute_technical_score(df: pd.DataFrame) -> tuple[float, dict[str, object]]:
     """テクニカル指標から 0〜100 のスコアを算出する."""
     score = 50.0
@@ -71,7 +97,13 @@ def compute_technical_score(df: pd.DataFrame) -> tuple[float, dict[str, object]]
     rsi_value: float | None = None
 
     if df.empty or len(df) < 30:
-        return score, {**signals, "rsi": None, "current_price": None, "signal_agreement": "neutral"}
+        return score, {
+            **signals,
+            "rsi": None,
+            "current_price": None,
+            "signal_agreement": "neutral",
+            "recent_cross_event": None,
+        }
 
     current_price = float(df["Close"].iloc[-1])
 
@@ -131,11 +163,18 @@ def compute_technical_score(df: pd.DataFrame) -> tuple[float, dict[str, object]]
     if agreement == "conflicting":
         score -= _CONFLICT_PENALTY
 
+    recent_cross: dict[str, object] | None = None
+    try:
+        recent_cross = _recent_cross_event(df)
+    except Exception as e:  # noqa: BLE001 — 検出失敗は「イベント無し」扱いにフォールバック
+        logger.debug("兆候イベント検出エラー: %s", e)
+
     return max(0.0, min(100.0, score)), {
         **signals,
         "rsi": rsi_value,
         "current_price": current_price,
         "signal_agreement": agreement,
+        "recent_cross_event": recent_cross,
     }
 
 

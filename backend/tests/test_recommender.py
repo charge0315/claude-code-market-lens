@@ -18,6 +18,16 @@ def _uptrend_df(n: int = 90) -> pd.DataFrame:
     return pd.DataFrame({"Open": close, "High": close + 1, "Low": close - 1, "Close": close, "Volume": 1_000_000})
 
 
+def _df_with_recent_golden_cross() -> pd.DataFrame:
+    """末尾付近（直近）でゴールデンクロスが発生する系列（下降→末尾で急上昇に転換）."""
+    down = list(np.linspace(200, 100, 60))
+    up = list(np.linspace(100, 160, 8))
+    closes = down + up[1:]
+    idx = pd.date_range("2026-01-01", periods=len(closes), freq="B")
+    close = pd.Series(closes, index=idx)
+    return pd.DataFrame({"Open": close, "High": close + 1, "Low": close - 1, "Close": close, "Volume": 1_000_000})
+
+
 def _patch_sources(
     monkeypatch: pytest.MonkeyPatch, *, df: pd.DataFrame, fundamental: dict[str, object], sentiment_total: int
 ) -> None:
@@ -41,6 +51,19 @@ def test_subscores_are_bounded_0_100() -> None:
 def test_value_trap_penalized() -> None:
     _, details = compute_fundamental_score({"roe": -0.05, "pbr": 4.0})
     assert details["value_trap"] is True
+
+
+def test_technical_signals_has_no_recent_cross_event_when_none_within_lookback() -> None:
+    _, details = compute_technical_score(_uptrend_df())
+    assert details["recent_cross_event"] is None
+
+
+def test_technical_signals_includes_recent_cross_event_within_lookback_window() -> None:
+    _, details = compute_technical_score(_df_with_recent_golden_cross())
+    recent = details["recent_cross_event"]
+    assert recent is not None
+    assert recent["kind"] == "golden_cross"
+    assert recent["days_ago"] <= 10
 
 
 def test_recommendation_includes_three_value_free_fields_and_contributions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,6 +108,24 @@ def test_sentiment_zero_articles_excluded_from_composite(monkeypatch: pytest.Mon
     out = rec.compute_recommendation("7203")
     assert cast("dict[str, float | None]", out["score_breakdown"])["sentiment"] is None
     assert "sentiment" not in cast("dict[str, object]", out["source_contributions"])
+
+
+def test_recent_cross_event_flows_into_technical_signals_and_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """チャート（`/api/stock/{symbol}/ohlc`）のGC/DCマーカーと同じ検出結果がLLMの判断材料
+    （`technical_signals`）と人間向け根拠（`reasoning`）の両方に反映されることを確認する（🆕）."""
+    _patch_sources(
+        monkeypatch,
+        df=_df_with_recent_golden_cross(),
+        fundamental={"per": 15.0},
+        sentiment_total=0,
+    )
+    out = rec.compute_recommendation("7203")
+
+    signals = cast("dict[str, object]", out["technical_signals"])
+    recent = cast("dict[str, object]", signals["recent_cross_event"])
+    assert recent["kind"] == "golden_cross"
+
+    assert any("ゴールデンクロス" in r for r in cast("list[str]", out["reasoning"]))
 
 
 def test_custom_thresholds_change_recommendation(monkeypatch: pytest.MonkeyPatch) -> None:

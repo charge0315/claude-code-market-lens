@@ -138,6 +138,10 @@ def _build_reasoning(
     elif tech_details.get("macd_signal") == "sell":
         reasoning.append("MACD デッドクロス — 下降トレンドのシグナル")
 
+    recent_cross = tech_details.get("recent_cross_event")
+    if isinstance(recent_cross, Mapping):
+        reasoning.append(f"{recent_cross.get('label')}（{recent_cross.get('days_ago')}営業日前、チャート兆候イベント）")
+
     per = as_float(fund_details.get("per"))
     if per is not None:
         if per < 15:
@@ -245,6 +249,10 @@ def compute_recommendation(
             "bb_signal": tech_details.get("bb_signal", "neutral"),
             "current_price": tech_details.get("current_price"),
             "signal_agreement": tech_details.get("signal_agreement", "neutral"),
+            # 🆕 チャート（`/api/stock/{symbol}/ohlc`）のGC/DC・MACDクロスのマーカーと同じ検出結果。
+            # `build_pick_prompt` がこの dict をそのまま JSON 化してLLMへ渡すため、ここに含めるだけで
+            # 「チャートの兆候」がLLMの判断材料になる（ユーザー指示、追加のプロンプト変更は不要）。
+            "recent_cross_event": tech_details.get("recent_cross_event"),
         },
         "fundamental_signals": fund_details,
         "sentiment_average": sentiment_data["average_score"],
