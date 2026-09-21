@@ -272,6 +272,27 @@ async def test_build_panel_empty_when_no_frames() -> None:
     assert panel.empty
 
 
+@pytest.mark.asyncio
+async def test_build_panel_skips_ticker_whose_loader_hangs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """1銘柄の価格取得がハング（yfinance/curl_cffi の timeout 引数が効かないケースの模倣）しても、
+    `_PRICE_FETCH_TIMEOUT_SECONDS` で打ち切られ、残りの銘柄は正常に処理される."""
+    monkeypatch.setattr(pfs, "_PRICE_FETCH_TIMEOUT_SECONDS", 0.2)
+
+    def hang_or_fake(code: str) -> pd.DataFrame | None:
+        if code == "6758":
+            import time
+
+            time.sleep(5)  # `future.result(timeout=...)` が先に諦めるべき値
+            return _fake_price_loader(code)
+        return _fake_price_loader(code)
+
+    panel = await build_panel(
+        _AS_OF, universe=_UNIVERSE, price_loader=hang_or_fake, forward_return_loader=_fake_forward_returns
+    )
+
+    assert set(panel["code"]) == {"7203", "6861", "9984"}
+
+
 # ---------------------------------------------------------------------------
 # PanelContext / build_panel_context / build_inference_row
 # ---------------------------------------------------------------------------

@@ -164,9 +164,17 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     # で再正規化する（フォールバック不要）。銘柄別アンサンブルの champion 行は同期関数
     # （`ensemble_predictor.predict_ensemble_sync`）から非同期 DB I/O を呼べないため、
     # 各銘柄をスコアリングするスレッドへ渡す前にここで事前取得する。
-    panel_ctx = await get_cached_panel_context(issued_at[:10])
+    # 🆕 `get_cached_panel_context` はユニバース全銘柄の yfinance 価格を逐次取得するため
+    # （数千銘柄 × 逐次 = 数分〜、`_load_price_with_timeout` の打ち切りがあっても総時間は
+    # 縮まらない）、pool champion が未登録の間はこの結果がどのみち `make_pool_ml_score_provider`
+    # 内部で捨てられる（`clf is None` 分岐）。champion 未登録時は完全にスキップして
+    # 手動実行（`/api/picks/run`）が無駄にユニバース全体をスキャンして応答不能になるのを防ぐ。
     pool_clf = await load_champion_pool_classifier()
-    pool_provider = make_pool_ml_score_provider(panel_ctx, pool_clf)
+    pool_provider = (
+        make_pool_ml_score_provider(await get_cached_panel_context(issued_at[:10]), pool_clf)
+        if pool_clf is not None
+        else null_ml_score
+    )
 
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []

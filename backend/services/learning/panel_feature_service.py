@@ -25,6 +25,7 @@ Market Lens `backend/services/panel_feature_service.py` から移植。変更点
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -48,6 +49,12 @@ logger = logging.getLogger(__name__)
 
 # build_feature_matrix の最小行数（内部で 50 を要求）＋ローリング窓の余裕。
 _MIN_HISTORY_ROWS = 80
+
+# 🆕 1銘柄ぶんの価格取得に許す上限秒数。yfinance/curl_cffi 側の timeout=30 引数は
+# 実機（Windows）で確認したところハング（curl_cffi の perform() が90秒超えても復帰しない）を
+# 確実には防げなかったため、アプリ側でも独立した打ち切りを持つ（`_load_price_with_timeout`）。
+# ユニバース全銘柄を逐次走査する構造上、1銘柄がここで詰まると `run_picks` 全体が応答不能になる。
+_PRICE_FETCH_TIMEOUT_SECONDS: Final = 20.0
 
 # --- 断面特徴量の既定対象列（build_panel が用意する列名） ---
 # 🆕 P29: PIT ファンダメンタル列（per_forecast/pbr/roe/dividend_yield_forecast）を追加。
@@ -231,6 +238,27 @@ def _default_price_loader(code: str) -> pd.DataFrame | None:
     return df if df is not None and not df.empty else None
 
 
+def _load_price_with_timeout(price_loader: PriceLoader, code: str) -> pd.DataFrame | None:
+    """`price_loader(code)` を独立スレッドで実行し、`_PRICE_FETCH_TIMEOUT_SECONDS` で打ち切る.
+
+    `future.result(timeout=...)` はスレッド自体を停止できないため、ハングした呼び出しは
+    バックグラウンドに残る（放置しても yfinance 呼び出し1回ぶん以上のリソースは食わない）。
+    使い捨てのシングルワーカー executor を都度生成することで、ある銘柄がハングしても
+    次の銘柄の取得がブロックされない（共有 executor だとワーカー枯渇で直列に詰まる）。
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(price_loader, code)
+        return future.result(timeout=_PRICE_FETCH_TIMEOUT_SECONDS)
+    except concurrent.futures.TimeoutError:
+        logger.warning(
+            "build_panel: %s の価格取得が%.0f秒でタイムアウト — スキップ", code, _PRICE_FETCH_TIMEOUT_SECONDS
+        )
+        return None
+    finally:
+        executor.shutdown(wait=False)
+
+
 async def _default_forward_return_loader(as_of: str) -> dict[str, float]:
     """既定の前方リターンローダー: J-Quants 全銘柄一括バーの as_of と +H 営業日の AdjC 比.
 
@@ -265,7 +293,7 @@ def _build_raw_universe_frame(
     """
     frames: list[pd.DataFrame] = []
     for info in tickers:
-        df = price_loader(info.code)
+        df = _load_price_with_timeout(price_loader, info.code)
         if df is None or len(df) < _MIN_HISTORY_ROWS:
             continue
         try:
