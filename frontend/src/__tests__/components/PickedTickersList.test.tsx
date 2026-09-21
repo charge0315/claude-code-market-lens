@@ -185,6 +185,15 @@ describe('PickedTickersList', () => {
     expect(screen.getByRole('link', { name: 'Gemini 9984（ソフトバンクグループ）' })).toBeInTheDocument();
   });
 
+  it('basePathを指定するとリンク遷移先が切り替わる（チャート画面からの再利用向け）', async () => {
+    mockFetchPicks.mockResolvedValue([pick({ symbol: '7203', company_name: 'トヨタ自動車' })]);
+
+    render(<PickedTickersList selectedSymbol={null} basePath="/chart" />);
+
+    const link = await screen.findByRole('link', { name: '公式 7203（トヨタ自動車）' });
+    expect(link).toHaveAttribute('href', '/chart?symbol=7203');
+  });
+
   it('取得失敗でエラーメッセージを出す', async () => {
     mockFetchPicks.mockRejectedValue(new Error('boom'));
 

@@ -13,6 +13,8 @@ import './stock-detail.css';
 // その銘柄のものに切り替える。同一銘柄が両エンジンでピックされていれば両方表示する。
 // 表示対象は「当日ピックされた銘柄」と「ポートフォリオ登録済み銘柄」のみに絞る
 // （過去分の全ピックを出すと一覧が肥大化し、当日の判断材料として使いづらいため）。
+// 🆕 `basePath` はリンク遷移先（既定 `/stock-detail`）。チャート画面（`/chart`）からも
+// 同じ一覧を「素早く見る銘柄」の候補として再利用するため、遷移先だけ差し替え可能にした。
 
 type Engine = 'official' | 'shadow' | 'portfolio';
 
@@ -33,7 +35,13 @@ function dedupeBySymbolKeepingLatest<T extends { symbol: string }>(picks: T[]): 
   return [...bySymbol.values()];
 }
 
-export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string | null }): ReactNode {
+export function PickedTickersList({
+  selectedSymbol,
+  basePath = '/stock-detail',
+}: {
+  selectedSymbol: string | null;
+  basePath?: string;
+}): ReactNode {
   const [entries, setEntries] = useState<TickerEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const officialLabel = useOfficialProviderLabel('stock_pick');
@@ -77,7 +85,7 @@ export function PickedTickersList({ selectedSymbol }: { selectedSymbol: string |
       {entries.map((e) => (
         <li key={`${e.engine}-${e.symbol}`}>
           <Link
-            href={`/stock-detail?symbol=${encodeURIComponent(e.symbol)}`}
+            href={`${basePath}?symbol=${encodeURIComponent(e.symbol)}`}
             className={e.symbol === selectedSymbol ? 'is-active' : undefined}
             aria-current={e.symbol === selectedSymbol ? 'true' : undefined}
           >

@@ -68,6 +68,15 @@ const NAV = [
     ),
   },
   {
+    href: '/chart',
+    label: 'チャート',
+    icon: (
+      <svg {...ICON_PROPS}>
+        <path d="M4 19V10M10 19V5M16 19v-7M22 19H2" />
+      </svg>
+    ),
+  },
+  {
     href: '/portfolio',
     label: 'ポートフォリオ',
     icon: (

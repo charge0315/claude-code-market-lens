@@ -1,0 +1,55 @@
+/* ============================================
+   チャート画面（🆕）— ChartSymbolSearch / ChartPanel / チャート一覧
+   ============================================ */
+
+.chart-page-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: var(--spacing-2xl);
+  align-items: start;
+}
+
+.chart-page-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+@media (max-width: 900px) {
+  .chart-page-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-panel {
+  min-width: 0;
+}
+
+.chart-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+.chart-panel-symbol {
+  font-family: var(--font-display);
+  font-size: var(--font-size-2xl);
+}
+
+.chart-panel-quote {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-panel-price {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.chart-panel-change {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
