@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backend.services.vault.brand_notes_service import get_brand_note, get_raw_note_content
 from backend.tests.conftest import VaultDirs
 
@@ -53,6 +55,56 @@ async def test_body_text_never_appears_in_prompt_dict(vault_dirs: VaultDirs) -> 
     assert "PWNED" not in serialized
     assert "Ignore all previous instructions" not in serialized
     assert "特色" not in serialized
+
+
+_NOTE_7203_WITH_EDINET = """---
+code: "7203"
+name: "トヨタ自動車"
+edinet_code: "E02144"
+edinet_employee_count: 380000
+edinet_dividend_actual_per_share: 14.0
+edinet_treasury_stock_purchase_oku: 0.734
+edinet_rd_expense_oku: 4.64645
+edinet_major_shareholder_top_ratio: 23.45
+edinet_latest_filing_date: "2026-06-26"
+edinet_latest_filing_type: "有価証券報告書"
+---
+
+# 7203 トヨタ自動車
+
+## 💰 配当・設備投資・研究開発（EDINET有報より）
+- **設備投資等の概要**: この本文は LLM プロンプトへ注入してはならない。
+"""
+
+
+async def test_parses_edinet_frontmatter_fields(vault_dirs: VaultDirs) -> None:
+    """🆕 EDINET 由来の frontmatter フィールド（数値・enum のみ）を読み込めること."""
+    (vault_dirs.tickers / "7203_トヨタ自動車.md").write_text(_NOTE_7203_WITH_EDINET, encoding="utf-8")
+
+    note = await get_brand_note("7203")
+    assert note is not None
+    assert note.edinet_code == "E02144"
+    assert note.edinet_employee_count == 380000
+    assert note.edinet_dividend_actual_per_share == 14.0
+    assert note.edinet_treasury_stock_purchase_oku == pytest.approx(0.734)
+    assert note.edinet_rd_expense_oku == pytest.approx(4.64645)
+    assert note.edinet_major_shareholder_top_ratio == 23.45
+    assert note.edinet_latest_filing_date == "2026-06-26"
+    assert note.edinet_latest_filing_type == "有価証券報告書"
+
+    prompt_dict = note.to_prompt_dict()
+    assert prompt_dict["edinet_employee_count"] == 380000
+    assert prompt_dict["edinet_latest_filing_type"] == "有価証券報告書"
+
+
+async def test_edinet_fields_absent_when_note_lacks_them(vault_dirs: VaultDirs) -> None:
+    (vault_dirs.tickers / "7203_トヨタ自動車.md").write_text(_NOTE_7203, encoding="utf-8")
+
+    note = await get_brand_note("7203")
+    assert note is not None
+    assert note.edinet_code is None
+    assert note.edinet_employee_count is None
+    assert "edinet_code" not in note.to_prompt_dict()
 
 
 async def test_missing_note_returns_none(vault_dirs: VaultDirs) -> None:

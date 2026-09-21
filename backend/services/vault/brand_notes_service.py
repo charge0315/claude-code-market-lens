@@ -6,6 +6,13 @@ Market Lens `backend/services/brand_notes_service.py` から移植。変更点:
   （未指定なら ``<VAULT_ROOT>/Tickers`` を導出）に変更。
 - 四季報スタブ期間中は、この frontmatter の財務指標が fundamental 特徴量の主データ源になる
   （`plans/00_調査サマリ` §2.3、`SHIKIHO_ENABLED=false`）。
+- 🆕 EDINET 由来フィールド（`edinet_code` / `edinet_employee_count` 等）を追加。
+  `obsidian-knowledge-base-creator` 側が EDINET 有価証券報告書（XBRL）から抽出した
+  数値のみを frontmatter へ昇格させたもの（従業員数・実績配当・自己株式取得額・
+  研究開発費・筆頭株主比率・最新提出書類日付/種別）。文章由来の記述情報
+  （設備投資概要・研究開発活動・ガバナンス概要・配当政策等のテキストブロック、
+  大株主・役員の氏名）はノート本文にのみレンダリングされ frontmatter には出てこない
+  ため、本サービスの対象外（プロンプトインジェクション対策として意図的に除外）。
 
 ノート本文にはスクレイピング由来のニュース見出し・四季報記事・投資メモなど外部由来の
 生テキストが含まれるが、本サービスは **YAML フロントマターの構造化フィールドだけ** を
@@ -75,6 +82,14 @@ class BrandNote:
     eps_forecast: float | None
     dividend_forecast: float | None
     shares_outstanding: int | None
+    edinet_code: str | None
+    edinet_employee_count: int | None
+    edinet_dividend_actual_per_share: float | None
+    edinet_treasury_stock_purchase_oku: float | None
+    edinet_rd_expense_oku: float | None
+    edinet_major_shareholder_top_ratio: float | None
+    edinet_latest_filing_date: str | None
+    edinet_latest_filing_type: str | None
 
     def to_prompt_dict(self) -> dict[str, object]:
         """``None`` を除いた構造化 dict を返す（LLM プロンプト・tool_result 埋め込み用）."""
@@ -104,6 +119,14 @@ class BrandNote:
             "eps_forecast": self.eps_forecast,
             "dividend_forecast": self.dividend_forecast,
             "shares_outstanding": self.shares_outstanding,
+            "edinet_code": self.edinet_code,
+            "edinet_employee_count": self.edinet_employee_count,
+            "edinet_dividend_actual_per_share": self.edinet_dividend_actual_per_share,
+            "edinet_treasury_stock_purchase_oku": self.edinet_treasury_stock_purchase_oku,
+            "edinet_rd_expense_oku": self.edinet_rd_expense_oku,
+            "edinet_major_shareholder_top_ratio": self.edinet_major_shareholder_top_ratio,
+            "edinet_latest_filing_date": self.edinet_latest_filing_date,
+            "edinet_latest_filing_type": self.edinet_latest_filing_type,
         }
         return {key: value for key, value in raw.items() if value is not None}
 
@@ -232,6 +255,14 @@ def _build_note(code: str, frontmatter: dict[str, object]) -> BrandNote:
         eps_forecast=_coerce_float(frontmatter.get("eps_forecast")),
         dividend_forecast=_coerce_float(frontmatter.get("dividend_forecast")),
         shares_outstanding=_coerce_int(frontmatter.get("shares_outstanding")),
+        edinet_code=_coerce_str(frontmatter.get("edinet_code")),
+        edinet_employee_count=_coerce_int(frontmatter.get("edinet_employee_count")),
+        edinet_dividend_actual_per_share=_coerce_float(frontmatter.get("edinet_dividend_actual_per_share")),
+        edinet_treasury_stock_purchase_oku=_coerce_float(frontmatter.get("edinet_treasury_stock_purchase_oku")),
+        edinet_rd_expense_oku=_coerce_float(frontmatter.get("edinet_rd_expense_oku")),
+        edinet_major_shareholder_top_ratio=_coerce_float(frontmatter.get("edinet_major_shareholder_top_ratio")),
+        edinet_latest_filing_date=_coerce_str(frontmatter.get("edinet_latest_filing_date")),
+        edinet_latest_filing_type=_coerce_str(frontmatter.get("edinet_latest_filing_type")),
     )
 
 

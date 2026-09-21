@@ -605,6 +605,14 @@ def _brand_note(code: str, **overrides: object) -> BrandNote:
         "eps_forecast": None,
         "dividend_forecast": None,
         "shares_outstanding": None,
+        "edinet_code": None,
+        "edinet_employee_count": None,
+        "edinet_dividend_actual_per_share": None,
+        "edinet_treasury_stock_purchase_oku": None,
+        "edinet_rd_expense_oku": None,
+        "edinet_major_shareholder_top_ratio": None,
+        "edinet_latest_filing_date": None,
+        "edinet_latest_filing_type": None,
     }
     base.update(overrides)
     return BrandNote(**base)  # type: ignore[arg-type]

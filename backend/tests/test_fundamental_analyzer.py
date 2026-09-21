@@ -53,6 +53,22 @@ async def test_vault_fallback_fills_missing_metrics(monkeypatch: pytest.MonkeyPa
     assert "pbr" in str(out["vault_filled"])
 
 
+async def test_vault_fallback_fills_employees_from_edinet(
+    monkeypatch: pytest.MonkeyPatch, vault_dirs: VaultDirs
+) -> None:
+    """🆕 yfinance の従業員数欠損時、EDINET 有報由来の edinet_employee_count で補完する."""
+    _patch_yf(monkeypatch, {"trailingPE": 20.0})
+    (vault_dirs.tickers / "7203_トヨタ自動車.md").write_text(
+        '---\ncode: "7203"\nname: "トヨタ自動車"\nedinet_employee_count: 380000\n---\n\n# 本文は無視\n',
+        encoding="utf-8",
+    )
+    brand_notes_service.clear_cache()
+
+    out = await fa.get_fundamental_with_vault_fallback("7203")
+    assert out["employees"] == 380000
+    assert "employees" in str(out["vault_filled"])
+
+
 async def test_vault_fallback_noop_when_note_missing(monkeypatch: pytest.MonkeyPatch, vault_dirs: VaultDirs) -> None:
     _patch_yf(monkeypatch, {"trailingPE": 20.0})
     brand_notes_service.clear_cache()

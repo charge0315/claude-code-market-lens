@@ -6,6 +6,12 @@ Market Lens `backend/services/fundamental_analyzer.py` から移植。変更点�
   Vault `Tickers/*.md` の frontmatter 財務指標 + J-Quants になる（`plans/00` §2.3）。
   `get_fundamental_with_vault_fallback` で yfinance が欠損した指標を Vault frontmatter の
   構造化フィールドで補完する（本文の生テキストは注入しない）。
+- 🆕 `employees`（yfinance `fullTimeEmployees`）の欠損時、EDINET 有価証券報告書由来の
+  `note.edinet_employee_count`（`brand_notes_service` が frontmatter から抽出済み）で
+  補完する。PER/PBR 等の会計指標そのものへの EDINET 由来数値（実績配当・自己株式取得額・
+  研究開発費等）の反映は、定量スコア式（`recommender.py` の `ロジックは変更なし`）ではなく
+  `brand_frontmatter`（`BrandNote.to_prompt_dict()`）経由で LLM 深掘りプロンプト・
+  `feature_snapshot` へ渡す（`orchestrator.py` の `_pit_fundamental_snapshot`）。
 """
 
 from __future__ import annotations
@@ -134,6 +140,9 @@ def _merge_from_vault(
     if merged.get("sector") is None and note.sector33 is not None:
         merged["sector"] = note.sector33
         filled.append("sector")
+    if merged.get("employees") is None and note.edinet_employee_count is not None:
+        merged["employees"] = note.edinet_employee_count
+        filled.append("employees")
 
     if filled:
         merged["source"] = "yfinance+vault"
