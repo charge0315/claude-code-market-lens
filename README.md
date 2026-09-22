@@ -77,6 +77,9 @@
 | 非同期 | Celery + Redis（DB 番号 4 / 5） | — |
 
 ```
+scripts/
+  export_openapi.py  OpenAPI スキーマ再エクスポート
+  generate_cover.py  note 見出し画像（00_cover.png）生成
 backend/
   main.py            FastAPI アプリ（/health, /api/health）
   config.py          env 一元（起動時 fail-fast）
@@ -85,13 +88,18 @@ backend/
   routers/           HTTP / WS エンドポイント
   services/          ドメインロジック
 frontend/
-  src/app/           dashboard / stock-detail / portfolio / model-lab / notifications
-  src/components/     ui / layout / pipeline / dashboard / portfolio / notify / model-lab / stock-detail
+  src/app/           dashboard / stock-detail / chart / portfolio / model-lab / notifications / settings
+  src/components/    ui / layout / pipeline / dashboard / portfolio / notify / model-lab / stock-detail / chart
   src/lib/           API クライアント / SSE・WS クライアント / push（Web Push）
-  src/middleware.ts  nonce ベース CSP
+  src/proxy.ts       nonce ベース CSP
   e2e/               Playwright E2E テスト
 plans/               PRD / アーキテクチャ / システム設計 / タスクリスト / 決定ログ
-docs/                as-built アーキテクチャ概観・運用 Runbook・OpenAPI
+docs/
+  note/              note 投稿記事原本（alpha-forge-note-01.html）および見出し・解説図（images/）
+  screenshots/       README 掲載用スクリーンショット
+  architecture.md    as-built アーキテクチャ概観
+  operations.md      運用 Runbook
+  openapi.json       OpenAPI スキーマ
 ```
 
 ## セットアップ（Windows / PowerShell）
@@ -155,3 +163,11 @@ npx playwright test   # backend を先に起動しておくこと
 AI 思考の可視化 / ポートフォリオ承認キュー / 通知 / モデルラボ）。詳細な as-built
 アーキテクチャは [`docs/architecture.md`](docs/architecture.md)、運用は
 [`docs/operations.md`](docs/operations.md) を参照。
+
+## ドキュメント・紹介記事
+
+- **アーキテクチャ・運用**: 詳細な as-built アーキテクチャは [`docs/architecture.md`](docs/architecture.md)、運用手順・自走スケジュールは [`docs/operations.md`](docs/operations.md) を参照。
+- **note 紹介記事**: [`docs/note/alpha-forge-note-01.html`](docs/note/alpha-forge-note-01.html)（AI ピックの手法・4分析・継続学習ループを解説する note 向け単一 HTML 記事）。
+  - 図版・キャプチャ原本: [`docs/note/images/`](docs/note/images/)
+  - 見出し画像（[`00_cover.png`](docs/note/images/00_cover.png)）は `python scripts/generate_cover.py` により現行 UI（Organic デザインシステム）に合わせて自動生成可能。
+
