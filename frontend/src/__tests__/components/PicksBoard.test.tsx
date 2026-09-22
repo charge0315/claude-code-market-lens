@@ -2,9 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { PicksBoard } from '@/components/dashboard/PicksBoard';
-import { fetchPickDetail, fetchPicks, runPicks } from '@/lib/api/picks';
+import { fetchPickDetail, fetchPicks, fetchPool, runPicks } from '@/lib/api/picks';
 import { fetchOhlc, fetchStockNote } from '@/lib/api/stock';
-import type { PickDetail, PickSummary } from '@/lib/api/picks';
+import type { PickDetail, PickSummary, PoolSummary } from '@/lib/api/picks';
 
 jest.mock('@/lib/api/picks');
 jest.mock('@/lib/api/stock');
@@ -14,6 +14,32 @@ const mockRunPicks = runPicks as jest.MockedFunction<typeof runPicks>;
 const mockFetchPickDetail = fetchPickDetail as jest.MockedFunction<typeof fetchPickDetail>;
 const mockFetchStockNote = fetchStockNote as jest.MockedFunction<typeof fetchStockNote>;
 const mockFetchOhlc = fetchOhlc as jest.MockedFunction<typeof fetchOhlc>;
+const mockFetchPool = fetchPool as jest.MockedFunction<typeof fetchPool>;
+
+const POOL_SUMMARY: PoolSummary = {
+  horizon_type: 'mid_term',
+  date: '2026-06-01',
+  batch_run_id: 'run-1',
+  universe_ranking_pool_size: 50,
+  pool_limit: 30,
+  shortlist_limit: 12,
+  max_picks: 10,
+  total_candidates: 1,
+  shortlisted_count: 1,
+  candidates: [
+    {
+      symbol: '7203',
+      company_name: 'トヨタ自動車',
+      composite_score: 72.5,
+      direction: 'bullish',
+      concordance: 0.8,
+      score_breakdown: { technical: 70, ml_prediction: null, fundamental: 55, sentiment: 60 },
+      trend_score: 65,
+      ml_prediction_rate: null,
+      is_shortlisted: true,
+    },
+  ],
+};
 
 const PICK_DETAIL: PickDetail = {
   pick_id: 'pick-1',
@@ -288,6 +314,20 @@ describe('PicksBoard', () => {
     expect(await screen.findByText('Gemini（gemini-2.5-pro）')).toBeInTheDocument();
     expect(screen.getByText('Gemini 側の根拠')).toBeInTheDocument();
     expect(screen.getByText('需給悪化')).toBeInTheDocument();
+  });
+
+  it('🆕 P35: 「候補プールを見る」ボタンで候補プール一覧をポップアップ表示する', async () => {
+    mockFetchPicks.mockResolvedValue([PICK]);
+    mockFetchPool.mockResolvedValue(POOL_SUMMARY);
+    const user = userEvent.setup();
+
+    render(<PicksBoard />);
+    await user.click(await screen.findByRole('button', { name: '候補プールを見る' }));
+
+    expect(mockFetchPool).toHaveBeenCalledWith('mid_term', expect.any(String));
+    expect(await screen.findByText('候補プール抽出の経緯')).toBeInTheDocument();
+    expect(screen.getByText('候補プール（上限30）')).toBeInTheDocument();
+    expect(screen.getByText('ショートリスト進出')).toBeInTheDocument();
   });
 
   it('shadow_predictions が空なら他 LLM セクションを表示しない', async () => {

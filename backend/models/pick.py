@@ -206,3 +206,52 @@ class PickRunResult(BaseModel):
     picks: list[PickSummary]
     rejected: list[RejectedPick]
     message: str | None = None
+
+
+class PoolCandidate(BaseModel):
+    """候補プール1銘柄ぶんのスコアリング結果（🆕 P35、`pick_pool_snapshots` の表示用射影）.
+
+    `is_shortlisted=False` の銘柄は最終ピックへ進まなかった候補（LLM深掘り前の定量段階で
+    合成スコアが低く足切りされた銘柄）。`pick_pool_snapshots` は候補プール全銘柄を記録する
+    唯一の永続化経路のため、これが「なぜこの銘柄が選ばれたか/選ばれなかったか」を遡って
+    確認できる最も詳細なデータ。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    company_name: str | None = None
+    composite_score: float | None
+    direction: str | None
+    concordance: float | None
+    # technical/ml_prediction/fundamental/sentiment の4キー（`recommender.compute_recommendation`）。
+    score_breakdown: dict[str, float | None]
+    trend_score: float | None
+    ml_prediction_rate: float | None
+    is_shortlisted: bool
+
+
+class PoolSummary(BaseModel):
+    """候補プール抽出の経緯（🆕 P35、`GET /api/picks/pool`）.
+
+    東証全銘柄（約4400銘柄）→ 値上がり/値下がり/出来高 各TOP50 → 重複除去して候補プール
+    （`pool_limit`）→ 合成スコア降順でショートリスト（`shortlist_limit`）→ LLM深堀り・
+    検証ゲートを経て最終ピック、という抽出の流れのうち、TOP50 と候補プールは同じ
+    `_candidate_pool` 呼び出し内で単純ランキング抽出されるだけで独立した閾値フィルタは
+    存在しない（`services/picks/pipeline.py` docstring 参照）。TOP50 自体はその日のライブ値
+    のみで過去日再現ができないため（`ranking_service` は当日分の24hキャッシュのみ保持）、
+    ここでは候補プール以降（スコアリング済み・永続化済み）の段階のみを返す。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    horizon_type: HorizonType
+    date: str
+    batch_run_id: str | None
+    universe_ranking_pool_size: int  # 値上がり/値下がり/出来高 各TOP N（ranking_service.RANKING_POOL_SIZE）
+    pool_limit: int  # 候補プールの上限件数
+    shortlist_limit: int  # ショートリスト（LLM深堀り対象）の上限件数
+    max_picks: int  # 最終ピックの上限件数
+    total_candidates: int  # 実際に候補プールへ入りスコアリングされた件数
+    shortlisted_count: int  # うちショートリストへ進んだ件数
+    candidates: list[PoolCandidate]

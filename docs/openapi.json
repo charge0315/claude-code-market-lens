@@ -294,6 +294,71 @@
         }
       }
     },
+    "/api/picks/pool": {
+      "get": {
+        "tags": [
+          "picks"
+        ],
+        "summary": "候補プール抽出の経緯（🆕 P35）",
+        "description": "候補プール全銘柄（ショートリスト絞り込み前）のスコアリング結果を合成スコア降順で返す.\n\n`pick_pool_snapshots`（`services/db/pick_pool_snapshot_db.py`）が候補プールを記録する\n唯一の永続化経路。`is_shortlisted` で「LLM深堀りへ進んだか」が分かる。",
+        "operationId": "get_pool_api_picks_pool_get",
+        "parameters": [
+          {
+            "name": "horizon_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "mid_term",
+                "short_term"
+              ],
+              "type": "string",
+              "title": "Horizon Type"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD（省略時は本日）",
+              "title": "Date"
+            },
+            "description": "YYYY-MM-DD（省略時は本日）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PoolSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/picks/run": {
       "post": {
         "tags": [
@@ -4061,6 +4126,50 @@
         ],
         "title": "ApiResponse[PitCoverageStatus]"
       },
+      "ApiResponse_PoolSummary_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoolSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[PoolSummary]"
+      },
       "ApiResponse_PortfolioRiskReport_": {
         "properties": {
           "success": {
@@ -6724,6 +6833,184 @@
         ],
         "title": "PitGroupCoverage",
         "description": "PIT（point-in-time）特徴量 1 グループぶんの収集進捗（🆕 P29）.\n\n`collected_days` は `pit_fundamental_snapshots` / `pit_sentiment_snapshots` に\nスナップショットが存在するユニーク営業日数（`services/registry/pit_coverage_service.py`）。\n`ready` は学習パネルへの投入可否（`PIT_MIN_COVERAGE_DAYS` を満たすか）の目安であり、\n実際のゲート判定（`panel_feature_service._apply_coverage_gate`）は被覆率\n（`PIT_MIN_COVERAGE_RATIO`）も見るため、こちらは「あと何営業日で条件を満たすか」の\n分かりやすい進捗表示専用（かんたん/詳細タブ共通）。"
+      },
+      "PoolCandidate": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "composite_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composite Score"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "concordance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concordance"
+          },
+          "score_breakdown": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Score Breakdown"
+          },
+          "trend_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Score"
+          },
+          "ml_prediction_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Prediction Rate"
+          },
+          "is_shortlisted": {
+            "type": "boolean",
+            "title": "Is Shortlisted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "composite_score",
+          "direction",
+          "concordance",
+          "score_breakdown",
+          "trend_score",
+          "ml_prediction_rate",
+          "is_shortlisted"
+        ],
+        "title": "PoolCandidate",
+        "description": "候補プール1銘柄ぶんのスコアリング結果（🆕 P35、`pick_pool_snapshots` の表示用射影）.\n\n`is_shortlisted=False` の銘柄は最終ピックへ進まなかった候補（LLM深掘り前の定量段階で\n合成スコアが低く足切りされた銘柄）。`pick_pool_snapshots` は候補プール全銘柄を記録する\n唯一の永続化経路のため、これが「なぜこの銘柄が選ばれたか/選ばれなかったか」を遡って\n確認できる最も詳細なデータ。"
+      },
+      "PoolSummary": {
+        "properties": {
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "batch_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Run Id"
+          },
+          "universe_ranking_pool_size": {
+            "type": "integer",
+            "title": "Universe Ranking Pool Size"
+          },
+          "pool_limit": {
+            "type": "integer",
+            "title": "Pool Limit"
+          },
+          "shortlist_limit": {
+            "type": "integer",
+            "title": "Shortlist Limit"
+          },
+          "max_picks": {
+            "type": "integer",
+            "title": "Max Picks"
+          },
+          "total_candidates": {
+            "type": "integer",
+            "title": "Total Candidates"
+          },
+          "shortlisted_count": {
+            "type": "integer",
+            "title": "Shortlisted Count"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PoolCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon_type",
+          "date",
+          "batch_run_id",
+          "universe_ranking_pool_size",
+          "pool_limit",
+          "shortlist_limit",
+          "max_picks",
+          "total_candidates",
+          "shortlisted_count",
+          "candidates"
+        ],
+        "title": "PoolSummary",
+        "description": "候補プール抽出の経緯（🆕 P35、`GET /api/picks/pool`）.\n\n東証全銘柄（約4400銘柄）→ 値上がり/値下がり/出来高 各TOP50 → 重複除去して候補プール\n（`pool_limit`）→ 合成スコア降順でショートリスト（`shortlist_limit`）→ LLM深堀り・\n検証ゲートを経て最終ピック、という抽出の流れのうち、TOP50 と候補プールは同じ\n`_candidate_pool` 呼び出し内で単純ランキング抽出されるだけで独立した閾値フィルタは\n存在しない（`services/picks/pipeline.py` docstring 参照）。TOP50 自体はその日のライブ値\nのみで過去日再現ができないため（`ranking_service` は当日分の24hキャッシュのみ保持）、\nここでは候補プール以降（スコアリング済み・永続化済み）の段階のみを返す。"
       },
       "PortfolioHolding": {
         "properties": {

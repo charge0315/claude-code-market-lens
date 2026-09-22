@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 _MAX_LOOKBACK_DAYS = 7
 
 # キャッシュは上限件数で保持し、limit スライスはリクエスト時に行う。
-_POOL_SIZE = 50
+RANKING_POOL_SIZE = 50
 
 _RANKINGS_CACHE_TTL_SEC = 24 * 60 * 60
 _YEARLY_CACHE_TTL_SEC = 24 * 60 * 60
@@ -78,7 +78,7 @@ async def get_rankings(limit: int) -> RankingsResponse:
         if cached and now - cached[0] < _RANKINGS_CACHE_TTL_SEC:
             full = cached[1]
         else:
-            full, names_resolved = await _compute_rankings(_POOL_SIZE)
+            full, names_resolved = await _compute_rankings(RANKING_POOL_SIZE)
             if names_resolved:
                 _rankings_cache = (now, full)
     return _slice_rankings(full, limit)
@@ -94,7 +94,7 @@ async def get_yearly_performance(limit: int) -> YearlyPerformanceResponse:
         if cached and now - cached[0] < _YEARLY_CACHE_TTL_SEC:
             full = cached[1]
         else:
-            full, names_resolved = await _compute_yearly_performance(_POOL_SIZE)
+            full, names_resolved = await _compute_yearly_performance(RANKING_POOL_SIZE)
             if names_resolved:
                 _yearly_cache = (now, full)
     return _slice_yearly(full, limit)

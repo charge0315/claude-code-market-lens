@@ -11,7 +11,9 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.models.pick import LedgerEntry, PickRunResult, SubScores
 from backend.routers import picks as picks_router_module
+from backend.services.db.pick_pool_snapshot_db import insert_pool_snapshots
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
+from backend.services.jst_time import today_jst
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks import shadow_picks as sp
 
@@ -272,3 +274,93 @@ async def test_run_endpoint_invokes_pipeline(client: AsyncClient, monkeypatch: p
 async def test_run_endpoint_rejects_bad_horizon(client: AsyncClient) -> None:
     res = await client.post("/api/picks/run", json={"horizon_type": "weekly"})
     assert res.status_code == 422
+
+
+def _pool_row(symbol: str, *, is_shortlisted: bool, composite_score: float, issued_at: str) -> dict[str, object]:
+    return {
+        "batch_run_id": "run-pool-1",
+        "horizon_type": "mid_term",
+        "issued_at": issued_at,
+        "symbol": symbol,
+        "composite_score": composite_score,
+        "direction": "bullish",
+        "concordance": 0.75,
+        "score_breakdown": {"technical": 60.0, "ml_prediction": None, "fundamental": 55.0, "sentiment": 50.0},
+        "trend_score": 58.0,
+        "ml_prediction_rate": 0.61,
+        "is_shortlisted": is_shortlisted,
+    }
+
+
+async def test_get_pool_returns_candidates_ordered_by_composite_score_desc(client: AsyncClient) -> None:
+    await insert_pool_snapshots(
+        [
+            _pool_row("6758", is_shortlisted=False, composite_score=40.0, issued_at="2026-09-18T07:30:00+09:00"),
+            _pool_row("7203", is_shortlisted=True, composite_score=80.0, issued_at="2026-09-18T07:30:00+09:00"),
+        ]
+    )
+
+    res = await client.get("/api/picks/pool?horizon_type=mid_term&date=2026-09-18")
+
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["horizon_type"] == "mid_term"
+    assert data["date"] == "2026-09-18"
+    assert data["batch_run_id"] == "run-pool-1"
+    assert data["total_candidates"] == 2
+    assert data["shortlisted_count"] == 1
+    assert [c["symbol"] for c in data["candidates"]] == ["7203", "6758"]
+    top = data["candidates"][0]
+    assert top["is_shortlisted"] is True
+    assert top["score_breakdown"] == {"technical": 60.0, "ml_prediction": None, "fundamental": 55.0, "sentiment": 50.0}
+    # プール設定値（`pipeline.POOL_CONFIG`）が併せて返り、抽出の経緯を説明できる。
+    assert data["pool_limit"] == 30
+    assert data["shortlist_limit"] == 12
+    assert data["max_picks"] == 10
+    assert data["universe_ranking_pool_size"] == 50
+
+
+async def test_get_pool_defaults_to_today_when_date_omitted(client: AsyncClient) -> None:
+    await insert_pool_snapshots(
+        [_pool_row("7203", is_shortlisted=True, composite_score=80.0, issued_at=f"{today_jst()}T07:30:00+09:00")]
+    )
+
+    res = await client.get("/api/picks/pool?horizon_type=mid_term")
+
+    data = res.json()["data"]
+    assert data["date"] == today_jst()
+    assert data["total_candidates"] == 1
+
+
+async def test_get_pool_returns_empty_when_no_snapshots(client: AsyncClient) -> None:
+    res = await client.get("/api/picks/pool?horizon_type=short_term&date=2026-09-18")
+
+    data = res.json()["data"]
+    assert data["candidates"] == []
+    assert data["total_candidates"] == 0
+    assert data["shortlisted_count"] == 0
+    assert data["batch_run_id"] is None
+
+
+async def test_get_pool_rejects_bad_horizon(client: AsyncClient) -> None:
+    res = await client.get("/api/picks/pool?horizon_type=weekly")
+    assert res.status_code == 422
+
+
+async def test_get_pool_keeps_only_the_latest_batch_run_when_run_twice_same_day(client: AsyncClient) -> None:
+    """同日に手動再実行（`POST /api/picks/run`）が重なると `pick_pool_snapshots` は append-only
+    のため2回分が蓄積されるが、`/pool` は最新の batch_run_id のみを返す（同一銘柄の重複表示防止）."""
+    first = _pool_row("7203", is_shortlisted=True, composite_score=60.0, issued_at="2026-09-18T07:30:00+09:00")
+    first["batch_run_id"] = "run-old"
+    await insert_pool_snapshots([first])
+
+    second = _pool_row("7203", is_shortlisted=True, composite_score=75.0, issued_at="2026-09-18T09:00:00+09:00")
+    second["batch_run_id"] = "run-new"
+    await insert_pool_snapshots([second])
+
+    res = await client.get("/api/picks/pool?horizon_type=mid_term&date=2026-09-18")
+
+    data = res.json()["data"]
+    assert data["batch_run_id"] == "run-new"
+    assert data["total_candidates"] == 1
+    assert data["candidates"][0]["composite_score"] == 75.0

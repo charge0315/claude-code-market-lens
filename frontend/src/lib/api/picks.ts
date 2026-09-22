@@ -153,3 +153,36 @@ export function fetchShadowPicks(
   if (params?.limit) q.set('limit', String(params.limit));
   return api.get<ShadowPickSummary[]>(`/picks/shadow?${q.toString()}`);
 }
+
+// 🆕 P35: 候補プール抽出の経緯（東証全銘柄 → ランキング上位 → 候補プール → ショートリスト →
+// 最終ピック、のうち永続化されている候補プール以降の段階）。
+export interface PoolCandidate {
+  symbol: string;
+  company_name: string | null;
+  composite_score: number | null;
+  direction: string | null;
+  concordance: number | null;
+  score_breakdown: Record<string, number | null>;
+  trend_score: number | null;
+  ml_prediction_rate: number | null;
+  is_shortlisted: boolean;
+}
+
+export interface PoolSummary {
+  horizon_type: HorizonType;
+  date: string;
+  batch_run_id: string | null;
+  universe_ranking_pool_size: number;
+  pool_limit: number;
+  shortlist_limit: number;
+  max_picks: number;
+  total_candidates: number;
+  shortlisted_count: number;
+  candidates: PoolCandidate[];
+}
+
+export function fetchPool(horizonType: HorizonType, date?: string): Promise<PoolSummary> {
+  const q = new URLSearchParams({ horizon_type: horizonType });
+  if (date) q.set('date', date);
+  return api.get<PoolSummary>(`/picks/pool?${q.toString()}`);
+}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Modal } from '@/components/ui/Modal';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { PickDetailPanel } from '@/components/dashboard/PickDetailPanel';
+import { PoolPanel } from '@/components/dashboard/PoolPanel';
 import {
   DIRECTION_LABELS,
   NoteModalBody,
@@ -61,6 +62,7 @@ export function PicksBoard(): ReactNode {
   const [detailModalPickId, setDetailModalPickId] = useState<string | null>(null);
   const [addHoldingPick, setAddHoldingPick] = useState<PickSummary | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('confidence');
+  const [showPool, setShowPool] = useState(false);
   const officialLabel = useOfficialProviderLabel('stock_pick');
 
   const load = useCallback((h: HorizonType) => {
@@ -127,6 +129,9 @@ export function PicksBoard(): ReactNode {
             </button>
           ))}
         </div>
+        <button type="button" onClick={() => setShowPool(true)}>
+          候補プールを見る
+        </button>
         <button type="button" onClick={handleRun} disabled={running}>
           {running ? '実行中…' : '手動更新'}
         </button>
@@ -260,6 +265,12 @@ export function PicksBoard(): ReactNode {
             </Modal>
           );
         })()}
+
+      {showPool && (
+        <Modal title="候補プール抽出の経緯" onClose={() => setShowPool(false)} variant="panel">
+          <PoolPanel key={horizon} horizonType={horizon} date={todayJst()} />
+        </Modal>
+      )}
 
       {addHoldingPick && (
         <AddHoldingModal

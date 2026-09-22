@@ -65,8 +65,9 @@ MODEL_VERSION = "baseline-2026-09-11"
 _ATR_PERIOD = 14
 _ATR_LOOKBACK = "3mo"
 
-# horizon 別の候補プール / ショートリスト設定。
-_CONFIG: dict[str, dict[str, int]] = {
+# horizon 別の候補プール / ショートリスト設定。🆕 P35: `routers/picks.py` の
+# `GET /api/picks/pool`（候補プール抽出の経緯の可視化）も設定値の表示に参照するため公開名にする。
+POOL_CONFIG: dict[str, dict[str, int]] = {
     "mid_term": {"pool_limit": 30, "shortlist": 12, "max_picks": 10},
     "short_term": {"pool_limit": 20, "shortlist": 8, "max_picks": 6},
 }
@@ -120,7 +121,7 @@ def _score_one(
 
 async def run_picks(horizon_type: str) -> PickRunResult:
     """1 系統（中長期 or 短期）のピックを生成し、台帳化して結果を返す."""
-    cfg = _CONFIG[horizon_type]
+    cfg = POOL_CONFIG[horizon_type]
     run_id = pl.new_run_id()
     issued_at = datetime.now(JST).isoformat(timespec="seconds")
 

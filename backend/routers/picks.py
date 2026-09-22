@@ -14,18 +14,24 @@ from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
 from backend.models.pick import (
+    HorizonType,
     PickDetailResponse,
     PickRunResult,
     PickSummary,
+    PoolCandidate,
+    PoolSummary,
     ShadowPickSummary,
     ShadowPredictionSummary,
     SubScores,
 )
 from backend.services.data.data_fetcher import get_company_name
 from backend.services.data.quote_service import compute_change_pct, fetch_quote
+from backend.services.data.ranking_service import RANKING_POOL_SIZE
+from backend.services.db.pick_pool_snapshot_db import list_pool_snapshots_for_date
 from backend.services.db.shadow_prediction_db import list_shadow_predictions_for_pick
+from backend.services.jst_time import today_jst
 from backend.services.ledger import prediction_ledger as pl
-from backend.services.picks.pipeline import run_picks
+from backend.services.picks.pipeline import POOL_CONFIG, run_picks
 from backend.services.picks.shadow_picks import list_shadow_picks
 
 logger = logging.getLogger(__name__)
@@ -49,6 +55,11 @@ def _date_bounds(date: str | None) -> tuple[str | None, str | None]:
 def _f(value: object) -> float:
     """DB 生行（`dict[str, object]`）の数値カラムを float へ変換する."""
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+
+def _opt_f(value: object) -> float | None:
+    """DB 生行の数値カラムを `float | None` へ変換する（`_f` と異なり None を 0.0 へ畳まない）."""
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
 
 
 class _HasSymbol(Protocol):
@@ -130,6 +141,57 @@ async def list_shadow(
     lo, hi = _date_bounds(date)
     rows = await list_shadow_picks(horizon_type=horizon_type, issued_from=lo, issued_to=hi, limit=limit)
     return ApiResponse.ok(_dedupe_by_symbol(rows))
+
+
+@router.get("/pool", response_model=ApiResponse[PoolSummary], summary="候補プール抽出の経緯（🆕 P35）")
+async def get_pool(
+    horizon_type: HorizonType = Query(...),
+    date: str | None = Query(default=None, description="YYYY-MM-DD（省略時は本日）"),
+) -> ApiResponse[PoolSummary]:
+    """候補プール全銘柄（ショートリスト絞り込み前）のスコアリング結果を合成スコア降順で返す.
+
+    `pick_pool_snapshots`（`services/db/pick_pool_snapshot_db.py`）が候補プールを記録する
+    唯一の永続化経路。`is_shortlisted` で「LLM深堀りへ進んだか」が分かる。
+
+    同日に複数回バッチ実行される場合がある（`POST /api/picks/run` の手動再実行は意図的に
+    休場日でも毎回新規生成させる設計、`run_picks_task` docstring 参照）ため、`pick_pool_snapshots`
+    は append-only で全実行分が蓄積されうる。全件返すと同じ銘柄が実行回数ぶん重複して見えるため、
+    ここでは最新の `batch_run_id`（`issued_at` 最大の行が属する実行、バッチ開始時刻ベース）のみに絞る。
+    """
+    resolved_date = date or today_jst()
+    rows = await list_pool_snapshots_for_date(resolved_date, horizon_type=horizon_type)
+    if rows:
+        latest_batch_run_id = max(rows, key=lambda r: str(r["issued_at"]))["batch_run_id"]
+        rows = [r for r in rows if r["batch_run_id"] == latest_batch_run_id]
+    candidates = [
+        PoolCandidate(
+            symbol=str(row["symbol"]),
+            company_name=await get_company_name(str(row["symbol"])),
+            composite_score=_opt_f(row.get("composite_score")),
+            direction=row.get("direction"),
+            concordance=_opt_f(row.get("concordance")),
+            score_breakdown=row.get("score_breakdown") or {},
+            trend_score=_opt_f(row.get("trend_score")),
+            ml_prediction_rate=_opt_f(row.get("ml_prediction_rate")),
+            is_shortlisted=bool(row.get("is_shortlisted")),
+        )
+        for row in rows
+    ]
+    cfg = POOL_CONFIG[horizon_type]
+    return ApiResponse.ok(
+        PoolSummary(
+            horizon_type=horizon_type,
+            date=resolved_date,
+            batch_run_id=str(rows[0]["batch_run_id"]) if rows else None,
+            universe_ranking_pool_size=RANKING_POOL_SIZE,
+            pool_limit=cfg["pool_limit"],
+            shortlist_limit=cfg["shortlist"],
+            max_picks=cfg["max_picks"],
+            total_candidates=len(candidates),
+            shortlisted_count=sum(1 for c in candidates if c.is_shortlisted),
+            candidates=candidates,
+        )
+    )
 
 
 @router.post("/run", response_model=ApiResponse[PickRunResult], summary="ピックを手動実行")
