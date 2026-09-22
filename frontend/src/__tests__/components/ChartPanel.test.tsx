@@ -51,7 +51,7 @@ describe('ChartPanel', () => {
     render(<ChartPanel symbol="7203" />);
 
     expect(await screen.findByText('現在値の取得に失敗しました')).toBeInTheDocument();
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
   });
 
   it('symbolが切り替わると現在値を再取得する', async () => {
@@ -64,6 +64,17 @@ describe('ChartPanel', () => {
 
     await waitFor(() => expect(mockFetchQuote).toHaveBeenCalledWith('9984'));
     expect(await screen.findByText('¥9,000')).toBeInTheDocument();
+  });
+
+  it('足種セレクタ（日足/60分足/15分足）を表示する（🆕、chart画面限定の粒度切り替え）', async () => {
+    mockFetchQuote.mockResolvedValue(quote());
+
+    render(<ChartPanel symbol="7203" />);
+
+    expect(await screen.findByRole('group', { name: '足種' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '日足' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '60分足' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '15分足' })).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {

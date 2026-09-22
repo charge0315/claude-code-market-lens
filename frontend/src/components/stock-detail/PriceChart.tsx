@@ -11,20 +11,41 @@ import {
   type MouseEventParams,
   type SeriesMarker,
   type Time,
+  type UTCTimestamp,
 } from 'lightweight-charts';
-import { fetchOhlc, type ChartEvent, type OhlcPeriod } from '@/lib/api/stock';
+import { fetchOhlc, type ChartEvent, type OhlcInterval, type OhlcPeriod } from '@/lib/api/stock';
 import './stock-detail.css';
 
-// 日足ローソク足チャート。複数時間軸（分足等）は対象外 — 銘柄詳細の主目的は AI 思考トレースで
-// あり（CLAUDE.md の主要画面定義）、チャートは期間切り替えのみの補助情報という位置づけ。
+// 日足ローソク足チャート（既定）。🆕 `enableIntervalSelector` を渡すと分足（60分足/15分足）も
+// 選べる足種セレクタを表示する — 対象は `/chart` 画面のみ（任意銘柄を素早く見る用途では
+// より細かい粒度が欲しいというユーザー要望）。銘柄詳細画面はチャートが補助情報という
+// 位置づけ（CLAUDE.md の主要画面定義）のため、そちらは従来どおり日足のみで据え置く。
 //
 // 🆕 ゴールデンクロス/デッドクロス・MACDクロスの兆候イベントをマーカーで示し、hoverすると
 // 簡単な説明をツールチップで表示する。マーカー色は国内証券標準の騰落色トークン
 // （--color-gain=赤/--color-loss=緑）を流用し、買い兆候=赤・警戒/売り兆候=緑で統一する。
+// 分足では兆候イベント自体を検出しない（`routers/stock.py` 参照、日付キーが同日内で
+// 衝突するため）。
 
 const PERIODS: ReadonlyArray<OhlcPeriod> = ['1mo', '3mo', '6mo', '1y', '2y'];
 const PERIOD_LABELS: Record<OhlcPeriod, string> = { '1mo': '1ヶ月', '3mo': '3ヶ月', '6mo': '6ヶ月', '1y': '1年', '2y': '2年' };
+
+const INTERVALS: ReadonlyArray<OhlcInterval> = ['1d', '60m', '15m'];
+const INTERVAL_LABELS: Record<OhlcInterval, string> = { '1d': '日足', '60m': '60分足', '15m': '15分足' };
+// 足種ごとに選べる期間（バックエンド `_INTRADAY_ALLOWED_PERIODS` と同期させること）。
+// 分足は Yahoo Finance の取得可能期間の上限（60分足=730日・15分足=60日）に収まる範囲に絞る。
+const INTERVAL_PERIODS: Record<OhlcInterval, ReadonlyArray<OhlcPeriod>> = {
+  '1d': PERIODS,
+  '60m': ['1mo', '3mo', '6mo', '1y'],
+  '15m': ['1mo'],
+};
 const CHART_HEIGHT = 300;
+
+// lightweight-charts の `Time` は分足（Unix秒）と日足（YYYY-MM-DD文字列）を区別できないため、
+// 数値は `UTCTimestamp` へ明示キャストする（公式ドキュメント推奨の書き方）。
+function toChartTime(time: string | number): Time {
+  return typeof time === 'number' ? (time as UTCTimestamp) : time;
+}
 
 // 🆕 ツールチップ見出し。`label`（バックエンド生成の説明文）とは別に、種別を一目で識別
 // できるよう短い名称を添える（同系色で埋もれるマーカー視認性の改善に合わせた強調表示）。
@@ -52,17 +73,35 @@ function timeToDateKey(time: Time): string {
   return String(time);
 }
 
-export function PriceChart({ symbol }: { symbol: string }): ReactNode {
+interface PriceChartProps {
+  symbol: string;
+  // 🆕 true のとき足種（日足/60分足/15分足）セレクタを表示する（`/chart` 画面専用）。
+  enableIntervalSelector?: boolean;
+}
+
+export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChartProps): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const eventsByDateRef = useRef<Map<string, ChartEvent>>(new Map());
+  const [ohlcInterval, setOhlcInterval] = useState<OhlcInterval>('1d');
   const [period, setPeriod] = useState<OhlcPeriod>('6mo');
   const [error, setError] = useState<string | null>(null);
   const [isEmpty, setIsEmpty] = useState(false);
   const [hoverEvent, setHoverEvent] = useState<ChartEvent | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+
+  const availablePeriods = enableIntervalSelector ? INTERVAL_PERIODS[ohlcInterval] : PERIODS;
+
+  // 足種を切り替えたとき、現在の期間がその足種で選べない場合（例: 60分足→15分足）は
+  // その足種で選べる最初の期間へ自動的に丸める。
+  function handleIntervalChange(next: OhlcInterval): void {
+    setOhlcInterval(next);
+    if (!INTERVAL_PERIODS[next].includes(period)) {
+      setPeriod(INTERVAL_PERIODS[next][0]);
+    }
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -116,12 +155,14 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
   }, []);
 
   useEffect(() => {
-    fetchOhlc(symbol, period)
+    fetchOhlc(symbol, period, ohlcInterval)
       .then(({ bars, events }) => {
         setIsEmpty(bars.length === 0);
         setHoverEvent(null);
         setHoverPos(null);
-        seriesRef.current?.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+        seriesRef.current?.setData(
+          bars.map((b) => ({ time: toChartTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close }))
+        );
         // データの開始点（最も古い足）が左端から見えるよう、期間全体を表示領域に収める。
         chartRef.current?.timeScale().fitContent();
 
@@ -145,12 +186,28 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
         markersRef.current?.setMarkers(markers);
       })
       .catch(() => setError('株価データの取得に失敗しました'));
-  }, [symbol, period]);
+  }, [symbol, period, ohlcInterval]);
 
   return (
     <div className="price-chart">
+      {enableIntervalSelector && (
+        <div className="price-chart-toolbar" role="group" aria-label="足種">
+          {INTERVALS.map((i) => (
+            <button
+              key={i}
+              type="button"
+              className={ohlcInterval === i ? 'is-active' : undefined}
+              aria-pressed={ohlcInterval === i}
+              onClick={() => handleIntervalChange(i)}
+            >
+              {INTERVAL_LABELS[i]}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="price-chart-toolbar" role="group" aria-label="表示期間">
-        {PERIODS.map((p) => (
+        {availablePeriods.map((p) => (
           <button
             key={p}
             type="button"
@@ -167,7 +224,12 @@ export function PriceChart({ symbol }: { symbol: string }): ReactNode {
       {isEmpty && !error && <p className="signal-queue-empty">株価データがありません</p>}
 
       <div className="price-chart-canvas-wrap">
-        <div ref={containerRef} className="price-chart-canvas" role="img" aria-label={`${symbol} の日足ローソク足チャート`} />
+        <div
+          ref={containerRef}
+          className="price-chart-canvas"
+          role="img"
+          aria-label={`${symbol} の${INTERVAL_LABELS[ohlcInterval]}ローソク足チャート`}
+        />
         {hoverEvent && hoverPos && (
           <div
             className="price-chart-tooltip"

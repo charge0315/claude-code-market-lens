@@ -2717,8 +2717,8 @@
         "tags": [
           "stock"
         ],
-        "summary": "日足 OHLC 取得（兆候イベント込み）",
-        "description": "指定銘柄の日足 OHLC と、ゴールデンクロス/デッドクロス等の兆候イベントを返す（チャート表示用）.\n\n🆕 SMA25・MACD の計算精度を確保するため、実際には表示期間より長い期間\n（`_EXTENDED_PERIOD_FOR`）を取得してから `events` を計算し、`bars` は元の表示期間へ\n切り詰めて返す（先頭付近の指標が NaN のまま交差判定を誤らないようにするため）。",
+        "summary": "OHLC 取得（日足は兆候イベント込み、🆕 分足対応）",
+        "description": "指定銘柄の OHLC を返す（チャート表示用）.\n\n日足（既定）はゴールデンクロス/デッドクロス等の兆候イベントも計算して返す。🆕 分足\n（60分足/15分足）は `_intraday_ohlc` へ委譲し、`events` は常に空で返す — GC/DC・MACD\nクロスは日付（YYYY-MM-DD）単位で検出するため、同日内に複数本並ぶ分足では日付キーが\n重複しマーカーの突き合わせが破綻する。分足に対応した兆候検出は将来必要になれば別途\n設計する。",
         "operationId": "get_ohlc_api_stock__symbol__ohlc_get",
         "parameters": [
           {
@@ -2745,6 +2745,21 @@
               "type": "string",
               "default": "6mo",
               "title": "Period"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "1d",
+                "60m",
+                "15m"
+              ],
+              "type": "string",
+              "default": "1d",
+              "title": "Interval"
             }
           }
         ],
@@ -6049,7 +6064,14 @@
       "OhlcBar": {
         "properties": {
           "time": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
             "title": "Time"
           },
           "open": {
@@ -6083,7 +6105,7 @@
           "volume"
         ],
         "title": "OhlcBar",
-        "description": "日足 1 本分（`lightweight-charts` のローソク足フォーマットに合わせる）."
+        "description": "ローソク足 1 本分（`lightweight-charts` のフォーマットに合わせる）.\n\n`time` は日足（interval=\"1d\"）では `YYYY-MM-DD` 文字列、分足（🆕、interval=\"60m\"/\"15m\"）\nでは UTC 起点の Unix 秒（`int`）。`lightweight-charts` の `Time` 型が「日付文字列は\n1日単位の解像度までしか表現できない」制約を持つため、同日内に複数本並ぶ分足はタイム\nスタンプで表現する必要がある（`routers/stock.py` 参照）。"
       },
       "OhlcResponse": {
         "properties": {

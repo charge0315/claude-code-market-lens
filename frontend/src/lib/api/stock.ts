@@ -4,8 +4,12 @@ import { api } from '@/lib/api/client';
 
 export type OhlcPeriod = '1mo' | '3mo' | '6mo' | '1y' | '2y';
 
+// 🆕 足種。'1d' は既存の日足、'60m'/'15m' は分足（`/chart` 画面限定、PriceChart の
+// `enableIntervalSelector` 経由でのみ選択可能）。
+export type OhlcInterval = '1d' | '60m' | '15m';
+
 export interface OhlcBar {
-  time: string; // YYYY-MM-DD
+  time: string | number; // 日足: YYYY-MM-DD、分足: Unix秒（UTC、🆕）
   open: number;
   high: number;
   low: number;
@@ -28,8 +32,8 @@ export interface OhlcResponse {
   events: ChartEvent[];
 }
 
-export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo'): Promise<OhlcResponse> {
-  return api.get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}`);
+export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo', interval: OhlcInterval = '1d'): Promise<OhlcResponse> {
+  return api.get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}&interval=${interval}`);
 }
 
 // 🆕 P26: ポートフォリオの買い/売りフォームが開いた時点の最新値を初期値にするための

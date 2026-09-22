@@ -8,11 +8,17 @@ from pydantic import BaseModel, ConfigDict
 
 
 class OhlcBar(BaseModel):
-    """日足 1 本分（`lightweight-charts` のローソク足フォーマットに合わせる）."""
+    """ローソク足 1 本分（`lightweight-charts` のフォーマットに合わせる）.
+
+    `time` は日足（interval="1d"）では `YYYY-MM-DD` 文字列、分足（🆕、interval="60m"/"15m"）
+    では UTC 起点の Unix 秒（`int`）。`lightweight-charts` の `Time` 型が「日付文字列は
+    1日単位の解像度までしか表現できない」制約を持つため、同日内に複数本並ぶ分足はタイム
+    スタンプで表現する必要がある（`routers/stock.py` 参照）。
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    time: str  # YYYY-MM-DD
+    time: str | int
     open: float
     high: float
     low: float

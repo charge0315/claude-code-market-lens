@@ -1,10 +1,11 @@
-"""株価 OHLC API（銘柄詳細画面のチャート用、🆕 P8c）.
+"""株価 OHLC API（銘柄詳細・チャート画面用、🆕 P8c）.
 
 `services/data/data_fetcher.fetch_stock_data`（既存、yfinance キャッシュ・リトライ・
-ブレーカ込み）を薄くラップするだけで新規のデータ取得ロジックは持たない。複数時間軸
-（分足等）は対象外 — 日足のみで期間（1mo〜2y）を切り替える設計にした。銘柄詳細の主目的は
-AI 思考トレースであり（CLAUDE.md の主要画面定義でも「銘柄詳細（AI 思考トレース）」と
-位置づけている）、チャートはその補助情報という位置づけのため。
+ブレーカ込み）を薄くラップするだけで新規のデータ取得ロジックは持たない。日足に加え、
+🆕 分足（60分足/15分足）にも対応する（`/chart` 画面向け、任意銘柄を素早く見る用途では
+より細かい粒度が欲しいというユーザー要望）。銘柄詳細画面は AI 思考トレースが主目的で
+チャートは補助情報という位置づけ（CLAUDE.md）のため日足のみのまま据え置き、フロント側
+（`PriceChart` の `enableIntervalSelector`）で足種選択 UI を `/chart` 画面に限定する。
 """
 
 from __future__ import annotations
@@ -21,13 +22,22 @@ from backend.models.stock import ChartEvent, OhlcBar, OhlcResponse, Quote
 from backend.models.stocks import TickerInfo
 from backend.services.data.data_fetcher import fetch_stock_data, search_tickers
 from backend.services.data.quote_service import fetch_quote
-from backend.services.jst_time import JST
+from backend.services.jst_time import JST, to_jst
 from backend.services.scoring.technical_analysis import detect_cross_events
 from backend.services.vault.brand_notes_service import get_raw_note_content
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
 
 _Period = Literal["1mo", "3mo", "6mo", "1y", "2y"]
+_Interval = Literal["1d", "60m", "15m"]
+
+# 🆕 分足の取得可能期間。Yahoo Finance（yfinance）の実測上の上限は 60分足=730日・15分足=60日
+# だが境界値ぎりぎりは失敗しうるため安全マージンを持たせて制限する。要求期間がここに無ければ
+# 直近の許容値（タプル末尾）へ丸める（`_INTRADAY_ALLOWED_PERIODS[interval][-1]`）。
+_INTRADAY_ALLOWED_PERIODS: Final[dict[_Interval, tuple[_Period, ...]]] = {
+    "60m": ("1mo", "3mo", "6mo", "1y"),
+    "15m": ("1mo",),
+}
 
 # SMA25・MACD の計算には表示期間より前のデータが必要（先頭付近が NaN のまま返らないよう、
 # 表示期間より長い期間を取得してから計算し、最後に元の期間へ切り詰める、🆕）。
@@ -74,14 +84,25 @@ async def get_quote(symbol: str) -> ApiResponse[Quote]:
     return ApiResponse.ok(Quote(symbol=symbol, price=current, prev_close=prev, change_pct=change_pct))
 
 
-@router.get("/{symbol}/ohlc", response_model=ApiResponse[OhlcResponse], summary="日足 OHLC 取得（兆候イベント込み）")
-async def get_ohlc(symbol: str, period: _Period = Query(default="6mo")) -> ApiResponse[OhlcResponse]:
-    """指定銘柄の日足 OHLC と、ゴールデンクロス/デッドクロス等の兆候イベントを返す（チャート表示用）.
+@router.get(
+    "/{symbol}/ohlc",
+    response_model=ApiResponse[OhlcResponse],
+    summary="OHLC 取得（日足は兆候イベント込み、🆕 分足対応）",
+)
+async def get_ohlc(
+    symbol: str, period: _Period = Query(default="6mo"), interval: _Interval = Query(default="1d")
+) -> ApiResponse[OhlcResponse]:
+    """指定銘柄の OHLC を返す（チャート表示用）.
 
-    🆕 SMA25・MACD の計算精度を確保するため、実際には表示期間より長い期間
-    （`_EXTENDED_PERIOD_FOR`）を取得してから `events` を計算し、`bars` は元の表示期間へ
-    切り詰めて返す（先頭付近の指標が NaN のまま交差判定を誤らないようにするため）。
+    日足（既定）はゴールデンクロス/デッドクロス等の兆候イベントも計算して返す。🆕 分足
+    （60分足/15分足）は `_intraday_ohlc` へ委譲し、`events` は常に空で返す — GC/DC・MACD
+    クロスは日付（YYYY-MM-DD）単位で検出するため、同日内に複数本並ぶ分足では日付キーが
+    重複しマーカーの突き合わせが破綻する。分足に対応した兆候検出は将来必要になれば別途
+    設計する。
     """
+    if interval != "1d":
+        return await _intraday_ohlc(symbol, period, interval)
+
     extended_period = _EXTENDED_PERIOD_FOR[period]
     df = await asyncio.to_thread(fetch_stock_data, symbol, extended_period, "1d")
     if df.empty:
@@ -104,6 +125,33 @@ async def get_ohlc(symbol: str, period: _Period = Query(default="6mo")) -> ApiRe
     ]
     cutoff_str = cutoff.isoformat()
     return ApiResponse.ok(OhlcResponse(bars=bars, events=[e for e in events if e.date >= cutoff_str]))
+
+
+async def _intraday_ohlc(symbol: str, period: _Period, interval: _Interval) -> ApiResponse[OhlcResponse]:
+    """分足 OHLC を返す（🆕、`/chart` 画面の足種選択用）.
+
+    `period` が対応する `_INTRADAY_ALLOWED_PERIODS[interval]` の範囲外なら、yfinance の
+    取得上限を超えないよう直近の許容値へ丸める（フロント側は許容期間のボタンしか出さない
+    想定だが、API 単体で叩かれた場合の防御でもある）。
+    """
+    allowed = _INTRADAY_ALLOWED_PERIODS[interval]
+    effective_period = period if period in allowed else allowed[-1]
+    df = await asyncio.to_thread(fetch_stock_data, symbol, effective_period, interval)
+    if df.empty:
+        return ApiResponse.ok(OhlcResponse(bars=[], events=[]))
+
+    bars = [
+        OhlcBar(
+            time=int(to_jst(idx).timestamp()),
+            open=round(float(row["Open"]), 2),
+            high=round(float(row["High"]), 2),
+            low=round(float(row["Low"]), 2),
+            close=round(float(row["Close"]), 2),
+            volume=float(row["Volume"]),
+        )
+        for idx, row in df.iterrows()
+    ]
+    return ApiResponse.ok(OhlcResponse(bars=bars, events=[]))
 
 
 @router.get(

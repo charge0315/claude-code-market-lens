@@ -28,7 +28,7 @@ describe('PriceChart', () => {
 
     render(<PriceChart symbol="7203" />);
 
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
   });
 
   it('データが無ければ案内文を出す', async () => {
@@ -44,11 +44,46 @@ describe('PriceChart', () => {
     const user = userEvent.setup();
 
     render(<PriceChart symbol="7203" />);
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
 
     await user.click(screen.getByRole('button', { name: '1年' }));
 
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1y'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1y', '1d'));
+  });
+
+  it('enableIntervalSelector が無ければ足種セレクタを表示しない', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+
+    render(<PriceChart symbol="7203" />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
+
+    expect(screen.queryByRole('group', { name: '足種' })).not.toBeInTheDocument();
+  });
+
+  it('enableIntervalSelector があれば足種セレクタを表示し、切り替えると再取得する', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+    const user = userEvent.setup();
+
+    render(<PriceChart symbol="7203" enableIntervalSelector />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+
+    await user.click(screen.getByRole('button', { name: '60分足' }));
+
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '60m'));
+  });
+
+  it('分足へ切り替えるとその足種で選べない期間ボタンが消え、選べる期間へ丸める', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+    const user = userEvent.setup();
+
+    render(<PriceChart symbol="7203" enableIntervalSelector />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+
+    await user.click(screen.getByRole('button', { name: '15分足' }));
+
+    // 15分足は '1mo' しか選べないため、期間は自動的に '1ヶ月' へ丸まり他の期間ボタンは消える。
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1mo', '15m'));
+    expect(screen.queryByRole('button', { name: '6ヶ月' })).not.toBeInTheDocument();
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {

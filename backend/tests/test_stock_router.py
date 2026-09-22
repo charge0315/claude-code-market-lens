@@ -158,6 +158,74 @@ async def test_get_ohlc_rejects_invalid_period(monkeypatch: pytest.MonkeyPatch) 
     assert res.status_code == 422
 
 
+async def test_get_ohlc_rejects_invalid_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/ohlc?interval=5m")
+
+    assert res.status_code == 422
+
+
+def _fake_intraday_df() -> pd.DataFrame:
+    """JST タイムゾーン付きの分足 OHLCV（`to_jst().timestamp()` の検証用）."""
+    index = pd.date_range(end=pd.Timestamp.now(tz="Asia/Tokyo").normalize(), periods=2, freq="h", tz="Asia/Tokyo")
+    return pd.DataFrame(
+        {
+            "Open": [1000.0, 1010.0],
+            "High": [1020.0, 1030.0],
+            "Low": [990.0, 1000.0],
+            "Close": [1010.0, 1025.0],
+            "Volume": [1_000_000.0, 1_200_000.0],
+        },
+        index=index,
+    )
+
+
+async def test_get_ohlc_intraday_returns_epoch_time_bars_without_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """分足は time が Unix 秒（int）で返り、events は常に空（日付キー衝突を避けるため検出しない）."""
+    df = _fake_intraday_df()
+    seen: dict[str, object] = {}
+
+    def fake_fetch(symbol: str, period: str, interval: str) -> pd.DataFrame:
+        seen["symbol"] = symbol
+        seen["period"] = period
+        seen["interval"] = interval
+        return df
+
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", fake_fetch)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/ohlc?period=1mo&interval=60m")
+
+    body = res.json()["data"]
+    assert seen == {"symbol": "7203", "period": "1mo", "interval": "60m"}
+    assert body["events"] == []
+    assert len(body["bars"]) == 2
+    assert body["bars"][0]["time"] == int(df.index[0].timestamp())
+    assert isinstance(body["bars"][0]["time"], int)
+
+
+async def test_get_ohlc_intraday_clamps_unsupported_period(monkeypatch: pytest.MonkeyPatch) -> None:
+    """15分足は Yahoo Finance の分足上限（60日）を超えないよう、対応外の period を丸める."""
+    seen: dict[str, object] = {}
+
+    def fake_fetch(symbol: str, period: str, interval: str) -> pd.DataFrame:
+        seen["period"] = period
+        return _fake_intraday_df()
+
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", fake_fetch)
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.get("/api/stock/7203/ohlc?period=6mo&interval=15m")
+
+    assert seen == {"period": "1mo"}
+
+
 async def test_get_note_returns_content_when_note_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_raw_note_content(code: str) -> tuple[str, str] | None:
         assert code == "7203"
