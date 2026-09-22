@@ -164,6 +164,33 @@ async def collect_sentiment_snapshots_keyword(codes: list[str]) -> SentimentSnap
     return SentimentSnapshotStats(attempted=len(codes), collected=collected)
 
 
+async def record_supply_demand_snapshot(code: str, data: dict[str, object]) -> None:
+    """ピック生成の一部として既に取得済みの週末信用取引残高を PIT 台帳へ記録する（🆕 中長期限定）.
+
+    `orchestrator.py` の llm_overlay ステージから fire-and-forget で呼ばれる想定（追加の
+    J-Quants 呼び出しは発生しない）。失敗してもピック生成本体には一切影響させない
+    （フェイルソフト、`record_llm_sentiment_snapshot` と同じ方針）。
+    """
+    def _as_float(key: str) -> float | None:
+        value = data.get(key)
+        return float(value) if isinstance(value, (int, float)) else None
+
+    as_of = data.get("as_of")
+    try:
+        await pit_snapshot_db.upsert_supply_demand_snapshot(
+            snapshot_date=today_jst(),
+            code=code,
+            data_as_of=str(as_of) if as_of is not None else None,
+            long_volume=_as_float("long_volume"),
+            short_volume=_as_float("short_volume"),
+            margin_ratio=_as_float("margin_ratio"),
+            margin_ratio_prev=_as_float("margin_ratio_prev"),
+            created_at=_now_iso(),
+        )
+    except Exception:  # noqa: BLE001 - PIT 記録の失敗でピック生成本体を止めない
+        logger.warning("PIT 需給スナップショットの記録に失敗しました（%s）", code, exc_info=True)
+
+
 async def record_llm_sentiment_snapshot(code: str, result: LlmNewsSentimentResult) -> None:
     """ピック生成の一部として既に取得済みの LLM ニュースセンチメント判定を PIT 台帳へ記録する.
 

@@ -1483,6 +1483,211 @@
         }
       }
     },
+    "/api/registry/training-settings": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "学習対象設定を取得",
+        "description": "学習対象モード・並列学習プロセス数上限を返す（未保存なら `all`/4 の既定値）.",
+        "operationId": "get_training_settings_api_registry_training_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrainingTargetSettingsResponse_"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "学習対象設定を更新",
+        "description": "学習対象モード・並列数上限を更新する（DB即時反映、`.env` 方式と異なり再起動不要）.",
+        "operationId": "update_training_settings_api_registry_training_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingTargetSettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrainingTargetSettingsResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/training-target-tickers": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "学習対象カスタムリストの一覧を取得",
+        "description": "カスタムリストの銘柄一覧を返す（銘柄マスタに存在しないコードも `added_at` はそのまま返す）.",
+        "operationId": "get_training_target_tickers_api_registry_training_target_tickers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TrainingTargetTickerEntry__"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "学習対象カスタムリストを全置換",
+        "description": "ポップアップダイアログのチェック結果を保存する（既存銘柄の追加日時は維持したまま全置換）.",
+        "operationId": "update_training_target_tickers_api_registry_training_target_tickers_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingTargetTickersUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TrainingTargetTickerEntry__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry/ticker-universe": {
+      "get": {
+        "tags": [
+          "registry"
+        ],
+        "summary": "全銘柄一覧（業種・出来高付き）",
+        "description": "カスタムリスト選択ダイアログ用の全銘柄一覧（業種フィルタ・出来高ソート・部分一致検索付き）を返す.",
+        "operationId": "ticker_universe_api_registry_ticker_universe_get",
+        "parameters": [
+          {
+            "name": "sector",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "code_asc",
+                "volume_desc",
+                "volume_asc"
+              ],
+              "type": "string",
+              "default": "code_asc",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TickerUniverseEntry__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inference/runs": {
       "get": {
         "tags": [
@@ -2512,8 +2717,8 @@
         "tags": [
           "stock"
         ],
-        "summary": "日足 OHLC 取得",
-        "description": "指定銘柄の日足 OHLC を返す（チャート表示用、取得できなければ空配列）.",
+        "summary": "日足 OHLC 取得（兆候イベント込み）",
+        "description": "指定銘柄の日足 OHLC と、ゴールデンクロス/デッドクロス等の兆候イベントを返す（チャート表示用）.\n\n🆕 SMA25・MACD の計算精度を確保するため、実際には表示期間より長い期間\n（`_EXTENDED_PERIOD_FOR`）を取得してから `events` を計算し、`bars` は元の表示期間へ\n切り詰めて返す（先頭付近の指標が NaN のまま交差判定を誤らないようにするため）。",
         "operationId": "get_ohlc_api_stock__symbol__ohlc_get",
         "parameters": [
           {
@@ -2549,7 +2754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_OhlcBar__"
+                  "$ref": "#/components/schemas/ApiResponse_OhlcResponse_"
                 }
               }
             }
@@ -3663,6 +3868,50 @@
         ],
         "title": "ApiResponse[Notification]"
       },
+      "ApiResponse_OhlcResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OhlcResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[OhlcResponse]"
+      },
       "ApiResponse_PickRunResult_": {
         "properties": {
           "success": {
@@ -3926,6 +4175,50 @@
           "success"
         ],
         "title": "ApiResponse[SellHistoryEntry]"
+      },
+      "ApiResponse_TrainingTargetSettingsResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingTargetSettingsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[TrainingTargetSettingsResponse]"
       },
       "ApiResponse_TrendSnapshot_": {
         "properties": {
@@ -4471,54 +4764,6 @@
         ],
         "title": "ApiResponse[list[Notification]]"
       },
-      "ApiResponse_list_OhlcBar__": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "title": "Success"
-          },
-          "data": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/OhlcBar"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "meta": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PageMeta"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "success"
-        ],
-        "title": "ApiResponse[list[OhlcBar]]"
-      },
       "ApiResponse_list_PickSummary__": {
         "properties": {
           "success": {
@@ -4855,6 +5100,102 @@
         ],
         "title": "ApiResponse[list[TickerInfo]]"
       },
+      "ApiResponse_list_TickerUniverseEntry__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TickerUniverseEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[TickerUniverseEntry]]"
+      },
+      "ApiResponse_list_TrainingTargetTickerEntry__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TrainingTargetTickerEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[TrainingTargetTickerEntry]]"
+      },
       "ApiResponse_list_TrainingTrendPoint__": {
         "properties": {
           "success": {
@@ -4951,6 +5292,36 @@
           "success"
         ],
         "title": "ApiResponse[list[dict]]"
+      },
+      "ChartEvent": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "golden_cross",
+              "dead_cross",
+              "macd_bullish_cross",
+              "macd_bearish_cross"
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "kind",
+          "label"
+        ],
+        "title": "ChartEvent",
+        "description": "テクニカル指標のクロスイベント 1 件（🆕、ローソク足チャートのマーカー表示用）.\n\n`services/scoring/technical_analysis.detect_cross_events` の結果をそのまま公開する。"
       },
       "CorrelationWarning": {
         "properties": {
@@ -5713,6 +6084,31 @@
         ],
         "title": "OhlcBar",
         "description": "日足 1 本分（`lightweight-charts` のローソク足フォーマットに合わせる）."
+      },
+      "OhlcResponse": {
+        "properties": {
+          "bars": {
+            "items": {
+              "$ref": "#/components/schemas/OhlcBar"
+            },
+            "type": "array",
+            "title": "Bars"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ChartEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bars",
+          "events"
+        ],
+        "title": "OhlcResponse",
+        "description": "`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント）."
       },
       "PageMeta": {
         "properties": {
@@ -7307,6 +7703,54 @@
         "title": "TickerInfo",
         "description": "銘柄の基本属性（コード・名称・業種）."
       },
+      "TickerUniverseEntry": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "in_custom_list": {
+            "type": "boolean",
+            "title": "In Custom List"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "sector",
+          "volume",
+          "in_custom_list"
+        ],
+        "title": "TickerUniverseEntry",
+        "description": "カスタムリスト選択ダイアログ用の銘柄 1 件分（コード・名称・業種・直近出来高）."
+      },
       "TrainingRunRequest": {
         "properties": {
           "model_type": {
@@ -7326,6 +7770,119 @@
         ],
         "title": "TrainingRunRequest",
         "description": "`POST /api/registry/training/run` のリクエストボディ."
+      },
+      "TrainingTargetSettingsResponse": {
+        "properties": {
+          "target_mode": {
+            "type": "string",
+            "enum": [
+              "portfolio",
+              "picked",
+              "all",
+              "custom"
+            ],
+            "title": "Target Mode"
+          },
+          "max_parallel_workers": {
+            "type": "integer",
+            "title": "Max Parallel Workers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_mode",
+          "max_parallel_workers"
+        ],
+        "title": "TrainingTargetSettingsResponse",
+        "description": "`GET/PUT /api/registry/training-settings` のレスポンス（🆕 学習対象設定）."
+      },
+      "TrainingTargetSettingsUpdateRequest": {
+        "properties": {
+          "target_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "portfolio",
+                  "picked",
+                  "all",
+                  "custom"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Mode"
+          },
+          "max_parallel_workers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parallel Workers"
+          }
+        },
+        "type": "object",
+        "title": "TrainingTargetSettingsUpdateRequest",
+        "description": "`PUT /api/registry/training-settings` のリクエストボディ（省略項目は現在値を維持）."
+      },
+      "TrainingTargetTickerEntry": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "added_at": {
+            "type": "string",
+            "title": "Added At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "sector",
+          "added_at"
+        ],
+        "title": "TrainingTargetTickerEntry",
+        "description": "カスタムリストの登録済み銘柄 1 件（🆕 学習対象設定、銘柄マスタで名称解決済み）."
+      },
+      "TrainingTargetTickersUpdateRequest": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codes"
+        ],
+        "title": "TrainingTargetTickersUpdateRequest",
+        "description": "`PUT /api/registry/training-target-tickers` のリクエストボディ（全置換）."
       },
       "TrainingTrendPoint": {
         "properties": {

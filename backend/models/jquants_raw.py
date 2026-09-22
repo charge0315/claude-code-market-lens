@@ -22,6 +22,15 @@ _STATEMENT_NUMERIC_FIELDS = (
     "net_assets",
 )
 
+_MARGIN_INTEREST_NUMERIC_FIELDS = (
+    "short_volume",
+    "long_volume",
+    "short_negotiable_volume",
+    "long_negotiable_volume",
+    "short_standardized_volume",
+    "long_standardized_volume",
+)
+
 
 def coerce_optional_float(value: object) -> float | None:
     """'', None, 非数値 → None。数値 / 数値文字列 → float（J-Quants は数値を文字列で返すことがある）."""
@@ -72,6 +81,32 @@ class RawStatement(BaseModel):
     net_assets: float | None = Field(default=None, alias="Eq")
 
     @field_validator(*_STATEMENT_NUMERIC_FIELDS, mode="before")
+    @classmethod
+    def _coerce_numeric(cls, value: object) -> float | None:
+        return coerce_optional_float(value)
+
+
+class RawWeeklyMarginInterest(BaseModel):
+    """週末信用取引残高（/markets/margin-interest の 1 レコード、銘柄 × 週）.
+
+    実 API レスポンスで確認済みのフィールド名（2026-09-22、`code=72030` で実呼び出し検証済み）。
+    ドキュメント（gitbook）記載の `LongMarginOutstanding` 等の英語フルネームとは異なり、
+    既存の `AdjC` / `DiscDate` と同じ省略形（`ShrtVol` 等）で返る。
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    date: str = Field(alias="Date")  # critical（週次ソートキー）
+    code: str = Field(alias="Code")  # critical（銘柄識別子）
+    short_volume: float | None = Field(default=None, alias="ShrtVol")  # 総信用売り残（株数）
+    long_volume: float | None = Field(default=None, alias="LongVol")  # 総信用買い残（株数）
+    short_negotiable_volume: float | None = Field(default=None, alias="ShrtNegVol")  # 一般信用売り残
+    long_negotiable_volume: float | None = Field(default=None, alias="LongNegVol")  # 一般信用買い残
+    short_standardized_volume: float | None = Field(default=None, alias="ShrtStdVol")  # 制度信用売り残
+    long_standardized_volume: float | None = Field(default=None, alias="LongStdVol")  # 制度信用買い残
+    issue_type: str | None = Field(default=None, alias="IssType")  # 1:信用銘柄 / 2:貸借銘柄 / 3:その他
+
+    @field_validator(*_MARGIN_INTEREST_NUMERIC_FIELDS, mode="before")
     @classmethod
     def _coerce_numeric(cls, value: object) -> float | None:
         return coerce_optional_float(value)

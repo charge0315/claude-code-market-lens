@@ -117,3 +117,46 @@ async def test_check_connection_reports_not_configured(client: JQuantsClient, mo
     monkeypatch.setattr(jq, "settings", jq.settings.model_copy(update={"jquants_api_key": ""}))
     result = await client.check_connection()
     assert result["status"] == "not_configured"
+
+
+async def test_fetch_weekly_margin_interest_parses_v2_field_names(
+    client: JQuantsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload: dict[str, object] = {
+        "data": [
+            {"Date": "2026-09-18", "Code": "72030", "ShrtVol": "1000", "LongVol": "6500"},
+            {"Date": "2026-09-11", "Code": "72030", "ShrtVol": "1200", "LongVol": "6000"},
+        ]
+    }
+
+    async def fake_get(_endpoint: str, _params: object = None) -> dict[str, object]:
+        return payload
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    records = await client.fetch_weekly_margin_interest("7203")
+    assert [r.date for r in records] == ["2026-09-18", "2026-09-11"]  # 日付降順
+    assert records[0].long_volume == 6500.0
+    assert records[0].short_volume == 1000.0
+
+
+async def test_fetch_weekly_margin_interest_returns_empty_when_no_data(
+    client: JQuantsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_get(_endpoint: str, _params: object = None) -> dict[str, object]:
+        return {"data": []}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    assert await client.fetch_weekly_margin_interest("7203") == []
+
+
+async def test_fetch_weekly_margin_interest_propagates_client_error(
+    client: JQuantsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services.data.jquants_errors import JQuantsClientError
+
+    async def fake_get(_endpoint: str, _params: object = None) -> dict[str, object]:
+        raise JQuantsClientError("/markets/margin-interest", 403, "not available on your subscription")
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    with pytest.raises(JQuantsClientError):
+        await client.fetch_weekly_margin_interest("7203")

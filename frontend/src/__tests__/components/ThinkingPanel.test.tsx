@@ -114,6 +114,42 @@ describe('ThinkingPanel', () => {
     expect(screen.queryByText(/を判断材料に使用/)).not.toBeInTheDocument();
   });
 
+  it('LLM深掘りで信用倍率（買い長残優勢）が判断材料になったことを表示する', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: {
+              should_include: true,
+              confidence_raw: 55,
+              supply_demand: { margin_ratio: 6.5, classification: 'long_heavy' },
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/信用倍率 6.50倍（買い長残優勢）を判断材料に使用/)).toBeInTheDocument();
+  });
+
+  it('需給データが無い場合は追記しない', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: { should_include: true, confidence_raw: 60 },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/信用倍率/)).not.toBeInTheDocument();
+  });
+
   it('失敗ステージの理由を表示する', () => {
     render(
       <ThinkingPanel

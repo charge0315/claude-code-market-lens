@@ -25,7 +25,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from backend.config import settings
-from backend.models.jquants_raw import RawDailyBar, RawListedInfo, RawStatement
+from backend.models.jquants_raw import RawDailyBar, RawListedInfo, RawStatement, RawWeeklyMarginInterest
 from backend.services.circuit_breaker import CircuitBreaker
 from backend.services.data.jquants_errors import (
     JQuantsCircuitOpenError,
@@ -261,6 +261,32 @@ class JQuantsClient:
             raise JQuantsResponseError("DiscDate missing — possible upstream schema change")
 
         return sorted(parsed, key=lambda s: s.disclosed_date or "", reverse=True)[:20]
+
+    async def fetch_weekly_margin_interest(self, code: str, *, period: str = "3mo") -> list[RawWeeklyMarginInterest]:
+        """週末信用取引残高を取得する（直近 `period` 分、日付降順）.
+
+        🆕 需給軸（中長期ピック限定、`orchestrator.py` 参照）。エンドポイントは V2 実呼び出しで
+        確認済みの `/markets/margin-interest`（gitbook ドキュメント記載の `/markets/weekly_margin_interest`
+        とはパスが異なる点に注意）。Standard 未満のプランでは 403（`JQuantsClientError`）が
+        送出される — 呼び出し側（`supply_demand_analyzer`）がフェイルソフトで `None` に畳む。
+        貸借銘柄でない・データ未発生の場合は空リストを返す（例外にしない）。
+        """
+        from_date, to_date = self._to_date_range(period)
+        code5 = self._to_5digit(code)
+
+        records = await self._get_paginated(
+            "/markets/margin-interest",
+            params={"code": code5, "from": from_date, "to": to_date},
+        )
+        if not records:
+            return []
+
+        try:
+            parsed = [RawWeeklyMarginInterest.model_validate(r) for r in records]
+        except ValidationError as e:
+            raise JQuantsResponseError(f"週末信用取引残高のスキーマ検証に失敗しました: {code5}") from e
+
+        return sorted(parsed, key=lambda m: m.date, reverse=True)
 
     async def fetch_listed_info(self, code: str) -> RawListedInfo | None:
         """銘柄基本情報を取得する（検証済みモデル / 該当なしは None）."""

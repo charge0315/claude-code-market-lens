@@ -691,6 +691,137 @@ async def test_llm_sentiment_snapshot_recorded_as_pit_side_effect(
     assert rows[0]["news_count"] == 3
 
 
+# --- 需給軸（週末信用取引残高、🆕 中長期ピック限定）---
+
+
+async def _run_short_term(state: WiredState) -> InferenceOutcome:
+    return await orch.run_inference(
+        symbol="7203",
+        horizon_type="short_term",
+        batch_run_id="batch-1",
+        issued_at="2026-06-01T08:50:00+09:00",
+        model_version="test-model",
+        rec=_rec("7203"),
+        atr=_ATR,
+        trend_score=_TREND,
+        news_block=None,
+        trend_block=None,
+        gate_horizon=3,
+    )
+
+
+def _supply_demand_data(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "as_of": "2026-09-18",
+        "long_volume": 6500.0,
+        "short_volume": 1000.0,
+        "margin_ratio": 6.5,
+        "margin_ratio_prev": 5.0,
+        "short_ratio_change_wow": -0.1,
+        "classification": "long_heavy",
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_mid_term_fetches_and_records_supply_demand(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 中長期ピック限定: mid_term では需給データを取得し PIT 台帳へ記録すること."""
+    data = _supply_demand_data()
+    fetch_calls: list[str] = []
+    record_calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_get_supply_demand(code: str) -> dict[str, object]:
+        fetch_calls.append(code)
+        return data
+
+    async def fake_record_supply_demand(code: str, payload: dict[str, object]) -> None:
+        record_calls.append((code, payload))
+
+    monkeypatch.setattr(orch, "get_supply_demand_data", fake_get_supply_demand)
+    monkeypatch.setattr(orch, "record_supply_demand_snapshot", fake_record_supply_demand)
+
+    outcome = await _run(wired)
+
+    assert outcome.status == "done"
+    assert fetch_calls == ["7203"]
+    assert record_calls == [("7203", data)]
+    assert outcome.pick is not None
+    assert outcome.pick.rationale_struct["supply_demand"] == data
+    assert outcome.pick.feature_snapshot["pit_supply_demand"] == data
+
+
+async def test_short_term_never_fetches_supply_demand(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🆕 短期ピックでは需給データを取得しないこと（J-Quants 呼び出しコストを増やさない）."""
+    fetch_calls: list[str] = []
+    record_calls: list[str] = []
+
+    async def fake_get_supply_demand(code: str) -> dict[str, object]:
+        fetch_calls.append(code)
+        return _supply_demand_data()
+
+    async def fake_record_supply_demand(code: str, _payload: dict[str, object]) -> None:
+        record_calls.append(code)
+
+    monkeypatch.setattr(orch, "get_supply_demand_data", fake_get_supply_demand)
+    monkeypatch.setattr(orch, "record_supply_demand_snapshot", fake_record_supply_demand)
+
+    outcome = await _run_short_term(wired)
+
+    assert outcome.status == "done"
+    assert fetch_calls == []
+    assert record_calls == []
+    assert outcome.pick is not None
+    assert outcome.pick.rationale_struct["supply_demand"] is None
+    assert outcome.pick.feature_snapshot["pit_supply_demand"] is None
+
+
+async def test_supply_demand_none_does_not_record_snapshot(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """データ無し（フェイルソフト None）のときは PIT 台帳への記録を呼ばないこと."""
+    record_calls: list[str] = []
+
+    async def fake_get_supply_demand(_code: str) -> None:
+        return None
+
+    async def fake_record_supply_demand(code: str, _payload: dict[str, object]) -> None:
+        record_calls.append(code)
+
+    monkeypatch.setattr(orch, "get_supply_demand_data", fake_get_supply_demand)
+    monkeypatch.setattr(orch, "record_supply_demand_snapshot", fake_record_supply_demand)
+
+    outcome = await _run(wired)
+
+    assert outcome.status == "done"
+    assert record_calls == []
+    assert outcome.pick is not None
+    assert outcome.pick.rationale_struct["supply_demand"] is None
+
+
+async def test_supply_demand_block_reaches_prompt(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_get_supply_demand(_code: str) -> dict[str, object]:
+        return _supply_demand_data()
+
+    async def fake_record_supply_demand(_code: str, _payload: dict[str, object]) -> None:
+        return None
+
+    monkeypatch.setattr(orch, "get_supply_demand_data", fake_get_supply_demand)
+    monkeypatch.setattr(orch, "record_supply_demand_snapshot", fake_record_supply_demand)
+
+    outcome = await _run(wired)
+
+    assert outcome.status == "done"
+    assert outcome.llm_prompt is not None
+    assert "6.50倍" in outcome.llm_prompt
+    assert "買い長残優勢" in outcome.llm_prompt
+
+
 async def test_news_sentiment_block_reaches_prompt_without_reasoning(
     wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

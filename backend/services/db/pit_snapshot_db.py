@@ -1,4 +1,6 @@
-"""`pit_fundamental_snapshots` / `pit_sentiment_snapshots` の読み書き（SQLAlchemy async）.
+"""`pit_fundamental_snapshots` / `pit_sentiment_snapshots` / `pit_supply_demand_snapshots` の読み書き.
+
+SQLAlchemy async。
 
 `plans/03_システム設計` §1.8。1 営業日 × 1 銘柄（センチメントは source も含む）で 1 行の
 append-only な point-in-time（時点整合）台帳。`(snapshot_date, code[, source])` の一意制約で
@@ -162,6 +164,56 @@ async def upsert_sentiment_snapshot(
                 "llm_sentiment_score": llm_sentiment_score,
                 "llm_impact_score": llm_impact_score,
                 "llm_confidence": llm_confidence,
+                "created_at": created_at,
+            },
+        )
+
+
+_UPSERT_SUPPLY_DEMAND = text("""
+    INSERT INTO pit_supply_demand_snapshots (
+        snapshot_id, snapshot_date, code, data_as_of,
+        long_volume, short_volume, margin_ratio, margin_ratio_prev, created_at
+    ) VALUES (
+        :snapshot_id, :snapshot_date, :code, :data_as_of,
+        :long_volume, :short_volume, :margin_ratio, :margin_ratio_prev, :created_at
+    )
+    ON CONFLICT (snapshot_date, code) DO UPDATE SET
+        data_as_of = excluded.data_as_of,
+        long_volume = excluded.long_volume,
+        short_volume = excluded.short_volume,
+        margin_ratio = excluded.margin_ratio,
+        margin_ratio_prev = excluded.margin_ratio_prev,
+        created_at = excluded.created_at
+    """)
+
+
+async def upsert_supply_demand_snapshot(
+    *,
+    snapshot_date: str,
+    code: str,
+    data_as_of: str | None,
+    long_volume: float | None,
+    short_volume: float | None,
+    margin_ratio: float | None,
+    margin_ratio_prev: float | None,
+    created_at: str,
+) -> None:
+    """需給（週末信用取引残高）PIT スナップショットを 1 行 upsert する（`(snapshot_date, code)` 一意）.
+
+    🆕 中長期ピック限定（`orchestrator.py` の llm_overlay ステージから fire-and-forget で呼ぶ）。
+    """
+    async with get_db() as db:
+        await db.execute(
+            _UPSERT_SUPPLY_DEMAND,
+            {
+                "snapshot_id": str(uuid.uuid4()),
+                "snapshot_date": snapshot_date,
+                "code": code,
+                "data_as_of": data_as_of,
+                "long_volume": long_volume,
+                "short_volume": short_volume,
+                "margin_ratio": margin_ratio,
+                "margin_ratio_prev": margin_ratio_prev,
                 "created_at": created_at,
             },
         )

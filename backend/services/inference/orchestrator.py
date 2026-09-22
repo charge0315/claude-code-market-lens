@@ -17,6 +17,11 @@ verify ステージへ集約した。
 🆕 ニュース見出しLLMセンチメント（`llm_news_sentiment_service`）は独立した隔離LLM呼び出しで、
 新規ステージは追加せず llm_overlay の payload 拡張として記録する（既存6ステージの後方互換を
 壊さないため）。強いネガティブ判定のみ bracket ステージで confidence cap を追加適用する。
+
+🆕 週末信用取引残高（`supply_demand_analyzer`、中長期ピック限定・ユーザー指示）も同じ理由で
+新規ステージを追加せず llm_overlay の payload 拡張として記録する。構造化数値のみで自由記述
+本文が無いため、ニュースセンチメントと異なり隔離LLM呼び出しは不要。composite_score や
+confidence cap には統合しない（v1、較正・promotion gate への影響を避けるため）。
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_
 from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.jst_time import JST
-from backend.services.learning.pit_snapshot_service import record_llm_sentiment_snapshot
+from backend.services.learning.pit_snapshot_service import record_llm_sentiment_snapshot, record_supply_demand_snapshot
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
@@ -46,6 +51,7 @@ from backend.services.scoring.llm_news_sentiment_service import (
     get_llm_news_sentiment,
     render_news_sentiment_block,
 )
+from backend.services.scoring.supply_demand_analyzer import get_supply_demand_data, render_supply_demand_block
 from backend.services.vault.brand_notes_service import BrandNote, get_brand_note
 from backend.services.vault.daily_note_service import read_daily_frontmatter
 from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
@@ -109,6 +115,11 @@ def _pit_sentiment_snapshot(news_sentiment: LlmNewsSentimentResult | None) -> di
     }
 
 
+def _pit_supply_demand_snapshot(supply_demand: dict[str, object] | None) -> dict[str, object] | None:
+    """週末信用取引残高の生フィールドを `feature_snapshot` 用に返す（🆕、中長期限定）."""
+    return supply_demand
+
+
 def _feature_snapshot(
     rec: dict[str, object],
     atr: float | None,
@@ -116,6 +127,7 @@ def _feature_snapshot(
     *,
     brand: BrandNote | None = None,
     news_sentiment: LlmNewsSentimentResult | None = None,
+    supply_demand: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "score_breakdown": rec.get("score_breakdown"),
@@ -129,6 +141,8 @@ def _feature_snapshot(
         # 🆕 P29: 遡及的な特徴量エンジニアリング・生粒度 PSI 監視のための生値（§1.9）。
         "pit_fundamental": _pit_fundamental_snapshot(brand),
         "pit_sentiment": _pit_sentiment_snapshot(news_sentiment),
+        # 🆕 週末信用取引残高（中長期限定、`supply_demand_analyzer`）。短期ピックでは常に None。
+        "pit_supply_demand": _pit_supply_demand_snapshot(supply_demand),
     }
 
 
@@ -313,6 +327,12 @@ async def run_inference(
     # `record_llm_sentiment_snapshot` 内部で例外を握り潰す）。
     if news_sentiment is not None:
         await record_llm_sentiment_snapshot(symbol, news_sentiment)
+    # 🆕 需給軸（週末信用取引残高）は中長期ピック限定（ユーザー指示）。短期は取得自体しない
+    # （J-Quants 呼び出しコストを増やさないため、`news_sentiment` と違い horizon でゲートする）。
+    supply_demand = await get_supply_demand_data(symbol) if horizon_type == "mid_term" else None
+    supply_demand_block = render_supply_demand_block(supply_demand)
+    if supply_demand is not None:
+        await record_supply_demand_snapshot(symbol, supply_demand)
     prompt = build_pick_prompt(
         horizon_type=horizon_type,
         recommendation=rec,
@@ -323,6 +343,7 @@ async def run_inference(
         trend_context_block=trend_block,
         related_daily_frontmatter=related_daily or None,
         news_sentiment_block=news_sentiment_block,
+        supply_demand_block=supply_demand_block,
     )
     try:
         raw = await resolve_feature_provider("stock_pick").propose_stock_pick(ticker=symbol, prompt=prompt)
@@ -359,6 +380,7 @@ async def run_inference(
             "take_profit_price": raw_target,
             "risk_factors": raw.get("risk_factors") or [],
             "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
+            "supply_demand": supply_demand,
         },
         run_status="running",
     )
@@ -443,12 +465,15 @@ async def run_inference(
         confidence_raw=confidence_raw,
         confidence=confidence,
         confidence_bucket=bucket,
-        feature_snapshot=_feature_snapshot(rec, atr, trend_score, brand=brand, news_sentiment=news_sentiment),
+        feature_snapshot=_feature_snapshot(
+            rec, atr, trend_score, brand=brand, news_sentiment=news_sentiment, supply_demand=supply_demand
+        ),
         rationale_struct={
             "recommender_reasoning": rec.get("reasoning"),
             "llm_risk_factors": raw.get("risk_factors") or [],
             "holding_period_days": standardize_holding_period(raw.get("holding_period_days")),
             "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
+            "supply_demand": supply_demand,
         },
         rationale_text=str(raw.get("reasoning") or "総合スコアに基づく判定"),
         model_version=model_version,

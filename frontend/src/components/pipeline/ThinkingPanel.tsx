@@ -33,6 +33,24 @@ function newsSentimentNote(payload: Record<string, unknown>): string {
   return `。ニュース見出しのAIセンチメント判定「${label}」（見出し${newsCount ?? '—'}件）を判断材料に使用`;
 }
 
+// 週末信用取引残高（`llm_overlay` payload の `supply_demand`、中長期ピック限定）。
+const SUPPLY_DEMAND_LABELS: Record<string, string> = {
+  long_heavy: '買い長残優勢',
+  short_heavy: '売り長残優勢',
+  balanced: '均衡',
+};
+
+function supplyDemandNote(payload: Record<string, unknown>): string {
+  const raw = payload.supply_demand;
+  if (raw === null || typeof raw !== 'object') return '';
+  const supplyDemand = raw as Record<string, unknown>;
+  const label =
+    typeof supplyDemand.classification === 'string' ? SUPPLY_DEMAND_LABELS[supplyDemand.classification] : undefined;
+  const ratio = num(supplyDemand.margin_ratio, 2);
+  if (label === undefined || ratio === null) return '';
+  return `。信用倍率 ${ratio}倍（${label}）を判断材料に使用`;
+}
+
 function summarize(event: TraceEvent): string {
   const p = event.payload;
   const failed = event.stage_status === 'failed';
@@ -47,7 +65,7 @@ function summarize(event: TraceEvent): string {
     case 'llm_overlay':
       if (failed) return 'AI の応答が不正な形式でした';
       if (p.should_include === false) return 'AI が対象外と判断しました';
-      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）${newsSentimentNote(p)}`;
+      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）${newsSentimentNote(p)}${supplyDemandNote(p)}`;
     case 'bracket':
       if (failed) return `3 値不整合のため却下: ${String(p.reason ?? '')}`;
       return `買値 ${num(p.entry, 0) ?? '—'} / 損切 ${num(p.stop, 0) ?? '—'} / 売値 ${num(p.target, 0) ?? '—'} を確定`;
