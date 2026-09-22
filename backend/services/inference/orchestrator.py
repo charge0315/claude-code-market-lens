@@ -22,6 +22,12 @@ verify ステージへ集約した。
 新規ステージを追加せず llm_overlay の payload 拡張として記録する。構造化数値のみで自由記述
 本文が無いため、ニュースセンチメントと異なり隔離LLM呼び出しは不要。composite_score や
 confidence cap には統合しない（v1、較正・promotion gate への影響を避けるため）。
+
+🆕 決算サプライズ・予想修正モメンタム（`earnings_surprise_analyzer`）も同じ理由で新規ステージを
+追加せず llm_overlay の payload 拡張として記録する。需給軸と異なりホライズンによる gate は
+行わない（決算サプライズは発表直後の値動きに直結するイベントドリブン材料のため短期・中長期の
+両方が対象、ニュースセンチメントと同じ扱い）。J-Quants の構造化数値のみで自由記述本文が無いため
+隔離LLM呼び出しは不要。composite_score や confidence cap には統合しない（v1、需給軸と同じ理由）。
 """
 
 from __future__ import annotations
@@ -38,7 +44,11 @@ from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_
 from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
 from backend.services.jst_time import JST
-from backend.services.learning.pit_snapshot_service import record_llm_sentiment_snapshot, record_supply_demand_snapshot
+from backend.services.learning.pit_snapshot_service import (
+    record_earnings_surprise_snapshot,
+    record_llm_sentiment_snapshot,
+    record_supply_demand_snapshot,
+)
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
@@ -46,6 +56,10 @@ from backend.services.llm.registry import resolve_feature_provider, resolve_shad
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
 from backend.services.registry.calibration import apply_calibration
+from backend.services.scoring.earnings_surprise_analyzer import (
+    get_earnings_surprise_data,
+    render_earnings_surprise_block,
+)
 from backend.services.scoring.llm_news_sentiment_service import (
     LlmNewsSentimentResult,
     get_llm_news_sentiment,
@@ -120,6 +134,11 @@ def _pit_supply_demand_snapshot(supply_demand: dict[str, object] | None) -> dict
     return supply_demand
 
 
+def _pit_earnings_surprise_snapshot(earnings_surprise: dict[str, object] | None) -> dict[str, object] | None:
+    """決算サプライズ・予想修正モメンタムの生フィールドを `feature_snapshot` 用に返す（🆕、両ホライズン対象）."""
+    return earnings_surprise
+
+
 def _feature_snapshot(
     rec: dict[str, object],
     atr: float | None,
@@ -128,6 +147,7 @@ def _feature_snapshot(
     brand: BrandNote | None = None,
     news_sentiment: LlmNewsSentimentResult | None = None,
     supply_demand: dict[str, object] | None = None,
+    earnings_surprise: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "score_breakdown": rec.get("score_breakdown"),
@@ -143,6 +163,8 @@ def _feature_snapshot(
         "pit_sentiment": _pit_sentiment_snapshot(news_sentiment),
         # 🆕 週末信用取引残高（中長期限定、`supply_demand_analyzer`）。短期ピックでは常に None。
         "pit_supply_demand": _pit_supply_demand_snapshot(supply_demand),
+        # 🆕 決算サプライズ・予想修正モメンタム（`earnings_surprise_analyzer`）。短期・中長期の両方が対象。
+        "pit_earnings_surprise": _pit_earnings_surprise_snapshot(earnings_surprise),
     }
 
 
@@ -333,6 +355,12 @@ async def run_inference(
     supply_demand_block = render_supply_demand_block(supply_demand)
     if supply_demand is not None:
         await record_supply_demand_snapshot(symbol, supply_demand)
+    # 🆕 決算サプライズ・予想修正モメンタムは需給軸と異なりホライズンによる gate なし
+    # （短期・中長期の両方が対象、ニュースセンチメントと同じ扱い）。
+    earnings_surprise = await get_earnings_surprise_data(symbol)
+    earnings_surprise_block = render_earnings_surprise_block(earnings_surprise)
+    if earnings_surprise is not None:
+        await record_earnings_surprise_snapshot(symbol, earnings_surprise)
     prompt = build_pick_prompt(
         horizon_type=horizon_type,
         recommendation=rec,
@@ -344,6 +372,7 @@ async def run_inference(
         related_daily_frontmatter=related_daily or None,
         news_sentiment_block=news_sentiment_block,
         supply_demand_block=supply_demand_block,
+        earnings_surprise_block=earnings_surprise_block,
     )
     try:
         raw = await resolve_feature_provider("stock_pick").propose_stock_pick(ticker=symbol, prompt=prompt)
@@ -381,6 +410,7 @@ async def run_inference(
             "risk_factors": raw.get("risk_factors") or [],
             "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
             "supply_demand": supply_demand,
+            "earnings_surprise": earnings_surprise,
         },
         run_status="running",
     )
@@ -466,7 +496,13 @@ async def run_inference(
         confidence=confidence,
         confidence_bucket=bucket,
         feature_snapshot=_feature_snapshot(
-            rec, atr, trend_score, brand=brand, news_sentiment=news_sentiment, supply_demand=supply_demand
+            rec,
+            atr,
+            trend_score,
+            brand=brand,
+            news_sentiment=news_sentiment,
+            supply_demand=supply_demand,
+            earnings_surprise=earnings_surprise,
         ),
         rationale_struct={
             "recommender_reasoning": rec.get("reasoning"),
@@ -474,6 +510,7 @@ async def run_inference(
             "holding_period_days": standardize_holding_period(raw.get("holding_period_days")),
             "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
             "supply_demand": supply_demand,
+            "earnings_surprise": earnings_surprise,
         },
         rationale_text=str(raw.get("reasoning") or "総合スコアに基づく判定"),
         model_version=model_version,

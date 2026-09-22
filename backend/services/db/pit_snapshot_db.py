@@ -219,6 +219,61 @@ async def upsert_supply_demand_snapshot(
         )
 
 
+_UPSERT_EARNINGS_SURPRISE = text("""
+    INSERT INTO pit_earnings_surprise_snapshots (
+        snapshot_id, snapshot_date, code, data_as_of, fiscal_year_end, period_type,
+        surprise_op_rate, revision_op_rate, revision_classification, created_at
+    ) VALUES (
+        :snapshot_id, :snapshot_date, :code, :data_as_of, :fiscal_year_end, :period_type,
+        :surprise_op_rate, :revision_op_rate, :revision_classification, :created_at
+    )
+    ON CONFLICT (snapshot_date, code) DO UPDATE SET
+        data_as_of = excluded.data_as_of,
+        fiscal_year_end = excluded.fiscal_year_end,
+        period_type = excluded.period_type,
+        surprise_op_rate = excluded.surprise_op_rate,
+        revision_op_rate = excluded.revision_op_rate,
+        revision_classification = excluded.revision_classification,
+        created_at = excluded.created_at
+    """)
+
+
+async def upsert_earnings_surprise_snapshot(
+    *,
+    snapshot_date: str,
+    code: str,
+    data_as_of: str | None,
+    fiscal_year_end: str | None,
+    period_type: str | None,
+    surprise_op_rate: float | None,
+    revision_op_rate: float | None,
+    revision_classification: str | None,
+    created_at: str,
+) -> None:
+    """決算サプライズ・予想修正モメンタム PIT スナップショットを 1 行 upsert する（`(snapshot_date, code)` 一意）.
+
+    🆕 短期・中長期の両方が対象（`orchestrator.py` の llm_overlay ステージから fire-and-forget で
+    呼ぶ）。営業利益（OP）を主指標として列に残し、他指標の内訳は `feature_snapshot` 側の JSON
+    （`pit_earnings_surprise`）に残す（`supply_demand_snapshots` と同じ「主要指標のみ列化」方針）。
+    """
+    async with get_db() as db:
+        await db.execute(
+            _UPSERT_EARNINGS_SURPRISE,
+            {
+                "snapshot_id": str(uuid.uuid4()),
+                "snapshot_date": snapshot_date,
+                "code": code,
+                "data_as_of": data_as_of,
+                "fiscal_year_end": fiscal_year_end,
+                "period_type": period_type,
+                "surprise_op_rate": surprise_op_rate,
+                "revision_op_rate": revision_op_rate,
+                "revision_classification": revision_classification,
+                "created_at": created_at,
+            },
+        )
+
+
 async def list_fundamental_range(*, codes: list[str] | None, since: str, until: str) -> list[dict[str, object]]:
     """`[since, until]`（両端含む、`snapshot_date` 昇順）のファンダメンタル PIT 行を返す.
 

@@ -171,6 +171,7 @@ async def record_supply_demand_snapshot(code: str, data: dict[str, object]) -> N
     J-Quants 呼び出しは発生しない）。失敗してもピック生成本体には一切影響させない
     （フェイルソフト、`record_llm_sentiment_snapshot` と同じ方針）。
     """
+
     def _as_float(key: str) -> float | None:
         value = data.get(key)
         return float(value) if isinstance(value, (int, float)) else None
@@ -189,6 +190,50 @@ async def record_supply_demand_snapshot(code: str, data: dict[str, object]) -> N
         )
     except Exception:  # noqa: BLE001 - PIT 記録の失敗でピック生成本体を止めない
         logger.warning("PIT 需給スナップショットの記録に失敗しました（%s）", code, exc_info=True)
+
+
+async def record_earnings_surprise_snapshot(code: str, data: dict[str, object]) -> None:
+    """ピック生成の一部として既に取得済みの決算サプライズ・予想修正モメンタムを PIT 台帳へ記録する.
+
+    🆕 短期・中長期の両方が対象（`orchestrator.py` の llm_overlay ステージから fire-and-forget で
+    呼ばれる想定、追加の J-Quants 呼び出しは発生しない）。失敗してもピック生成本体には一切
+    影響させない（フェイルソフト、`record_supply_demand_snapshot` と同じ方針）。主指標（営業利益）
+    のみ列化し、他指標の内訳は呼び出し元が `feature_snapshot` へ別途残す。
+    """
+
+    def _metric_rate(metrics: object, key: str, rate_field: str) -> float | None:
+        if not isinstance(metrics, dict):
+            return None
+        metric = metrics.get(key)
+        if not isinstance(metric, dict):
+            return None
+        value = metric.get(rate_field)
+        return float(value) if isinstance(value, (int, float)) else None
+
+    def _revision_classification(metrics: object) -> str | None:
+        if not isinstance(metrics, dict):
+            return None
+        metric = metrics.get("forecast_operating_profit")
+        if not isinstance(metric, dict):
+            return None
+        classification = metric.get("classification")
+        return str(classification) if classification is not None else None
+
+    as_of = data.get("as_of")
+    try:
+        await pit_snapshot_db.upsert_earnings_surprise_snapshot(
+            snapshot_date=today_jst(),
+            code=code,
+            data_as_of=str(as_of) if as_of is not None else None,
+            fiscal_year_end=str(data["fiscal_year_end"]) if data.get("fiscal_year_end") is not None else None,
+            period_type=str(data["period_type"]) if data.get("period_type") is not None else None,
+            surprise_op_rate=_metric_rate(data.get("surprise"), "operating_profit", "surprise_rate"),
+            revision_op_rate=_metric_rate(data.get("revision"), "forecast_operating_profit", "revision_rate"),
+            revision_classification=_revision_classification(data.get("revision")),
+            created_at=_now_iso(),
+        )
+    except Exception:  # noqa: BLE001 - PIT 記録の失敗でピック生成本体を止めない
+        logger.warning("PIT 決算サプライズスナップショットの記録に失敗しました（%s）", code, exc_info=True)
 
 
 async def record_llm_sentiment_snapshot(code: str, result: LlmNewsSentimentResult) -> None:

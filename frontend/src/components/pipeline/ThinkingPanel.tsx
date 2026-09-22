@@ -51,6 +51,43 @@ function supplyDemandNote(payload: Record<string, unknown>): string {
   return `。信用倍率 ${ratio}倍（${label}）を判断材料に使用`;
 }
 
+// 決算サプライズ・予想修正モメンタム（`llm_overlay` payload の `earnings_surprise`、
+// `earnings_surprise_analyzer.get_earnings_surprise_data()` 形状、短期・中長期の両方が対象）。
+const REVISION_LABELS: Record<string, string> = {
+  upward: '上方修正',
+  downward: '下方修正',
+  unchanged: '据え置き',
+};
+
+function earningsSurpriseNote(payload: Record<string, unknown>): string {
+  const raw = payload.earnings_surprise;
+  if (raw === null || typeof raw !== 'object') return '';
+  const data = raw as Record<string, unknown>;
+  const notes: string[] = [];
+
+  const surprise = data.surprise;
+  if (surprise !== null && typeof surprise === 'object') {
+    const opMetric = (surprise as Record<string, unknown>).operating_profit;
+    if (opMetric !== null && typeof opMetric === 'object') {
+      const rate = num(Number((opMetric as Record<string, unknown>).surprise_rate) * 100, 1);
+      if (rate !== null) notes.push(`決算サプライズ（営業利益 ${rate}%）`);
+    }
+  }
+
+  const revision = data.revision;
+  if (revision !== null && typeof revision === 'object') {
+    const opMetric = (revision as Record<string, unknown>).forecast_operating_profit;
+    if (opMetric !== null && typeof opMetric === 'object') {
+      const classification = (opMetric as Record<string, unknown>).classification;
+      const label = typeof classification === 'string' ? REVISION_LABELS[classification] : undefined;
+      if (label !== undefined) notes.push(`通期予想は${label}`);
+    }
+  }
+
+  if (notes.length === 0) return '';
+  return `。${notes.join('・')}を判断材料に使用`;
+}
+
 function summarize(event: TraceEvent): string {
   const p = event.payload;
   const failed = event.stage_status === 'failed';
@@ -65,7 +102,7 @@ function summarize(event: TraceEvent): string {
     case 'llm_overlay':
       if (failed) return 'AI の応答が不正な形式でした';
       if (p.should_include === false) return 'AI が対象外と判断しました';
-      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）${newsSentimentNote(p)}${supplyDemandNote(p)}`;
+      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）${newsSentimentNote(p)}${supplyDemandNote(p)}${earningsSurpriseNote(p)}`;
     case 'bracket':
       if (failed) return `3 値不整合のため却下: ${String(p.reason ?? '')}`;
       return `買値 ${num(p.entry, 0) ?? '—'} / 損切 ${num(p.stop, 0) ?? '—'} / 売値 ${num(p.target, 0) ?? '—'} を確定`;

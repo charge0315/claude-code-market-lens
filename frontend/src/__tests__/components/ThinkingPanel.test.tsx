@@ -150,6 +150,45 @@ describe('ThinkingPanel', () => {
     expect(screen.queryByText(/信用倍率/)).not.toBeInTheDocument();
   });
 
+  it('LLM深掘りで決算サプライズ・予想修正モメンタムが判断材料になったことを表示する', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: {
+              should_include: true,
+              confidence_raw: 58,
+              earnings_surprise: {
+                surprise: { operating_profit: { surprise_rate: 0.1 } },
+                revision: { forecast_operating_profit: { classification: 'upward' } },
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/決算サプライズ（営業利益 10.0%）・通期予想は上方修正を判断材料に使用/)).toBeInTheDocument();
+  });
+
+  it('決算サプライズ・予想修正データが無い場合は追記しない', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: { should_include: true, confidence_raw: 60 },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/決算サプライズ/)).not.toBeInTheDocument();
+  });
+
   it('失敗ステージの理由を表示する', () => {
     render(
       <ThinkingPanel

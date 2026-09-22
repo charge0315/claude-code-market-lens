@@ -160,3 +160,48 @@ async def test_fetch_weekly_margin_interest_propagates_client_error(
     monkeypatch.setattr(client, "_get", fake_get)
     with pytest.raises(JQuantsClientError):
         await client.fetch_weekly_margin_interest("7203")
+
+
+async def test_fetch_statements_parses_forecast_fields(client: JQuantsClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """🆕 決算サプライズ・予想修正モメンタム軸向けの通期予想フィールド（FSales/FOP等）を検証する.
+
+    フィールド名は 2026-09-22 に `code=72030` への実 API 呼び出しで確認済み。
+    """
+    payload: dict[str, object] = {
+        "data": [
+            {
+                "DiscDate": "2026-05-10",
+                "Code": "72030",
+                "CurFYEn": "2026-03-31",
+                "CurPerType": "FY",
+                "Sales": "48000000",
+                "OP": "5500000",
+                "FSales": "",
+                "FOP": "",
+            },
+            {
+                "DiscDate": "2026-02-05",
+                "Code": "72030",
+                "CurFYEn": "2026-03-31",
+                "CurPerType": "3Q",
+                "FSales": "45000000",
+                "FOP": "5000000",
+                "FOdP": "5200000",
+                "FNP": "4000000",
+                "FEPS": "380.5",
+            },
+        ]
+    }
+
+    async def fake_get(_endpoint: str, _params: object = None) -> dict[str, object]:
+        return payload
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    records = await client.fetch_statements("7203")
+    assert [r.disclosed_date for r in records] == ["2026-05-10", "2026-02-05"]  # 開示日降順
+
+    latest, prior = records[0], records[1]
+    assert latest.operating_profit == 5_500_000.0
+    assert latest.forecast_operating_profit is None  # 空文字は None に coerce される
+    assert prior.forecast_operating_profit == 5_000_000.0
+    assert prior.forecast_eps == 380.5

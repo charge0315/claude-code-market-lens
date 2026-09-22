@@ -9,8 +9,9 @@ frontmatter のみ — 検索結果の本文（`text`）はクライアント境
 ここには一切渡ってこない。`news_sentiment_block`（🆕、`llm_news_sentiment_service`）も同様に
 enum/number のみ — ニュース見出し本文は隔離 LLM 呼び出しの境界で読まれるだけで、
 自由記述の判定理由（`reasoning`）はここには一切渡ってこない。`supply_demand_block`
-（🆕、`supply_demand_analyzer`、中長期ピック限定）は J-Quants の構造化数値のみで自由記述の
-本文が無いため、そもそもインジェクションのリスクが無い（隔離 LLM も不要）。
+（🆕、`supply_demand_analyzer`、中長期ピック限定）・`earnings_surprise_block`
+（🆕、`earnings_surprise_analyzer`、短期・中長期の両方が対象）はいずれも J-Quants の構造化数値
+のみで自由記述の本文が無いため、そもそもインジェクションのリスクが無い（隔離 LLM も不要）。
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ def build_pick_prompt(
     related_daily_frontmatter: Sequence[Mapping[str, object]] | None = None,
     news_sentiment_block: str | None = None,
     supply_demand_block: str | None = None,
+    earnings_surprise_block: str | None = None,
 ) -> str:
     """1 銘柄分の深掘りプロンプトを組み立てる（forced tool-use `propose_stock_pick` 前提）."""
     symbol = str(recommendation.get("ticker", ""))
@@ -84,6 +86,10 @@ def build_pick_prompt(
     if supply_demand_block:
         lines.append("")
         lines.append(supply_demand_block)
+
+    if earnings_surprise_block:
+        lines.append("")
+        lines.append(earnings_surprise_block)
 
     lines += [
         "",

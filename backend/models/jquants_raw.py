@@ -20,6 +20,11 @@ _STATEMENT_NUMERIC_FIELDS = (
     "eps",
     "total_assets",
     "net_assets",
+    "forecast_net_sales",
+    "forecast_operating_profit",
+    "forecast_ordinary_profit",
+    "forecast_profit",
+    "forecast_eps",
 )
 
 _MARGIN_INTEREST_NUMERIC_FIELDS = (
@@ -65,7 +70,14 @@ class RawDailyBar(BaseModel):
 
 
 class RawStatement(BaseModel):
-    """財務サマリ（/fins/summary の 1 レコード）."""
+    """財務サマリ（/fins/summary の 1 レコード）.
+
+    🆕 決算サプライズ・予想修正モメンタム軸向けに、当期通期の会社予想フィールド
+    （`FSales`/`FOP`/`FOdP`/`FNP`/`FEPS`）を追加（2026-09-22、`code=72030` で実 API 呼び出し
+    検証済み）。四半期決算のたびにこの通期予想が更新されるため、連続する開示間の差分で
+    予想修正の方向を検出できる。次期予想（`NxFSales` 等、FY 決算時のみ）・上期累計予想
+    （`FSales2Q` 等）は v1 では扱わない（`services/scoring/earnings_surprise_analyzer.py` 参照）。
+    """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
@@ -79,6 +91,12 @@ class RawStatement(BaseModel):
     eps: float | None = Field(default=None, alias="EPS")
     total_assets: float | None = Field(default=None, alias="TA")
     net_assets: float | None = Field(default=None, alias="Eq")
+    # 🆕 当期通期の会社予想（開示時点のもの。四半期を追うごとに更新される）。
+    forecast_net_sales: float | None = Field(default=None, alias="FSales")
+    forecast_operating_profit: float | None = Field(default=None, alias="FOP")
+    forecast_ordinary_profit: float | None = Field(default=None, alias="FOdP")
+    forecast_profit: float | None = Field(default=None, alias="FNP")
+    forecast_eps: float | None = Field(default=None, alias="FEPS")
 
     @field_validator(*_STATEMENT_NUMERIC_FIELDS, mode="before")
     @classmethod
