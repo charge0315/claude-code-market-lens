@@ -52,6 +52,68 @@ describe('ThinkingPanel', () => {
     expect(screen.getByText(/確度（生値）72%/)).toBeInTheDocument();
   });
 
+  it('LLM深掘りでポジティブなニュースセンチメントが判断材料になったことを表示する', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: {
+              should_include: true,
+              confidence_raw: 55,
+              news_sentiment: { sentiment_label: 'positive', news_count: 8 },
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/ニュース見出しのAIセンチメント判定「ポジティブ」（見出し8件）を判断材料に使用/)).toBeInTheDocument();
+  });
+
+  it('LLM深掘りでネガティブなニュースセンチメントが判断材料になったことを表示する', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: {
+              should_include: true,
+              confidence_raw: 42,
+              news_sentiment: { sentiment_label: 'strongly_negative', news_count: 3 },
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/ニュース見出しのAIセンチメント判定「強いネガティブ」（見出し3件）を判断材料に使用/)).toBeInTheDocument();
+  });
+
+  it('ニュースセンチメントが中立、または存在しない場合は追記しない', () => {
+    render(
+      <ThinkingPanel
+        events={[
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 4,
+            stage_status: 'done',
+            payload: { should_include: true, confidence_raw: 60, news_sentiment: { sentiment_label: 'neutral', news_count: 5 } },
+          }),
+          event({
+            stage: 'llm_overlay',
+            stage_seq: 5,
+            stage_status: 'done',
+            payload: { should_include: true, confidence_raw: 60 },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/を判断材料に使用/)).not.toBeInTheDocument();
+  });
+
   it('失敗ステージの理由を表示する', () => {
     render(
       <ThinkingPanel

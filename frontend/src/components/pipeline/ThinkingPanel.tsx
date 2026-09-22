@@ -13,6 +13,26 @@ function num(value: unknown, digits = 1): string | null {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : null;
 }
 
+// ニュース見出しAIセンチメント（`llm_overlay` payload の `news_sentiment`、
+// `LlmNewsSentimentResult.to_rationale_dict()` 形状）の判定ラベル。中立は判断材料として
+// 言及する価値が薄いため、ポジティブ/ネガティブ方向のときだけ1行に追記する。
+const NEWS_SENTIMENT_LABELS: Record<string, string> = {
+  strongly_positive: '強いポジティブ',
+  positive: 'ポジティブ',
+  negative: 'ネガティブ',
+  strongly_negative: '強いネガティブ',
+};
+
+function newsSentimentNote(payload: Record<string, unknown>): string {
+  const raw = payload.news_sentiment;
+  if (raw === null || typeof raw !== 'object') return '';
+  const sentiment = raw as Record<string, unknown>;
+  const label = typeof sentiment.sentiment_label === 'string' ? NEWS_SENTIMENT_LABELS[sentiment.sentiment_label] : undefined;
+  if (label === undefined) return '';
+  const newsCount = num(sentiment.news_count, 0);
+  return `。ニュース見出しのAIセンチメント判定「${label}」（見出し${newsCount ?? '—'}件）を判断材料に使用`;
+}
+
 function summarize(event: TraceEvent): string {
   const p = event.payload;
   const failed = event.stage_status === 'failed';
@@ -27,7 +47,7 @@ function summarize(event: TraceEvent): string {
     case 'llm_overlay':
       if (failed) return 'AI の応答が不正な形式でした';
       if (p.should_include === false) return 'AI が対象外と判断しました';
-      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）`;
+      return `AI 深掘り完了（確度（生値）${num(p.confidence_raw, 0) ?? '—'}%）${newsSentimentNote(p)}`;
     case 'bracket':
       if (failed) return `3 値不整合のため却下: ${String(p.reason ?? '')}`;
       return `買値 ${num(p.entry, 0) ?? '—'} / 損切 ${num(p.stop, 0) ?? '—'} / 売値 ${num(p.target, 0) ?? '—'} を確定`;
