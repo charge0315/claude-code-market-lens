@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
+from backend.config import settings
 from backend.models.api_cost import ApiCostDailyRow, ApiCostSummary
 from backend.services.db import api_cost_db
 from backend.services.jst_time import today_jst
@@ -169,3 +170,16 @@ async def build_api_cost_summary(days: int = 30) -> ApiCostSummary:
         by_feature=by_feature,
         rows=rows,
     )
+
+
+async def is_daily_limit_exceeded() -> bool:
+    """本日の推定LLMコスト合計が `LLM_DAILY_COST_LIMIT_USD`（既定 $5.0）以上かを返す（🆕 P36）.
+
+    `settings.llm_daily_cost_limit_usd` は従来どこからも参照されていなかった「安全装置のみで
+    実効化されていない」設定値だった（CLAUDE.md「予算上限は安全装置であって目標ではない」）。
+    日次バッチ（`run_picks_task` 等）は既存の実運用を壊すリスクを避けるため対象外とし、
+    `services/inference/sandbox.py`（任意銘柄のオンデマンド推論トリガー）でのみ、新規トリガー
+    前のプリフライトチェックとして初めて実効化する。
+    """
+    today_summary = await build_api_cost_summary(days=1)
+    return today_summary.total_cost_usd >= settings.llm_daily_cost_limit_usd

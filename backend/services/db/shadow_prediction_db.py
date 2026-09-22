@@ -84,6 +84,18 @@ async def list_shadow_predictions_for_pick(pick_id: str) -> list[dict[str, objec
     return [_parse_payload(r) for r in rows]
 
 
+async def list_shadow_predictions_for_run(run_id: str) -> list[dict[str, object]]:
+    """指定 run に紐づく全 challenger 判定を issued_at 昇順で返す（🆕 P36、`pick_id` 未確定の
+    オンデマンド推論トレース表示用。`list_shadow_predictions_for_pick` の run_id 版）."""
+    async with get_db() as db:
+        result = await db.execute(
+            text("SELECT * FROM shadow_predictions WHERE run_id = :run_id ORDER BY issued_at ASC"),
+            {"run_id": run_id},
+        )
+        rows = [dict(r._mapping) for r in result]
+    return [_parse_payload(r) for r in rows]
+
+
 async def list_shadow_predictions(
     *,
     horizon_type: str | None = None,

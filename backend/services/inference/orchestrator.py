@@ -208,8 +208,16 @@ class _Recorder:
         )
 
 
-async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceOutcome) -> None:
-    """1 プロバイダぶんの shadow 判定を実行し `shadow_predictions` へ記録する（フェイルソフト）."""
+async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceOutcome, *, pick_id: str | None) -> None:
+    """1 プロバイダぶんの shadow 判定を実行し `shadow_predictions` へ記録する（フェイルソフト）.
+
+    `pick_id` は呼び出し元が明示的に渡す（`outcome.pick.pick_id` をそのまま使わない） —
+    🆕 P36: `services/inference/sandbox.py`（任意銘柄のオンデマンド推論、`prediction_ledger`
+    へ台帳化しない）から呼ぶ場合は `None` を渡す。`shadow_predictions.pick_id` は nullable な
+    外部キー（`prediction_ledger.pick_id` 参照、`0001_baseline.py`）のため、台帳未確定の
+    `pick.pick_id`（値はあるが `prediction_ledger` にまだ存在しない）をそのまま渡すと
+    `PRAGMA foreign_keys=ON`（`services/db/database.py`）下で制約違反になる。
+    """
     pick = outcome.pick
     if pick is None or outcome.llm_prompt is None or outcome.current_price is None:
         return
@@ -239,7 +247,7 @@ async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceO
 
     try:
         await insert_shadow_prediction(
-            pick_id=pick.pick_id,
+            pick_id=pick_id,
             run_id=outcome.run_id,
             challenger_version=f"{provider.provider_id}:{provider.model_for('stock_pick')}",
             symbol=pick.symbol,
@@ -260,13 +268,16 @@ async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceO
         logger.warning("%s shadow 判定の記録に失敗しました（%s）", provider.provider_id, pick.symbol, exc_info=True)
 
 
-async def record_shadow_judgments(outcome: InferenceOutcome) -> None:
+async def record_shadow_judgments(outcome: InferenceOutcome, *, pick_id: str | None) -> None:
     """設定された shadow プロバイダ群（0〜複数、`LLM_SHADOW_PROVIDERS_STOCK_PICK`）に、
     公式パイプラインと同一のプロンプトを判定させ、`shadow_predictions` へ比較用に記録する.
 
-    `shadow_predictions.pick_id` は `prediction_ledger.pick_id` への FK（外部キー制約 ON）の
-    ため、呼び出しは **`pl.insert_picks` で台帳へ確定した後**（`pipeline.run_picks`）に限る
-    — `run_inference` 実行時点ではまだ `pick_id` が DB に存在しない。
+    `pick_id` は呼び出し元が明示的に指定する（`shadow_predictions.pick_id` は
+    `prediction_ledger.pick_id` への nullable な FK、外部キー制約 ON、`services/db/database.py`）。
+    - `pipeline.run_picks` からの通常呼び出しは `outcome.pick.pick_id`（**`pl.insert_picks` で
+      台帳へ確定した後**に限る — `run_inference` 実行時点ではまだ DB に存在しないため）。
+    - 🆕 P36: `services/inference/sandbox.py`（任意銘柄のオンデマンド推論、台帳化しない）は
+      `pick_id=None` を渡す（FK は nullable のため通る）。
 
     表示専用の challenger 判定であり、失敗しても本体のピック生成には一切影響しない
     （フェイルソフト）。`direction` はこのアーキテクチャでは常に quant 由来（`pick.direction`）
@@ -277,7 +288,7 @@ async def record_shadow_judgments(outcome: InferenceOutcome) -> None:
     providers = resolve_shadow_providers("stock_pick")
     if not providers:
         return
-    await asyncio.gather(*(_record_one_shadow_judgment(p, outcome) for p in providers))
+    await asyncio.gather(*(_record_one_shadow_judgment(p, outcome, pick_id=pick_id) for p in providers))
 
 
 async def run_inference(
@@ -293,13 +304,17 @@ async def run_inference(
     news_block: str | None,
     trend_block: str | None,
     gate_horizon: int,
+    run_id: str | None = None,
 ) -> InferenceOutcome:
     """1 銘柄ぶんの推論を stage DAG として実行し、トレースを記録しながらピック or 却下を返す.
 
     `rec`/`atr`/`trend_score` は呼び出し側（`pipeline.run_picks`）がショートリスト選定のために
     既に算出済みの値（collect/subscore/synthesis 相当）をそのまま受け取る — 二重計算しない。
+    `run_id` 省略時は内部生成（既定、`pipeline.run_picks` からの通常呼び出し）。🆕 P36:
+    `services/inference/sandbox.py` は事前生成した `run_id` を渡し、API が非同期タスク起動と
+    同時に `run_id` を即座に返せるようにする（フロントはその `run_id` で SSE 購読を開始する）。
     """
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     recorder = _Recorder(run_id, symbol, horizon_type)
 
     # --- stage 1: collect ---

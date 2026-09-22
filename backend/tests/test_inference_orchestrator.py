@@ -374,7 +374,7 @@ async def test_run_inference_returns_prompt_and_current_price_for_shadow_judgmen
 async def test_gemini_not_configured_records_no_shadow_prediction(wired: WiredState, migrated_db: Path) -> None:
     """既定（`wired` fixture）は shadow プロバイダ無し → shadow_predictions へは何も記録されない."""
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)
+    await orch.record_shadow_judgments(outcome, pick_id=outcome.pick.pick_id if outcome.pick else None)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -387,7 +387,7 @@ async def test_gemini_configured_records_shadow_prediction(
     monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini()])
 
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)
+    await orch.record_shadow_judgments(outcome, pick_id=outcome.pick.pick_id if outcome.pick else None)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert len(rows) == 1
@@ -410,7 +410,9 @@ async def test_gemini_error_does_not_affect_official_pick(
     )
 
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)  # 例外を外へ伝播させないこと自体が検証対象
+    await orch.record_shadow_judgments(
+        outcome, pick_id=outcome.pick.pick_id if outcome.pick else None
+    )  # 例外を外へ伝播させないこと自体が検証対象
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -424,7 +426,7 @@ async def test_gemini_should_include_false_records_no_shadow_prediction(
     )
 
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)
+    await orch.record_shadow_judgments(outcome, pick_id=outcome.pick.pick_id if outcome.pick else None)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -439,7 +441,7 @@ async def test_gemini_invalid_bracket_records_no_shadow_prediction(
     monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(invalid)])
 
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)
+    await orch.record_shadow_judgments(outcome, pick_id=outcome.pick.pick_id if outcome.pick else None)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert rows == []
@@ -455,7 +457,7 @@ async def test_multiple_shadow_providers_each_record_a_row(
     monkeypatch.setattr(orch, "resolve_shadow_providers", lambda _feature: [_FakeGemini(), openai_like])
 
     outcome = await _run_and_persist(wired)
-    await orch.record_shadow_judgments(outcome)
+    await orch.record_shadow_judgments(outcome, pick_id=outcome.pick.pick_id if outcome.pick else None)
 
     rows = await list_shadow_predictions_for_pick(outcome.pick.pick_id)  # type: ignore[union-attr]
     assert {r["challenger_version"] for r in rows} == {"gemini:gemini-2.5-pro", "openai:gpt-5.1"}

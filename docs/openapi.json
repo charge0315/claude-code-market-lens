@@ -300,7 +300,7 @@
           "picks"
         ],
         "summary": "候補プール抽出の経緯（🆕 P35）",
-        "description": "候補プール全銘柄（ショートリスト絞り込み前）のスコアリング結果を合成スコア降順で返す.\n\n`pick_pool_snapshots`（`services/db/pick_pool_snapshot_db.py`）が候補プールを記録する\n唯一の永続化経路。`is_shortlisted` で「LLM深堀りへ進んだか」が分かる。",
+        "description": "候補プール全銘柄（ショートリスト絞り込み前）のスコアリング結果を合成スコア降順で返す.\n\n`pick_pool_snapshots`（`services/db/pick_pool_snapshot_db.py`）が候補プールを記録する\n唯一の永続化経路。`is_shortlisted` で「LLM深堀りへ進んだか」が分かる。\n\n同日に複数回バッチ実行される場合がある（`POST /api/picks/run` の手動再実行は意図的に\n休場日でも毎回新規生成させる設計、`run_picks_task` docstring 参照）ため、`pick_pool_snapshots`\nは append-only で全実行分が蓄積されうる。全件返すと同じ銘柄が実行回数ぶん重複して見えるため、\nここでは最新の `batch_run_id`（`issued_at` 最大の行が属する実行、バッチ開始時刻ベース）のみに絞る。",
         "operationId": "get_pool_api_picks_pool_get",
         "parameters": [
           {
@@ -1930,6 +1930,91 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inference/sandbox": {
+      "post": {
+        "tags": [
+          "inference"
+        ],
+        "summary": "任意銘柄のオンデマンド推論トレースを開始（🆕 P36）",
+        "description": "`/chart` 画面から任意銘柄（AI ピック対象外も含む）の推論をその場で1回だけ実行する.\n\n`prediction_ledger`/`pick_pool_snapshots` へは書き込まない「試し打ち」実行\n（`services/inference/sandbox.py` 参照）。LLM 呼び出しを含むため課金が発生する —\n日次コスト上限（`LLM_DAILY_COST_LIMIT_USD`）超過時は 429 を返す。同一銘柄・ホライズンが\n実行中なら 409 を返す（多重トリガーによる二重課金の簡易防止）。実行はバックグラウンドで\n進み、フロントは返った `run_id` で既存の `GET /api/inference/{run_id}/stream` を購読して\nライブ表示する。",
+        "operationId": "trigger_sandbox_api_inference_sandbox_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SandboxTriggerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SandboxTriggerResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inference/{run_id}/shadow": {
+      "get": {
+        "tags": [
+          "inference"
+        ],
+        "summary": "オンデマンド推論のシャドウ LLM 比較（🆕 P36）",
+        "description": "指定 run のシャドウ判定一覧を返す（`services/inference/sandbox.py` が `pick_id=None` で\n記録したもの）。通常ピックの shadow 一覧は `GET /api/picks/{pick_id}` 側を使う。",
+        "operationId": "sandbox_shadow_api_inference__run_id__shadow_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ShadowPredictionSummary__"
+                }
               }
             }
           },
@@ -4302,6 +4387,50 @@
         ],
         "title": "ApiResponse[Quote]"
       },
+      "ApiResponse_SandboxTriggerResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxTriggerResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[SandboxTriggerResponse]"
+      },
       "ApiResponse_SellHistoryEntry_": {
         "properties": {
           "success": {
@@ -5173,6 +5302,54 @@
           "success"
         ],
         "title": "ApiResponse[list[ShadowPickSummary]]"
+      },
+      "ApiResponse_list_ShadowPredictionSummary__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ShadowPredictionSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ApiResponse[list[ShadowPredictionSummary]]"
       },
       "ApiResponse_list_SourceAblationEntry__": {
         "properties": {
@@ -7626,6 +7803,43 @@
         ],
         "title": "RunRequest",
         "description": "`POST /api/picks/run` のリクエストボディ."
+      },
+      "SandboxTriggerRequest": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "horizon_type": {
+            "type": "string",
+            "enum": [
+              "mid_term",
+              "short_term"
+            ],
+            "title": "Horizon Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "horizon_type"
+        ],
+        "title": "SandboxTriggerRequest",
+        "description": "`POST /api/inference/sandbox` のリクエストボディ（🆕 P36、任意銘柄のオンデマンド推論）."
+      },
+      "SandboxTriggerResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "SandboxTriggerResponse",
+        "description": "`POST /api/inference/sandbox` のレスポンス — `run_id` のみを即座に返す.\n\nLLM 呼び出しを含む推論本体はバックグラウンドタスクとして進み、フロントはこの `run_id` で\n既存の SSE エンドポイント（`GET /api/inference/{run_id}/stream`）を購読してライブ表示する。"
       },
       "SectorAllocation": {
         "properties": {

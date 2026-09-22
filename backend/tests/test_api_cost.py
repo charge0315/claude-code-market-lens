@@ -59,3 +59,26 @@ async def test_record_usage_is_best_effort_on_none(migrated_db: Path) -> None:
     await api_cost.record_usage(feature="chat", model="claude-sonnet-5", usage=None)
     summary = await api_cost.build_api_cost_summary(days=1)
     assert summary.total_calls == 0
+
+
+async def test_is_daily_limit_exceeded_false_when_under_limit(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_cost, "settings", api_cost.settings.model_copy(update={"llm_daily_cost_limit_usd": 5.0}))
+    await api_cost.record_usage(
+        feature="stock_pick", model="claude-sonnet-5", usage=_Usage(input_tokens=1000, output_tokens=0)
+    )
+
+    assert await api_cost.is_daily_limit_exceeded() is False
+
+
+async def test_is_daily_limit_exceeded_true_when_at_or_over_limit(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sonnet: 1M input tokens = $3.0。上限を $2.0 に下げれば超過扱いになる。
+    monkeypatch.setattr(api_cost, "settings", api_cost.settings.model_copy(update={"llm_daily_cost_limit_usd": 2.0}))
+    await api_cost.record_usage(
+        feature="stock_pick", model="claude-sonnet-5", usage=_Usage(input_tokens=1_000_000, output_tokens=0)
+    )
+
+    assert await api_cost.is_daily_limit_exceeded() is True

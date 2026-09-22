@@ -113,6 +113,19 @@ describe('ChartPanel', () => {
     expect(await screen.findByRole('group', { name: '足種' })).toBeInTheDocument();
   });
 
+  it('「AI推論トレース」タブへ切り替えるとオンデマンド推論パネルが表示される（🆕 P36）', async () => {
+    mockFetchQuote.mockResolvedValue(quote());
+    const user = userEvent.setup();
+
+    render(<ChartPanel symbol="7203" />);
+    expect(await screen.findByRole('group', { name: '足種' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'AI推論トレース' }));
+
+    expect(screen.queryByRole('group', { name: '足種' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'AI推論を実行' })).toBeInTheDocument();
+  });
+
   it('アクセシビリティ違反がない', async () => {
     mockFetchQuote.mockResolvedValue(quote());
 

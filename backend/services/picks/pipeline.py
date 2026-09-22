@@ -119,6 +119,35 @@ def _score_one(
     return rec, atr, trend_score
 
 
+async def build_pool_provider(as_of_date: str) -> MlScoreProvider:
+    """断面プールモデル（N1 lane="ml_pool"）の ML スコアプロバイダを構築する（🆕 P36 で公開名化）.
+
+    champion 未登録なら `null_ml_score`（recommender が残り3ファクターで再正規化、フォールバック
+    不要）。`get_cached_panel_context` はユニバース全銘柄の yfinance 価格を逐次取得するため重いが
+    日次キャッシュ済みなら軽い（`run_picks` と `services/inference/sandbox.py` が同じキャッシュを
+    共有する）。
+    """
+    pool_clf = await load_champion_pool_classifier()
+    if pool_clf is None:
+        return null_ml_score
+    return make_pool_ml_score_provider(await get_cached_panel_context(as_of_date), pool_clf)
+
+
+async def score_candidate(
+    code: str, pool_provider: MlScoreProvider
+) -> tuple[dict[str, object], float | None, float | None]:
+    """1 銘柄ぶんの4分析＋MLスコアを算出する（🆕 P36 で公開名化）.
+
+    `run_picks` のショートリストループと `services/inference/sandbox.run_sandbox_inference`
+    （任意銘柄のオンデマンド推論）の両方が呼ぶ共通処理。例外は握り潰さずそのまま伝播させる
+    （`run_picks` 側は呼び出し元で「1銘柄失敗してもプール全体は止めない」ため個別に捕捉する）。
+    """
+    fundamental = await get_fundamental_with_vault_fallback(code)
+    ticker_rows = await fetch_per_ticker_champion_rows(code)
+    ml_score_provider = combine_ml_score_providers(pool_provider, make_per_ticker_ensemble_provider(ticker_rows))
+    return await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
+
+
 async def run_picks(horizon_type: str) -> PickRunResult:
     """1 系統（中長期 or 短期）のピックを生成し、台帳化して結果を返す."""
     cfg = POOL_CONFIG[horizon_type]
@@ -170,23 +199,13 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     # 縮まらない）、pool champion が未登録の間はこの結果がどのみち `make_pool_ml_score_provider`
     # 内部で捨てられる（`clf is None` 分岐）。champion 未登録時は完全にスキップして
     # 手動実行（`/api/picks/run`）が無駄にユニバース全体をスキャンして応答不能になるのを防ぐ。
-    pool_clf = await load_champion_pool_classifier()
-    pool_provider = (
-        make_pool_ml_score_provider(await get_cached_panel_context(issued_at[:10]), pool_clf)
-        if pool_clf is not None
-        else null_ml_score
-    )
+    pool_provider = await build_pool_provider(issued_at[:10])
 
     # スコアリング（合成スコア降順でショートリスト）。
     scored: list[tuple[str, dict[str, object], float | None, float | None]] = []
     for code in codes:
         try:
-            fundamental = await get_fundamental_with_vault_fallback(code)
-            ticker_rows = await fetch_per_ticker_champion_rows(code)
-            ml_score_provider = combine_ml_score_providers(
-                pool_provider, make_per_ticker_ensemble_provider(ticker_rows)
-            )
-            rec, atr, trend_score = await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
+            rec, atr, trend_score = await score_candidate(code, pool_provider)
         except Exception as e:  # noqa: BLE001 — 1銘柄の取得/スコアリング失敗（サーキットブレーカー
             # オープン・レート制限等）で候補プール全体を落とさない。他の箇所（
             # `_build_raw_universe_frame` 等）と同じ「1銘柄失敗で全体を止めない」方針。
@@ -249,7 +268,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         # shadow 判定は `shadow_predictions.pick_id` が `prediction_ledger` への FK のため、
         # 台帳確定（`insert_picks`）の後でのみ呼べる。未設定・失敗時は無視（フェイルソフト）。
         for accepted in accepted_outcomes:
-            await record_shadow_judgments(accepted)
+            await record_shadow_judgments(accepted, pick_id=accepted.pick.pick_id if accepted.pick else None)
 
     summaries = [
         PickSummary(

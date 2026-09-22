@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { MultiChart } from '@/components/chart/MultiChart';
+import { SandboxInferencePanel } from '@/components/chart/SandboxInferencePanel';
 import { PriceChart } from '@/components/stock-detail/PriceChart';
 import { directionColor, formatYen } from '@/components/dashboard/pickDisplay';
 import { fetchQuote, type Quote } from '@/lib/api/stock';
@@ -14,7 +15,9 @@ import './chart.css';
 
 // 🆕 P34: 四季報オンラインの「通常チャート/マルチチャート」タブ構成を参考に、詳細表示
 // （`PriceChart`）と複数足種の一覧比較（`MultiChart`）を切り替えられるようにする。
-type ChartView = 'normal' | 'multi';
+// 🆕 P36: 「AI推論トレース」タブ — 任意銘柄でその場から推論を実行し、4分析〜検証ゲートまでの
+// 経緯をライブ表示する（`SandboxInferencePanel`）。
+type ChartView = 'normal' | 'multi' | 'sandbox';
 
 export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -65,9 +68,14 @@ export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
         <button type="button" className={view === 'multi' ? 'is-active' : undefined} aria-pressed={view === 'multi'} onClick={() => setView('multi')}>
           マルチチャート
         </button>
+        <button type="button" className={view === 'sandbox' ? 'is-active' : undefined} aria-pressed={view === 'sandbox'} onClick={() => setView('sandbox')}>
+          AI推論トレース
+        </button>
       </div>
 
-      {view === 'normal' ? <PriceChart symbol={symbol} enableAdvancedControls /> : <MultiChart symbol={symbol} />}
+      {view === 'normal' && <PriceChart symbol={symbol} enableAdvancedControls />}
+      {view === 'multi' && <MultiChart symbol={symbol} />}
+      {view === 'sandbox' && <SandboxInferencePanel symbol={symbol} />}
     </div>
   );
 }

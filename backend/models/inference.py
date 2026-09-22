@@ -66,3 +66,24 @@ class InferenceOutcome(BaseModel):
     llm_prompt: str | None = None
     current_price: float | None = None
     atr: float | None = None
+
+
+class SandboxTriggerRequest(BaseModel):
+    """`POST /api/inference/sandbox` のリクエストボディ（🆕 P36、任意銘柄のオンデマンド推論）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    horizon_type: Literal["mid_term", "short_term"]
+
+
+class SandboxTriggerResponse(BaseModel):
+    """`POST /api/inference/sandbox` のレスポンス — `run_id` のみを即座に返す.
+
+    LLM 呼び出しを含む推論本体はバックグラウンドタスクとして進み、フロントはこの `run_id` で
+    既存の SSE エンドポイント（`GET /api/inference/{run_id}/stream`）を購読してライブ表示する。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
