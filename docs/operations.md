@@ -218,6 +218,12 @@ Redis プロセスの生死を確認し、落ちていれば再起動 → Celery
 
 **正常なフェイルセーフ動作**（`services/circuit_breaker.py`）。5回連続失敗で30秒 OPEN、以降は即座に 503。30秒後に自動で1回だけ試行を許可（HALF_OPEN）し、成功すれば復帰する。基本的に何もせず待つ。
 
+### 4.5 ピック生成が数分以上かかる・全銘柄でナレッジ検索が失敗する
+
+**症状**: `run_picks_task`/`POST /api/picks/run` が通常より大幅に遅い、または全銘柄で `related_notes` が空になる。
+
+**主因**: kb_creator ベクトル検索API（ポート8077、別リポジトリ `obsidian-knowledge-base-creator` が提供）が未起動で、`services/vault/knowledge_search_client.py` が全銘柄で接続失敗・タイムアウト（`KB_SEARCH_TIMEOUT_SECONDS` 既定30秒）を繰り返すため（2026-09-14 に実際発生、CLAUDE.md「ローカル起動」参照）。`curl http://localhost:8077/health` で疎通確認し、未起動なら `tasks/start_vector_api.ps1` 等で起動する。
+
 ---
 
 ## 5. バックアップ・リストア
