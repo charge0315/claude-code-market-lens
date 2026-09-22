@@ -51,7 +51,7 @@ export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
           </span>
         )}
       </div>
-      <PriceChart symbol={symbol} enableIntervalSelector />
+      <PriceChart symbol={symbol} enableAdvancedControls />
     </div>
   );
 }

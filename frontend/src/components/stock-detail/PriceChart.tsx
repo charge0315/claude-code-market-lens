@@ -5,7 +5,10 @@ import {
   CandlestickSeries,
   createChart,
   createSeriesMarkers,
+  HistogramSeries,
+  LineSeries,
   type IChartApi,
+  type IPaneApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type MouseEventParams,
@@ -13,19 +16,27 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { fetchOhlc, type ChartEvent, type OhlcInterval, type OhlcPeriod } from '@/lib/api/stock';
+import {
+  fetchOhlc,
+  type ChartEvent,
+  type OhlcInterval,
+  type OhlcPeriod,
+  type OverlayKind,
+  type SubIndicatorKind,
+} from '@/lib/api/stock';
 import './stock-detail.css';
 
-// 日足ローソク足チャート（既定）。🆕 `enableIntervalSelector` を渡すと分足（60分足/15分足）も
-// 選べる足種セレクタを表示する — 対象は `/chart` 画面のみ（任意銘柄を素早く見る用途では
-// より細かい粒度が欲しいというユーザー要望）。銘柄詳細画面はチャートが補助情報という
-// 位置づけ（CLAUDE.md の主要画面定義）のため、そちらは従来どおり日足のみで据え置く。
+// 日足ローソク足チャート（既定）。🆕 `enableAdvancedControls` を渡すと足種セレクタ（分足）・
+// オーバーレイ指標・サブインジケーターも選べるようになる — 対象は `/chart` 画面のみ
+// （任意銘柄を素早く見る用途では、四季報オンライン等のプロ向けチャートと同等の粒度・
+// 指標が欲しいというユーザー要望）。銘柄詳細画面はチャートが補助情報という位置づけ
+// （CLAUDE.md の主要画面定義）のため、そちらは従来どおり日足・マーカーのみで据え置く。
 //
 // 🆕 ゴールデンクロス/デッドクロス・MACDクロスの兆候イベントをマーカーで示し、hoverすると
 // 簡単な説明をツールチップで表示する。マーカー色は国内証券標準の騰落色トークン
 // （--color-gain=赤/--color-loss=緑）を流用し、買い兆候=赤・警戒/売り兆候=緑で統一する。
-// 分足では兆候イベント自体を検出しない（`routers/stock.py` 参照、日付キーが同日内で
-// 衝突するため）。
+// オーバーレイ・サブインジケーター・分足では兆候イベント自体を検出しない
+// （`routers/stock.py` 参照、日付キーが同日内で衝突するため）。
 
 const PERIODS: ReadonlyArray<OhlcPeriod> = ['1mo', '3mo', '6mo', '1y', '2y'];
 const PERIOD_LABELS: Record<OhlcPeriod, string> = { '1mo': '1ヶ月', '3mo': '3ヶ月', '6mo': '6ヶ月', '1y': '1年', '2y': '2年' };
@@ -40,6 +51,37 @@ const INTERVAL_PERIODS: Record<OhlcInterval, ReadonlyArray<OhlcPeriod>> = {
   '15m': ['1mo'],
 };
 const CHART_HEIGHT = 300;
+// 🆕 サブインジケーターペインの高さ比率（メインペインを 1 としたときの相対値）。
+const SUB_PANE_STRETCH_FACTOR = 0.35;
+
+// 🆕 価格チャートに重ねるオーバーレイ指標。日足専用（分足は backend が overlay=null を返す）。
+const OVERLAYS: ReadonlyArray<OverlayKind> = ['sma', 'ichimoku', 'bollinger'];
+const OVERLAY_LABELS: Record<OverlayKind, string> = {
+  sma: '移動平均線',
+  ichimoku: '一目均衡表',
+  bollinger: 'ボリンジャーバンド',
+};
+
+// 🆕 下段ペインのサブインジケーター。'volume'（出来高）のみ `bars` から直接描画するため
+// バックエンドへは問い合わせない（他の3種は日足専用で `sub_indicator` API 経由）。
+type SubPaneKind = 'volume' | SubIndicatorKind;
+const SUB_PANES: ReadonlyArray<SubPaneKind> = ['volume', 'macd', 'rsi', 'stochastics'];
+const SUB_PANE_LABELS: Record<SubPaneKind, string> = {
+  volume: '出来高',
+  macd: 'MACD',
+  rsi: 'RSI',
+  stochastics: 'ストキャスティクス',
+};
+
+// 複数系列を描き分けるための配色（ブランドの2アクセント色の濃淡を巡回利用する。
+// 新規の任意色を持ち込まず、既存デザイントークンの範囲で指標線を塗り分けるため）。
+const LINE_PALETTE = [
+  '--color-accent-500',
+  '--color-accent-2-500',
+  '--color-accent-700',
+  '--color-accent-2-700',
+  '--color-accent-300',
+] as const;
 
 // lightweight-charts の `Time` は分足（Unix秒）と日足（YYYY-MM-DD文字列）を区別できないため、
 // 数値は `UTCTimestamp` へ明示キャストする（公式ドキュメント推奨の書き方）。
@@ -75,24 +117,32 @@ function timeToDateKey(time: Time): string {
 
 interface PriceChartProps {
   symbol: string;
-  // 🆕 true のとき足種（日足/60分足/15分足）セレクタを表示する（`/chart` 画面専用）。
-  enableIntervalSelector?: boolean;
+  // 🆕 true のとき足種（日足/60分足/15分足）・オーバーレイ指標・サブインジケーターの
+  // セレクタを表示する（`/chart` 画面専用）。
+  enableAdvancedControls?: boolean;
 }
 
-export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChartProps): ReactNode {
+export function PriceChart({ symbol, enableAdvancedControls = false }: PriceChartProps): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const subPaneRef = useRef<IPaneApi<Time> | null>(null);
+  // オーバーレイ/サブインジケーターは選択が変わるたびに古い系列を消してから新しい系列を
+  // 追加する必要があるため、現在追加済みの系列を配列で保持しておく。
+  const overlaySeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  const subPaneSeriesRef = useRef<ISeriesApi<'Line' | 'Histogram'>[]>([]);
   const eventsByDateRef = useRef<Map<string, ChartEvent>>(new Map());
   const [ohlcInterval, setOhlcInterval] = useState<OhlcInterval>('1d');
   const [period, setPeriod] = useState<OhlcPeriod>('6mo');
+  const [overlay, setOverlay] = useState<OverlayKind>('sma');
+  const [subPane, setSubPane] = useState<SubPaneKind>('volume');
   const [error, setError] = useState<string | null>(null);
   const [isEmpty, setIsEmpty] = useState(false);
   const [hoverEvent, setHoverEvent] = useState<ChartEvent | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
-  const availablePeriods = enableIntervalSelector ? INTERVAL_PERIODS[ohlcInterval] : PERIODS;
+  const availablePeriods = enableAdvancedControls ? INTERVAL_PERIODS[ohlcInterval] : PERIODS;
 
   // 足種を切り替えたとき、現在の期間がその足種で選べない場合（例: 60分足→15分足）は
   // その足種で選べる最初の期間へ自動的に丸める。
@@ -132,6 +182,18 @@ export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChar
     markersRef.current = createSeriesMarkers(series);
     chartRef.current = chart;
 
+    // 🆕 サブインジケーター（出来高/MACD/RSI/ストキャスティクス）用の下段ペイン。
+    // メインの価格ペイン（index 0）とは別に作り、常時表示ではなく選択された指標の
+    // 系列だけをその都度追加/削除する（`enableAdvancedControls` が false でも作成は
+    // しておき、単に系列を追加しないことで実質非表示にする — ペインの有無を条件分岐
+    // すると再マウントが必要になり複雑になるため）。
+    // `preserveEmptyPane: true` — サブインジケーター切り替え時に一旦全系列を削除してから
+    // 追加し直す実装のため、瞬間的に系列ゼロになるタイミングでペイン自体が自動削除されない
+    // ようにする（既定 false だとペイン消滅→直後の addSeries が内部アサーションで例外を投げる）。
+    const subPane = chart.addPane(true);
+    subPane.setStretchFactor(SUB_PANE_STRETCH_FACTOR);
+    subPaneRef.current = subPane;
+
     const handleCrosshairMove = (param: MouseEventParams<Time>): void => {
       const event = param.time ? eventsByDateRef.current.get(timeToDateKey(param.time)) : undefined;
       setHoverEvent(event ?? null);
@@ -151,18 +213,75 @@ export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChar
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      subPaneRef.current = null;
+      overlaySeriesRef.current = [];
+      subPaneSeriesRef.current = [];
     };
   }, []);
 
   useEffect(() => {
-    fetchOhlc(symbol, period, ohlcInterval)
-      .then(({ bars, events }) => {
+    const requestOverlay = enableAdvancedControls ? overlay : undefined;
+    const requestSubIndicator = enableAdvancedControls && subPane !== 'volume' ? subPane : undefined;
+
+    fetchOhlc(symbol, period, ohlcInterval, requestOverlay, requestSubIndicator)
+      .then(({ bars, events, overlay: overlayData, sub_indicator: subIndicatorData }) => {
         setIsEmpty(bars.length === 0);
         setHoverEvent(null);
         setHoverPos(null);
         seriesRef.current?.setData(
           bars.map((b) => ({ time: toChartTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close }))
         );
+
+        // 前回選択分のオーバーレイ系列を消してから、今回のデータで作り直す。
+        overlaySeriesRef.current.forEach((s) => chartRef.current?.removeSeries(s));
+        overlaySeriesRef.current = (overlayData ? Object.entries(overlayData.lines) : []).map(
+          ([name, points], i) => {
+            const lineSeries = chartRef.current!.addSeries(LineSeries, {
+              color: cssVar(LINE_PALETTE[i % LINE_PALETTE.length]),
+              lineWidth: 1,
+              title: name,
+              lastValueVisible: false,
+              priceLineVisible: false,
+            });
+            lineSeries.setData(
+              points.filter((p) => p.value !== null).map((p) => ({ time: toChartTime(p.time), value: p.value! }))
+            );
+            return lineSeries;
+          }
+        );
+
+        // 同様にサブインジケーターペインの系列も作り直す。
+        subPaneSeriesRef.current.forEach((s) => chartRef.current?.removeSeries(s));
+        if (subPane === 'volume') {
+          const gain = cssVar('--color-gain');
+          const loss = cssVar('--color-loss');
+          const volumeSeries = subPaneRef.current!.addSeries(HistogramSeries, {
+            priceFormat: { type: 'volume' },
+            lastValueVisible: false,
+            priceLineVisible: false,
+          });
+          volumeSeries.setData(
+            bars.map((b) => ({ time: toChartTime(b.time), value: b.volume, color: b.close >= b.open ? gain : loss }))
+          );
+          subPaneSeriesRef.current = [volumeSeries];
+        } else if (subIndicatorData) {
+          subPaneSeriesRef.current = Object.entries(subIndicatorData.lines).map(([name, points], i) => {
+            const lineSeries = subPaneRef.current!.addSeries(LineSeries, {
+              color: cssVar(LINE_PALETTE[i % LINE_PALETTE.length]),
+              lineWidth: 1,
+              title: name,
+              lastValueVisible: false,
+              priceLineVisible: false,
+            });
+            lineSeries.setData(
+              points.filter((p) => p.value !== null).map((p) => ({ time: toChartTime(p.time), value: p.value! }))
+            );
+            return lineSeries;
+          });
+        } else {
+          subPaneSeriesRef.current = [];
+        }
+
         // データの開始点（最も古い足）が左端から見えるよう、期間全体を表示領域に収める。
         chartRef.current?.timeScale().fitContent();
 
@@ -186,11 +305,11 @@ export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChar
         markersRef.current?.setMarkers(markers);
       })
       .catch(() => setError('株価データの取得に失敗しました'));
-  }, [symbol, period, ohlcInterval]);
+  }, [symbol, period, ohlcInterval, overlay, subPane, enableAdvancedControls]);
 
   return (
     <div className="price-chart">
-      {enableIntervalSelector && (
+      {enableAdvancedControls && (
         <div className="price-chart-toolbar" role="group" aria-label="足種">
           {INTERVALS.map((i) => (
             <button
@@ -219,6 +338,38 @@ export function PriceChart({ symbol, enableIntervalSelector = false }: PriceChar
           </button>
         ))}
       </div>
+
+      {enableAdvancedControls && (
+        <>
+          <div className="price-chart-toolbar" role="group" aria-label="オーバーレイ指標">
+            {OVERLAYS.map((o) => (
+              <button
+                key={o}
+                type="button"
+                className={overlay === o ? 'is-active' : undefined}
+                aria-pressed={overlay === o}
+                onClick={() => setOverlay(o)}
+              >
+                {OVERLAY_LABELS[o]}
+              </button>
+            ))}
+          </div>
+
+          <div className="price-chart-toolbar" role="group" aria-label="サブインジケーター">
+            {SUB_PANES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={subPane === s ? 'is-active' : undefined}
+                aria-pressed={subPane === s}
+                onClick={() => setSubPane(s)}
+              >
+                {SUB_PANE_LABELS[s]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {error && <p className="signal-queue-error">{error}</p>}
       {isEmpty && !error && <p className="signal-queue-empty">株価データがありません</p>}

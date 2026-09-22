@@ -15,7 +15,7 @@ const GOLDEN_CROSS: ChartEvent = { date: '2026-06-01', kind: 'golden_cross', lab
 const DEAD_CROSS: ChartEvent = { date: '2026-06-01', kind: 'dead_cross', label: 'デッドクロス（下降トレンド転換の兆候です。）' };
 
 function response(overrides?: Partial<OhlcResponse>): OhlcResponse {
-  return { bars: [BAR], events: [], ...overrides };
+  return { bars: [BAR], events: [], overlay: null, sub_indicator: null, ...overrides };
 }
 
 describe('PriceChart', () => {
@@ -28,11 +28,11 @@ describe('PriceChart', () => {
 
     render(<PriceChart symbol="7203" />);
 
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', undefined, undefined));
   });
 
   it('データが無ければ案内文を出す', async () => {
-    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+    mockFetchOhlc.mockResolvedValue(response({ bars: [] }));
 
     render(<PriceChart symbol="7203" />);
 
@@ -44,46 +44,74 @@ describe('PriceChart', () => {
     const user = userEvent.setup();
 
     render(<PriceChart symbol="7203" />);
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', undefined, undefined));
 
     await user.click(screen.getByRole('button', { name: '1年' }));
 
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1y', '1d'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1y', '1d', undefined, undefined));
   });
 
-  it('enableIntervalSelector が無ければ足種セレクタを表示しない', async () => {
+  it('enableAdvancedControls が無ければ足種・指標セレクタを表示しない', async () => {
     mockFetchOhlc.mockResolvedValue(response());
 
     render(<PriceChart symbol="7203" />);
     await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
 
     expect(screen.queryByRole('group', { name: '足種' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'オーバーレイ指標' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'サブインジケーター' })).not.toBeInTheDocument();
   });
 
-  it('enableIntervalSelector があれば足種セレクタを表示し、切り替えると再取得する', async () => {
+  it('enableAdvancedControls があれば足種セレクタを表示し、切り替えると再取得する', async () => {
     mockFetchOhlc.mockResolvedValue(response());
     const user = userEvent.setup();
 
-    render(<PriceChart symbol="7203" enableIntervalSelector />);
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+    render(<PriceChart symbol="7203" enableAdvancedControls />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
 
     await user.click(screen.getByRole('button', { name: '60分足' }));
 
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '60m'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '60m', 'sma', undefined));
   });
 
   it('分足へ切り替えるとその足種で選べない期間ボタンが消え、選べる期間へ丸める', async () => {
     mockFetchOhlc.mockResolvedValue(response());
     const user = userEvent.setup();
 
-    render(<PriceChart symbol="7203" enableIntervalSelector />);
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+    render(<PriceChart symbol="7203" enableAdvancedControls />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
 
     await user.click(screen.getByRole('button', { name: '15分足' }));
 
     // 15分足は '1mo' しか選べないため、期間は自動的に '1ヶ月' へ丸まり他の期間ボタンは消える。
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1mo', '15m'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '1mo', '15m', 'sma', undefined));
     expect(screen.queryByRole('button', { name: '6ヶ月' })).not.toBeInTheDocument();
+  });
+
+  it('オーバーレイ指標ボタンを切り替えると再取得する', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+    const user = userEvent.setup();
+
+    render(<PriceChart symbol="7203" enableAdvancedControls />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
+
+    await user.click(screen.getByRole('button', { name: '一目均衡表' }));
+
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'ichimoku', undefined));
+  });
+
+  it('サブインジケーターボタンを切り替えると再取得する（出来高はバックエンドへ問い合わせない）', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+    const user = userEvent.setup();
+
+    render(<PriceChart symbol="7203" enableAdvancedControls />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
+
+    await user.click(screen.getByRole('button', { name: 'RSI' }));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', 'rsi'));
+
+    await user.click(screen.getByRole('button', { name: '出来高' }));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
   });
 
   it('取得失敗でエラーメッセージを出す', async () => {
@@ -190,6 +218,19 @@ describe('PriceChart', () => {
     mockFetchOhlc.mockResolvedValue(response());
 
     const { container } = render(<PriceChart symbol="7203" />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('enableAdvancedControls込みでもアクセシビリティ違反がない', async () => {
+    mockFetchOhlc.mockResolvedValue(
+      response({
+        overlay: { kind: 'sma', lines: { SMA_5: [{ time: '2026-06-01', value: 1000 }] } },
+      })
+    );
+
+    const { container } = render(<PriceChart symbol="7203" enableAdvancedControls />);
     await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalled());
 
     expect(await axe(container)).toHaveNoViolations();

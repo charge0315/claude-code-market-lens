@@ -39,13 +39,56 @@ class ChartEvent(BaseModel):
     label: str
 
 
+class IndicatorLine(BaseModel):
+    """オーバーレイ/サブインジケーターの1系列上の1点（🆕 P34）.
+
+    `time` は `OhlcBar.time` と同じ規約（日足=`YYYY-MM-DD`文字列、分足=Unix秒）。
+    一目均衡表の先行スパンのみ、元の `bars` に無い未来日付が末尾に追加で含まれる
+    （`technical_analysis.calculate_ichimoku` 参照）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    time: str | int
+    value: float | None
+
+
+OverlayKind = Literal["sma", "ichimoku", "bollinger"]
+SubIndicatorKind = Literal["macd", "rsi", "stochastics"]
+
+
+class OverlaySeries(BaseModel):
+    """価格チャートに重ねて表示するオーバーレイ指標（🆕 P34、`/chart` 画面の足種セレクタ同様
+    日足専用 — 分足は `routers/stock.py` の日付キー衝突制約により対象外）."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: OverlayKind
+    lines: dict[str, list[IndicatorLine]]
+
+
+class SubIndicatorSeries(BaseModel):
+    """価格チャート下段の別ペインに表示するサブインジケーター（🆕 P34、日足専用）.
+
+    出来高は `bars[].volume` から直接描画できるためここには含めない
+    （フロントエンド `PriceChart.tsx` 参照）。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: SubIndicatorKind
+    lines: dict[str, list[IndicatorLine]]
+
+
 class OhlcResponse(BaseModel):
-    """`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント）."""
+    """`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント＋指標）."""
 
     model_config = ConfigDict(frozen=True)
 
     bars: list[OhlcBar]
     events: list[ChartEvent]
+    overlay: OverlaySeries | None = None
+    sub_indicator: SubIndicatorSeries | None = None
 
 
 class Quote(BaseModel):

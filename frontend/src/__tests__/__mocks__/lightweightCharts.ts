@@ -10,6 +10,12 @@ export const createChart = () => ({
   addCandlestickSeries: () => ({ setData: jest.fn() }),
   addHistogramSeries: () => ({ setData: jest.fn() }),
   addLineSeries: () => ({ setData: jest.fn() }),
+  // 🆕 サブインジケーターペイン（`PriceChart.tsx` の `chart.addPane()`）のモック。
+  addPane: () => ({
+    setStretchFactor: jest.fn(),
+    addSeries: () => ({ setData: jest.fn() }),
+  }),
+  removeSeries: jest.fn(),
   applyOptions: jest.fn(),
   timeScale: () => ({ fitContent: jest.fn() }),
   subscribeCrosshairMove: (handler: (param: unknown) => void) => {

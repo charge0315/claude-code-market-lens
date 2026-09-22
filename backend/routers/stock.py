@@ -14,16 +14,36 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Final, Literal
 
+import pandas as pd
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.models.common import ApiResponse
-from backend.models.stock import ChartEvent, OhlcBar, OhlcResponse, Quote
+from backend.models.stock import (
+    ChartEvent,
+    IndicatorLine,
+    OhlcBar,
+    OhlcResponse,
+    OverlayKind,
+    OverlaySeries,
+    Quote,
+    SubIndicatorKind,
+    SubIndicatorSeries,
+)
 from backend.models.stocks import TickerInfo
 from backend.services.data.data_fetcher import fetch_stock_data, search_tickers
 from backend.services.data.quote_service import fetch_quote
 from backend.services.jst_time import JST, to_jst
-from backend.services.scoring.technical_analysis import detect_cross_events
+from backend.services.scoring.technical_analysis import (
+    IndicatorPoint,
+    calculate_bollinger_bands,
+    calculate_ichimoku,
+    calculate_macd,
+    calculate_rsi,
+    calculate_sma,
+    calculate_stochastics,
+    detect_cross_events,
+)
 from backend.services.vault.brand_notes_service import get_raw_note_content
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
@@ -84,21 +104,63 @@ async def get_quote(symbol: str) -> ApiResponse[Quote]:
     return ApiResponse.ok(Quote(symbol=symbol, price=current, prev_close=prev, change_pct=change_pct))
 
 
+def _trim_lines(lines: dict[str, list[IndicatorPoint]], cutoff_str: str) -> dict[str, list[IndicatorLine]]:
+    """指標系列を表示期間（`cutoff_str` 以降）へ切り詰めつつ `IndicatorLine` へ変換する.
+
+    一目均衡表の先行スパンが持つ未来日付は `cutoff_str`（過去方向の下限）より必ず後なので
+    自然に残る — GC/DC 等のイベントを表示期間へ切り詰める既存ロジックと同じ比較演算を流用。
+    """
+    return {
+        name: [IndicatorLine(time=p["date"], value=p["value"]) for p in points if p["date"] >= cutoff_str]
+        for name, points in lines.items()
+    }
+
+
+def _compute_overlay(df: pd.DataFrame, kind: OverlayKind, cutoff_str: str) -> OverlaySeries:
+    """選択されたオーバーレイ指標（価格チャートに重ねる系列）を計算する（🆕 P34、日足専用）."""
+    if kind == "sma":
+        lines = calculate_sma(df, [5, 25, 75])
+    elif kind == "ichimoku":
+        lines = calculate_ichimoku(df)
+    else:
+        lines = calculate_bollinger_bands(df)
+    return OverlaySeries(kind=kind, lines=_trim_lines(lines, cutoff_str))
+
+
+def _compute_sub_indicator(df: pd.DataFrame, kind: SubIndicatorKind, cutoff_str: str) -> SubIndicatorSeries:
+    """選択されたサブインジケーター（下段ペイン表示）を計算する（🆕 P34、日足専用）.
+
+    出来高は `bars[].volume` からフロントエンドで直接描画するためここでは扱わない。
+    """
+    if kind == "macd":
+        lines = calculate_macd(df)
+    elif kind == "rsi":
+        lines = {"RSI": calculate_rsi(df)}
+    else:
+        lines = calculate_stochastics(df)
+    return SubIndicatorSeries(kind=kind, lines=_trim_lines(lines, cutoff_str))
+
+
 @router.get(
     "/{symbol}/ohlc",
     response_model=ApiResponse[OhlcResponse],
-    summary="OHLC 取得（日足は兆候イベント込み、🆕 分足対応）",
+    summary="OHLC 取得（日足は兆候イベント・指標込み、🆕 分足対応）",
 )
 async def get_ohlc(
-    symbol: str, period: _Period = Query(default="6mo"), interval: _Interval = Query(default="1d")
+    symbol: str,
+    period: _Period = Query(default="6mo"),
+    interval: _Interval = Query(default="1d"),
+    overlay: OverlayKind | None = Query(default=None, description="🆕 P34、日足専用のオーバーレイ指標"),
+    sub_indicator: SubIndicatorKind | None = Query(default=None, description="🆕 P34、日足専用のサブインジケーター"),
 ) -> ApiResponse[OhlcResponse]:
     """指定銘柄の OHLC を返す（チャート表示用）.
 
     日足（既定）はゴールデンクロス/デッドクロス等の兆候イベントも計算して返す。🆕 分足
-    （60分足/15分足）は `_intraday_ohlc` へ委譲し、`events` は常に空で返す — GC/DC・MACD
-    クロスは日付（YYYY-MM-DD）単位で検出するため、同日内に複数本並ぶ分足では日付キーが
-    重複しマーカーの突き合わせが破綻する。分足に対応した兆候検出は将来必要になれば別途
-    設計する。
+    （60分足/15分足）は `_intraday_ohlc` へ委譲し、`events`/`overlay`/`sub_indicator` は
+    常に空/Noneで返す — いずれも日付（YYYY-MM-DD）単位のキーで系列を表現するため、同日内に
+    複数本並ぶ分足では日付キーが重複し破綻する（GC/DC・MACDクロスと同じ理由）。
+    `overlay`/`sub_indicator` は指定時のみ計算する（`/chart` 画面以外の呼び出し元は
+    指定しないため、無駄な計算を避ける）。
     """
     if interval != "1d":
         return await _intraday_ohlc(symbol, period, interval)
@@ -124,7 +186,18 @@ async def get_ohlc(
         for idx, row in display.iterrows()
     ]
     cutoff_str = cutoff.isoformat()
-    return ApiResponse.ok(OhlcResponse(bars=bars, events=[e for e in events if e.date >= cutoff_str]))
+
+    overlay_series = _compute_overlay(df, overlay, cutoff_str) if overlay is not None else None
+    sub_indicator_series = _compute_sub_indicator(df, sub_indicator, cutoff_str) if sub_indicator is not None else None
+
+    return ApiResponse.ok(
+        OhlcResponse(
+            bars=bars,
+            events=[e for e in events if e.date >= cutoff_str],
+            overlay=overlay_series,
+            sub_indicator=sub_indicator_series,
+        )
+    )
 
 
 async def _intraday_ohlc(symbol: str, period: _Period, interval: _Interval) -> ApiResponse[OhlcResponse]:

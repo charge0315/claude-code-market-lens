@@ -146,7 +146,7 @@ async def test_get_ohlc_returns_empty_when_no_data(monkeypatch: pytest.MonkeyPat
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         res = await client.get("/api/stock/9999/ohlc")
 
-    assert res.json()["data"] == {"bars": [], "events": []}
+    assert res.json()["data"] == {"bars": [], "events": [], "overlay": None, "sub_indicator": None}
 
 
 async def test_get_ohlc_rejects_invalid_period(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,6 +156,80 @@ async def test_get_ohlc_rejects_invalid_period(monkeypatch: pytest.MonkeyPatch) 
         res = await client.get("/api/stock/7203/ohlc?period=5min")
 
     assert res.status_code == 422
+
+
+async def test_get_ohlc_without_overlay_or_sub_indicator_params_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`overlay`/`sub_indicator` 未指定時は計算せず None を返す（無駄な計算を避けるため）."""
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", lambda *_a: _fake_df())
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/ohlc")
+
+    body = res.json()["data"]
+    assert body["overlay"] is None
+    assert body["sub_indicator"] is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_lines"),
+    [
+        ("sma", {"SMA_5", "SMA_25", "SMA_75"}),
+        ("ichimoku", {"転換線", "基準線", "先行スパンA", "先行スパンB", "遅行スパン"}),
+        ("bollinger", {"Upper", "Middle", "Lower"}),
+    ],
+)
+async def test_get_ohlc_overlay_returns_requested_kind(
+    monkeypatch: pytest.MonkeyPatch, kind: str, expected_lines: set[str]
+) -> None:
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", lambda *_a: _fake_df())
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get(f"/api/stock/7203/ohlc?overlay={kind}")
+
+    overlay = res.json()["data"]["overlay"]
+    assert overlay["kind"] == kind
+    assert set(overlay["lines"]) == expected_lines
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_lines"),
+    [
+        ("macd", {"MACD", "Signal", "Histogram"}),
+        ("rsi", {"RSI"}),
+        ("stochastics", {"%K", "%D"}),
+    ],
+)
+async def test_get_ohlc_sub_indicator_returns_requested_kind(
+    monkeypatch: pytest.MonkeyPatch, kind: str, expected_lines: set[str]
+) -> None:
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", lambda *_a: _fake_df())
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get(f"/api/stock/7203/ohlc?sub_indicator={kind}")
+
+    sub_indicator = res.json()["data"]["sub_indicator"]
+    assert sub_indicator["kind"] == kind
+    assert set(sub_indicator["lines"]) == expected_lines
+
+
+async def test_get_ohlc_intraday_ignores_overlay_and_sub_indicator(monkeypatch: pytest.MonkeyPatch) -> None:
+    """分足は日付キー衝突のため overlay/sub_indicator を計算しない（GC/DC・MACDクロスと同じ制約）."""
+    monkeypatch.setattr(stock_router_module, "fetch_stock_data", lambda *_a: _fake_intraday_df())
+
+    from backend.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.get("/api/stock/7203/ohlc?interval=60m&overlay=sma&sub_indicator=rsi")
+
+    body = res.json()["data"]
+    assert body["overlay"] is None
+    assert body["sub_indicator"] is None
 
 
 async def test_get_ohlc_rejects_invalid_interval(monkeypatch: pytest.MonkeyPatch) -> None:

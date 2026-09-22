@@ -68,7 +68,7 @@ describe('StockOverview', () => {
   it('直近の実行の銘柄でチャートと4分析内訳を表示する', async () => {
     mockFetchRecentRuns.mockResolvedValue([RUN]);
     mockFetchPickDetail.mockResolvedValue(PICK);
-    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+    mockFetchOhlc.mockResolvedValue({ bars: [], events: [], overlay: null, sub_indicator: null });
 
     render(<StockOverview />);
 
@@ -88,7 +88,7 @@ describe('StockOverview', () => {
   it('アクセシビリティ違反がない', async () => {
     mockFetchRecentRuns.mockResolvedValue([RUN]);
     mockFetchPickDetail.mockResolvedValue(PICK);
-    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+    mockFetchOhlc.mockResolvedValue({ bars: [], events: [], overlay: null, sub_indicator: null });
 
     const { container } = render(<StockOverview />);
     await waitFor(() => expect(mockFetchPickDetail).toHaveBeenCalled());

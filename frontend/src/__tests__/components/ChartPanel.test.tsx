@@ -15,7 +15,7 @@ function quote(overrides?: Partial<Quote>): Quote {
 
 describe('ChartPanel', () => {
   beforeEach(() => {
-    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+    mockFetchOhlc.mockResolvedValue({ bars: [], events: [], overlay: null, sub_indicator: null });
   });
 
   afterEach(() => {
@@ -51,7 +51,7 @@ describe('ChartPanel', () => {
     render(<ChartPanel symbol="7203" />);
 
     expect(await screen.findByText('現在値の取得に失敗しました')).toBeInTheDocument();
-    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d'));
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledWith('7203', '6mo', '1d', 'sma', undefined));
   });
 
   it('symbolが切り替わると現在値を再取得する', async () => {
@@ -75,6 +75,15 @@ describe('ChartPanel', () => {
     expect(screen.getByRole('button', { name: '日足' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '60分足' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '15分足' })).toBeInTheDocument();
+  });
+
+  it('オーバーレイ指標・サブインジケーターのセレクタも表示する（🆕）', async () => {
+    mockFetchQuote.mockResolvedValue(quote());
+
+    render(<ChartPanel symbol="7203" />);
+
+    expect(await screen.findByRole('group', { name: 'オーバーレイ指標' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'サブインジケーター' })).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {

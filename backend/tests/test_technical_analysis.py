@@ -60,6 +60,34 @@ def test_compute_atr_positive_and_none_on_short_frame(price_df: pd.DataFrame) ->
     assert ta.compute_atr(price_df.head(3), period=14) is None
 
 
+def test_stochastics_of_monotonic_uptrend_is_high(price_df: pd.DataFrame) -> None:
+    stoch = ta.calculate_stochastics(price_df, k_period=14, smooth_k=3, d_period=3)
+    assert set(stoch) == {"%K", "%D"}
+    k_last = stoch["%K"][-1]["value"]
+    # 一本調子の上昇 → 直近終値は期間内高値付近 → %K はスロー平滑化後も買われすぎ水準（80超）。
+    assert k_last is not None and k_last > 80
+
+
+def test_ichimoku_returns_five_lines_with_forward_shifted_cloud(price_df: pd.DataFrame) -> None:
+    ichimoku = ta.calculate_ichimoku(price_df, tenkan=9, kijun=26, senkou_b=52)
+    assert set(ichimoku) == {"転換線", "基準線", "先行スパンA", "先行スパンB", "遅行スパン"}
+
+    # 転換線・基準線・遅行スパンは元の本数のまま（前進表示しない）。
+    assert len(ichimoku["転換線"]) == len(price_df)
+    assert len(ichimoku["遅行スパン"]) == len(price_df)
+
+    # 先行スパンA/Bは26本先まで前進表示するため、元の本数+26本になる。
+    assert len(ichimoku["先行スパンA"]) == len(price_df) + 26
+    assert len(ichimoku["先行スパンB"]) == len(price_df) + 26
+
+    # 前進表示の先頭26本は「まだ何も前進してきていない」ため必ず値が無い。
+    assert all(p["value"] is None for p in ichimoku["先行スパンA"][:26])
+    # 末尾（未来日付側）は元データの終盤の値が前進してきているので値がある。
+    assert ichimoku["先行スパンA"][-1]["value"] is not None
+    # 未来日付は元データの最終日より後であること。
+    assert ichimoku["先行スパンA"][-1]["date"] > price_df.index[-1].isoformat()[:10]
+
+
 def test_compute_atr_series_matches_scalar_tail(price_df: pd.DataFrame) -> None:
     series = ta.compute_atr_series(price_df, period=14)
     assert series.iloc[-1] == pytest.approx(ta.compute_atr(price_df, period=14))

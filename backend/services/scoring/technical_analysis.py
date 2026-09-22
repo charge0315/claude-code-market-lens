@@ -126,6 +126,88 @@ def calculate_volume_analysis(df: pd.DataFrame, period: int = 20) -> list[Indica
     return _series_to_records(df["Volume"].rolling(window=period).mean(), df.index)
 
 
+def calculate_stochastics(
+    df: pd.DataFrame, *, k_period: int = 14, smooth_k: int = 3, d_period: int = 3
+) -> dict[str, list[IndicatorPoint]]:
+    """ストキャスティクス（%K/%D、スロー方式）— 一定期間の高安レンジ内での終値の位置を示す.
+
+    %K は直近安値からの位置を 0-100 で表した生値を `smooth_k` 期間で平滑化したもの
+    （TradingView 等のデファクトである「スロー」方式）、%D はさらに `%K` を `d_period`
+    期間で平滑化したシグナル線。
+    """
+    high = df["High"].rolling(window=k_period).max()
+    low = df["Low"].rolling(window=k_period).min()
+    raw_k = (df["Close"] - low) / (high - low).replace(0, np.nan) * 100.0
+    slow_k = raw_k.rolling(window=smooth_k).mean()
+    slow_d = slow_k.rolling(window=d_period).mean()
+    return {
+        "%K": _series_to_records(slow_k, df.index),
+        "%D": _series_to_records(slow_d, df.index),
+    }
+
+
+def _future_business_dates(index: pd.DatetimeIndex | pd.Index, periods: int) -> list[str]:
+    """一目均衡表の先行スパン用に、`index` の最終日から `periods` 本分の未来営業日を返す.
+
+    平日カレンダーで近似する（JST祝日は考慮しない — 雲はチャートの視覚的な先行表示であり
+    実売買判定には使わないため、厳密な東証営業日暦までは要求しない。ローソク足自体の
+    休場日判定は `_is_trading_day_jst` 側で別途担保している）。
+    """
+    shifted = pd.bdate_range(start=index[-1], periods=periods + 1)[1:]
+    return [ts.isoformat()[:10] for ts in shifted]
+
+
+def _forward_shift_records(
+    series: pd.Series, index: pd.DatetimeIndex | pd.Index, future_dates: list[str], periods: int
+) -> list[IndicatorPoint]:
+    """`series`（`index` と同じ長さ）を `periods` 本分だけ未来へ前進させた記録列を返す.
+
+    一目均衡表の先行スパンは「時点 i で計算した値を時点 i+periods の位置に表示する」ため、
+    出力の先頭 `periods` 本は過去に値が無く常に None、末尾は元の系列に無い未来日付
+    （`future_dates`）へ最終 `periods` 本の値を割り当てる形になる。
+    """
+    values = series.to_numpy()
+    n = len(values)
+    shifted_past = [
+        IndicatorPoint(date=_to_date_str(index, i), value=_safe_value(values[i - periods]) if i >= periods else None)
+        for i in range(n)
+    ]
+    future_values = values[max(n - periods, 0) :]
+    future = [IndicatorPoint(date=d, value=_safe_value(v)) for d, v in zip(future_dates, future_values, strict=False)]
+    return shifted_past + future
+
+
+def calculate_ichimoku(
+    df: pd.DataFrame, *, tenkan: int = 9, kijun: int = 26, senkou_b: int = 52
+) -> dict[str, list[IndicatorPoint]]:
+    """一目均衡表 — 転換線/基準線/先行スパンA・B（雲）/遅行スパンの5本（🆕 日足専用）.
+
+    先行スパンA・Bは計算時点から `kijun` 本先の位置へ前進表示するのが一般的な描画方式
+    のため、元のインデックスに無い将来日付（近似カレンダー、`_future_business_dates`
+    参照）を追加で生成する（`_forward_shift_records`）。遅行スパンは逆に `kijun` 本分
+    過去へ表示するだけなので、既存のインデックス内に収まり追加生成は不要
+    （`pd.Series.shift(-kijun)` で足りる）。分足は日足前提の日付文字列キーが同日内で
+    衝突するため対象外（`routers/stock.py` 参照、GC/DC・MACDクロスと同じ理由）。
+    """
+    high, low, close = df["High"], df["Low"], df["Close"]
+
+    tenkan_sen = (high.rolling(tenkan).max() + low.rolling(tenkan).min()) / 2
+    kijun_sen = (high.rolling(kijun).max() + low.rolling(kijun).min()) / 2
+    senkou_a = (tenkan_sen + kijun_sen) / 2
+    senkou_b_line = (high.rolling(senkou_b).max() + low.rolling(senkou_b).min()) / 2
+    chikou = close.shift(-kijun)
+
+    future_dates = _future_business_dates(df.index, kijun)
+
+    return {
+        "転換線": _series_to_records(tenkan_sen, df.index),
+        "基準線": _series_to_records(kijun_sen, df.index),
+        "先行スパンA": _forward_shift_records(senkou_a, df.index, future_dates, kijun),
+        "先行スパンB": _forward_shift_records(senkou_b_line, df.index, future_dates, kijun),
+        "遅行スパン": _series_to_records(chikou, df.index),
+    }
+
+
 def compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """True Range の Wilder 方式平滑化平均（ATR）を系列で返す（先頭 period 行は NaN）."""
     high = df["High"]

@@ -18,7 +18,7 @@ const mockFetchPickDetail = fetchPickDetail as jest.MockedFunction<typeof fetchP
 const mockFetchOhlc = fetchOhlc as jest.MockedFunction<typeof fetchOhlc>;
 
 beforeEach(() => {
-  mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+  mockFetchOhlc.mockResolvedValue({ bars: [], events: [], overlay: null, sub_indicator: null });
 });
 
 const PICK_DETAIL: PickDetail = {

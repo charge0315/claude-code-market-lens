@@ -40,7 +40,7 @@ const BASE_DETAIL: PickDetail = {
 
 describe('PickDetailPanel', () => {
   beforeEach(() => {
-    mockFetchOhlc.mockResolvedValue({ bars: [], events: [] });
+    mockFetchOhlc.mockResolvedValue({ bars: [], events: [], overlay: null, sub_indicator: null });
   });
 
   afterEach(() => {

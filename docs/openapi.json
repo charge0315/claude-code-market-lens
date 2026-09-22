@@ -2717,8 +2717,8 @@
         "tags": [
           "stock"
         ],
-        "summary": "OHLC 取得（日足は兆候イベント込み、🆕 分足対応）",
-        "description": "指定銘柄の OHLC を返す（チャート表示用）.\n\n日足（既定）はゴールデンクロス/デッドクロス等の兆候イベントも計算して返す。🆕 分足\n（60分足/15分足）は `_intraday_ohlc` へ委譲し、`events` は常に空で返す — GC/DC・MACD\nクロスは日付（YYYY-MM-DD）単位で検出するため、同日内に複数本並ぶ分足では日付キーが\n重複しマーカーの突き合わせが破綻する。分足に対応した兆候検出は将来必要になれば別途\n設計する。",
+        "summary": "OHLC 取得（日足は兆候イベント・指標込み、🆕 分足対応）",
+        "description": "指定銘柄の OHLC を返す（チャート表示用）.\n\n日足（既定）はゴールデンクロス/デッドクロス等の兆候イベントも計算して返す。🆕 分足\n（60分足/15分足）は `_intraday_ohlc` へ委譲し、`events`/`overlay`/`sub_indicator` は\n常に空/Noneで返す — いずれも日付（YYYY-MM-DD）単位のキーで系列を表現するため、同日内に\n複数本並ぶ分足では日付キーが重複し破綻する（GC/DC・MACDクロスと同じ理由）。\n`overlay`/`sub_indicator` は指定時のみ計算する（`/chart` 画面以外の呼び出し元は\n指定しないため、無駄な計算を避ける）。",
         "operationId": "get_ohlc_api_stock__symbol__ohlc_get",
         "parameters": [
           {
@@ -2761,6 +2761,52 @@
               "default": "1d",
               "title": "Interval"
             }
+          },
+          {
+            "name": "overlay",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sma",
+                    "ichimoku",
+                    "bollinger"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "🆕 P34、日足専用のオーバーレイ指標",
+              "title": "Overlay"
+            },
+            "description": "🆕 P34、日足専用のオーバーレイ指標"
+          },
+          {
+            "name": "sub_indicator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "macd",
+                    "rsi",
+                    "stochastics"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "🆕 P34、日足専用のサブインジケーター",
+              "title": "Sub Indicator"
+            },
+            "description": "🆕 P34、日足専用のサブインジケーター"
           }
         ],
         "responses": {
@@ -5700,6 +5746,39 @@
         "title": "IndexQuote",
         "description": "1 指数分の現在値・前日比."
       },
+      "IndicatorLine": {
+        "properties": {
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Time"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time",
+          "value"
+        ],
+        "title": "IndicatorLine",
+        "description": "オーバーレイ/サブインジケーターの1系列上の1点（🆕 P34）.\n\n`time` は `OhlcBar.time` と同じ規約（日足=`YYYY-MM-DD`文字列、分足=Unix秒）。\n一目均衡表の先行スパンのみ、元の `bars` に無い未来日付が末尾に追加で含まれる\n（`technical_analysis.calculate_ichimoku` 参照）。"
+      },
       "LLMProviderOption": {
         "properties": {
           "value": {
@@ -6122,6 +6201,26 @@
             },
             "type": "array",
             "title": "Events"
+          },
+          "overlay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverlaySeries"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sub_indicator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubIndicatorSeries"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -6130,7 +6229,37 @@
           "events"
         ],
         "title": "OhlcResponse",
-        "description": "`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント）."
+        "description": "`GET /api/stock/{symbol}/ohlc` のレスポンス（🆕、四本値＋兆候イベント＋指標）."
+      },
+      "OverlaySeries": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sma",
+              "ichimoku",
+              "bollinger"
+            ],
+            "title": "Kind"
+          },
+          "lines": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/IndicatorLine"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "lines"
+        ],
+        "title": "OverlaySeries",
+        "description": "価格チャートに重ねて表示するオーバーレイ指標（🆕 P34、`/chart` 画面の足種セレクタ同様\n日足専用 — 分足は `routers/stock.py` の日付キー衝突制約により対象外）."
       },
       "PageMeta": {
         "properties": {
@@ -7665,6 +7794,36 @@
         ],
         "title": "StockNote",
         "description": "`GET /api/stock/{symbol}/note` のレスポンス（UI 表示専用、本文込み）."
+      },
+      "SubIndicatorSeries": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "macd",
+              "rsi",
+              "stochastics"
+            ],
+            "title": "Kind"
+          },
+          "lines": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/IndicatorLine"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "lines"
+        ],
+        "title": "SubIndicatorSeries",
+        "description": "価格チャート下段の別ペインに表示するサブインジケーター（🆕 P34、日足専用）.\n\n出来高は `bars[].volume` から直接描画できるためここには含めない\n（フロントエンド `PriceChart.tsx` 参照）。"
       },
       "SubScores": {
         "properties": {

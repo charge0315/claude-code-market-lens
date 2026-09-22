@@ -5,7 +5,7 @@ import { api } from '@/lib/api/client';
 export type OhlcPeriod = '1mo' | '3mo' | '6mo' | '1y' | '2y';
 
 // 🆕 足種。'1d' は既存の日足、'60m'/'15m' は分足（`/chart` 画面限定、PriceChart の
-// `enableIntervalSelector` 経由でのみ選択可能）。
+// `enableAdvancedControls` 経由でのみ選択可能）。
 export type OhlcInterval = '1d' | '60m' | '15m';
 
 export interface OhlcBar {
@@ -27,13 +27,44 @@ export interface ChartEvent {
   label: string;
 }
 
+// 🆕 P34: 価格チャートに重ねるオーバーレイ指標・下段ペインのサブインジケーター。
+// いずれも日足専用（`/chart` 画面限定、分足は backend 側で常に null を返す）。
+export type OverlayKind = 'sma' | 'ichimoku' | 'bollinger';
+export type SubIndicatorKind = 'macd' | 'rsi' | 'stochastics';
+
+export interface IndicatorLine {
+  time: string | number; // OhlcBar.time と同じ規約
+  value: number | null;
+}
+
+export interface OverlaySeries {
+  kind: OverlayKind;
+  lines: Record<string, IndicatorLine[]>;
+}
+
+export interface SubIndicatorSeries {
+  kind: SubIndicatorKind;
+  lines: Record<string, IndicatorLine[]>;
+}
+
 export interface OhlcResponse {
   bars: OhlcBar[];
   events: ChartEvent[];
+  overlay: OverlaySeries | null;
+  sub_indicator: SubIndicatorSeries | null;
 }
 
-export function fetchOhlc(symbol: string, period: OhlcPeriod = '6mo', interval: OhlcInterval = '1d'): Promise<OhlcResponse> {
-  return api.get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?period=${period}&interval=${interval}`);
+export function fetchOhlc(
+  symbol: string,
+  period: OhlcPeriod = '6mo',
+  interval: OhlcInterval = '1d',
+  overlay?: OverlayKind,
+  subIndicator?: SubIndicatorKind
+): Promise<OhlcResponse> {
+  const params = new URLSearchParams({ period, interval });
+  if (overlay) params.set('overlay', overlay);
+  if (subIndicator) params.set('sub_indicator', subIndicator);
+  return api.get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?${params.toString()}`);
 }
 
 // 🆕 P26: ポートフォリオの買い/売りフォームが開いた時点の最新値を初期値にするための
