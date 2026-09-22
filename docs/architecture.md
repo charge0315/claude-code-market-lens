@@ -44,11 +44,13 @@ backend/
 └── tests/
 
 frontend/src/
-├── app/           dashboard / stock-detail / portfolio / model-lab / notifications / settings
+├── app/           dashboard / stock-detail / chart（🆕 P8c/P33）/ portfolio / model-lab / notifications /
+│                  settings
 ├── components/    ui（🆕 Sparkline）/ layout / pipeline / dashboard（🆕 ShadowPicksBoard/AiPicksSection、
 │                  🔧 P27 旧GeminiPicksBoard）/ portfolio（🆕 AddHoldingModal/SellHoldingModal/
 │                  StockSearchBox/SellHistoryTable）/ notes（🆕 P28、DailyNoteReview/NoteChart/
-│                  NoteChartCard）/ settings（🆕 P27 LLMProviderPanel）/ notify / model-lab / stock-detail
+│                  NoteChartCard）/ settings（🆕 P27 LLMProviderPanel）/ notify / model-lab / stock-detail /
+│                  chart（🆕 P8c/P33、ChartPanel/ChartSymbolSearch）
 └── lib/           api/（REST クライアント、🆕 notes.ts）/ pipeline/ / realtime/（SSE・WS）/ push/ /
                    jstDate.ts / llmProviderLabels.ts（🆕 P27）/ noteComChartTriggers.ts（🆕 P28）
 ```

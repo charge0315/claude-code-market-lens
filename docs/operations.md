@@ -107,7 +107,7 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 | 毎時 xx:20 | `run_lstm_training_batch_task` | 銘柄別 LSTM モデルの日次学習バッチ（torch 学習のため1時間間隔） |
 | 毎時 xx:50 | `run_transformer_training_batch_task` | 銘柄別 Transformer モデルの日次学習バッチ（torch 学習のため1時間間隔） |
 
-祝日は非対応（`plans/01_PRD` で確認済みの既定スコープ）。休場日にも保有監視タスクは5分おきに起動されるが、内部で無害な早期 return をする。
+🔧 `run_picks_task`・`run_portfolio_monitor_task` は `_is_trading_day_jst()`（`jpholiday` で祝日判定）で休場日を除外する（2026-09-20、`48354f5`）。上表の「平日」表記はこの2タスクに限り実質「取引日」（土日祝を除く）— beatのcrontab自体には`day_of_week`指定は無く、休場日でも起動はされるが内部で無害な早期returnをする。他のタスク（note下書き・Vaultレポート・決着解決・評価指標・トレンド同期・週次/月次バッチ等）は休場日ガードを持たず、crontab設定どおり毎日/毎週/毎月発火する（休場日は対象データが無いため実質no-opになるものが大半だが、個別に保証されているわけではない）。
 
 **銘柄別モデル（P9）の champion 差し替えは人手承認を経ない**: 上記4タスクは品質ゲート
 （held-out skill・既存 champion との再窓合わせ RMSE 比較）合格時に `model_champions`
@@ -238,9 +238,9 @@ cp data/alpha_forge.db "data/alpha_forge_$(date +%Y%m%d_%H%M%S).db"
 
 ## 6. 既知の制限・今後の課題
 
-- 自動バックアップスクリプト・起動/停止スクリプト（`start.ps1`/`stop.ps1` 相当）は未整備。単一プロセスずつ手動起動する運用が前提
+- 自動バックアップスクリプトは未整備（§5参照）。起動/停止スクリプト（`scripts/start.ps1`/`stop.ps1`、ログオン時自動起動の`scripts/register-startup-task.ps1`）は🔧2026-09-13に整備済み（§1参照、本節はその前の記述が残っていたもの）
 - 認証機構は `Settings` の設定スロットのみが残っており、実際のログイン機能は無い（CLAUDE.md: デスクトップ常駐・単一ユーザー前提のため意図的に未実装）
-- celery-beat の自走スケジュールは日本の祝日を考慮しない（`trading_calendar.py` と同じスコープ外の判断）
+- celery-beat の自走スケジュールのうち `run_picks_task`・`run_portfolio_monitor_task` は🔧2026-09-20に日本の祝日を考慮するよう修正済み（`jpholiday`、§1参照）。それ以外のタスクは引き続き祝日を考慮しない
 - Web Push はブラウザの購読が有効な場合のみ配信される。デスクトップ常駐前提のため PWA 化・インストール導線は意図的に作っていない
 - 通知はアプリ内表示 + Web Push のみ（メール/Slack/LINE 等の外部連携は無し）
 

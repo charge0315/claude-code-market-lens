@@ -46,8 +46,8 @@ docs/note/YYYY-MM-DD/
 
 ## 実行手順
 
-1. **システム起動確認**：frontend(3001)・backend(8002)・Redis が動いていなければ起動する
-   （celery-beat は自動起動しない — CLAUDE.md参照）。
+1. **システム起動確認**：frontend(3001)・backend(8002)・Redis・celery worker・celery beat・
+   kb_creator(8077) が動いていなければ起動する（🔧2026-09-22、celery beatも起動対象 — CLAUDE.md参照）。
 2. **休場日チェック**：`GET /api/market/snapshot` の `market_status` を確認する。
    「引け後」で現在値がピック上のentry値と完全一致する場合、休場中に前営業日終値が
    引き継がれている可能性が高い。日本の祝日カレンダーと突き合わせて休場日と判断した場合は、
