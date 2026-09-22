@@ -14,7 +14,6 @@ import {
   type MouseEventParams,
   type SeriesMarker,
   type Time,
-  type UTCTimestamp,
 } from 'lightweight-charts';
 import {
   fetchOhlc,
@@ -24,6 +23,7 @@ import {
   type OverlayKind,
   type SubIndicatorKind,
 } from '@/lib/api/stock';
+import { toChartTime } from '@/lib/chartTime';
 import './stock-detail.css';
 
 // 日足ローソク足チャート（既定）。🆕 `enableAdvancedControls` を渡すと足種セレクタ（分足）・
@@ -82,12 +82,6 @@ const LINE_PALETTE = [
   '--color-accent-2-700',
   '--color-accent-300',
 ] as const;
-
-// lightweight-charts の `Time` は分足（Unix秒）と日足（YYYY-MM-DD文字列）を区別できないため、
-// 数値は `UTCTimestamp` へ明示キャストする（公式ドキュメント推奨の書き方）。
-function toChartTime(time: string | number): Time {
-  return typeof time === 'number' ? (time as UTCTimestamp) : time;
-}
 
 // 🆕 ツールチップ見出し。`label`（バックエンド生成の説明文）とは別に、種別を一目で識別
 // できるよう短い名称を添える（同系色で埋もれるマーカー視認性の改善に合わせた強調表示）。

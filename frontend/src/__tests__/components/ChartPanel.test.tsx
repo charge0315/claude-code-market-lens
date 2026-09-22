@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { ChartPanel } from '@/components/chart/ChartPanel';
 import { fetchOhlc, fetchQuote } from '@/lib/api/stock';
@@ -84,6 +85,32 @@ describe('ChartPanel', () => {
 
     expect(await screen.findByRole('group', { name: 'オーバーレイ指標' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'サブインジケーター' })).toBeInTheDocument();
+  });
+
+  it('「マルチチャート」タブへ切り替えると足種セレクタが消えマルチチャートのパネルが表示される（🆕 P34）', async () => {
+    mockFetchQuote.mockResolvedValue(quote());
+    const user = userEvent.setup();
+
+    render(<ChartPanel symbol="7203" />);
+    expect(await screen.findByRole('group', { name: '足種' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'マルチチャート' }));
+
+    expect(screen.queryByRole('group', { name: '足種' })).not.toBeInTheDocument();
+    expect(await screen.findByText('15分足（1ヶ月）')).toBeInTheDocument();
+    expect(screen.getByText('60分足（3ヶ月）')).toBeInTheDocument();
+    expect(screen.getByText('日足（1年）')).toBeInTheDocument();
+  });
+
+  it('「通常チャート」タブへ戻ると足種セレクタが復活する', async () => {
+    mockFetchQuote.mockResolvedValue(quote());
+    const user = userEvent.setup();
+
+    render(<ChartPanel symbol="7203" />);
+    await user.click(screen.getByRole('button', { name: 'マルチチャート' }));
+    await user.click(screen.getByRole('button', { name: '通常チャート' }));
+
+    expect(await screen.findByRole('group', { name: '足種' })).toBeInTheDocument();
   });
 
   it('アクセシビリティ違反がない', async () => {

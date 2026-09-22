@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { MultiChart } from '@/components/chart/MultiChart';
 import { PriceChart } from '@/components/stock-detail/PriceChart';
 import { directionColor, formatYen } from '@/components/dashboard/pickDisplay';
 import { fetchQuote, type Quote } from '@/lib/api/stock';
@@ -11,9 +12,14 @@ import './chart.css';
 // 表示しない制約があるため、AI ピック対象外の銘柄も含めて任意の銘柄を素早く見たい
 // 場合の代替として新設した（CLAUDE.md の主要画面「チャート」）。
 
+// 🆕 P34: 四季報オンラインの「通常チャート/マルチチャート」タブ構成を参考に、詳細表示
+// （`PriceChart`）と複数足種の一覧比較（`MultiChart`）を切り替えられるようにする。
+type ChartView = 'normal' | 'multi';
+
 export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ChartView>('normal');
 
   useEffect(() => {
     if (!symbol) return;
@@ -51,7 +57,17 @@ export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
           </span>
         )}
       </div>
-      <PriceChart symbol={symbol} enableAdvancedControls />
+
+      <div className="chart-view-toolbar" role="group" aria-label="表示切替">
+        <button type="button" className={view === 'normal' ? 'is-active' : undefined} aria-pressed={view === 'normal'} onClick={() => setView('normal')}>
+          通常チャート
+        </button>
+        <button type="button" className={view === 'multi' ? 'is-active' : undefined} aria-pressed={view === 'multi'} onClick={() => setView('multi')}>
+          マルチチャート
+        </button>
+      </div>
+
+      {view === 'normal' ? <PriceChart symbol={symbol} enableAdvancedControls /> : <MultiChart symbol={symbol} />}
     </div>
   );
 }

@@ -53,3 +53,57 @@
   font-size: var(--font-size-base);
   font-weight: 600;
 }
+
+/* 🆕 マルチチャート（`MultiChart.tsx`）— 「通常チャート/マルチチャート」タブ切替 */
+.chart-view-toolbar {
+  display: inline-flex;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 2px;
+  margin-bottom: var(--spacing-md);
+}
+
+.chart-view-toolbar button {
+  background: none;
+  color: var(--color-text-secondary);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chart-view-toolbar button.is-active {
+  background: var(--color-accent-500);
+  color: #fff;
+}
+
+.multi-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-lg);
+}
+
+@media (max-width: 900px) {
+  .multi-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.multi-chart-panel {
+  min-width: 0;
+}
+
+.multi-chart-panel-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.multi-chart-panel-canvas {
+  width: 100%;
+  min-width: 0;
+}
