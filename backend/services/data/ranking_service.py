@@ -20,6 +20,7 @@ import datetime
 import logging
 import re
 import time
+from collections.abc import Mapping
 from typing import TypedDict
 
 from backend.models.dashboard import (
@@ -127,9 +128,24 @@ async def _compute_rankings(pool_size: int) -> tuple[RankingsResponse, bool]:
         datetime.date.fromisoformat(today_date) - datetime.timedelta(days=1)
     )
 
-    prev_by_code = _index_by_code(prev_bars)
     name_by_code = await _fetch_name_map()
     names_resolved = bool(name_by_code)
+    return rankings_from_bars(today_date, today_bars, prev_bars, name_by_code, pool_size), names_resolved
+
+
+def rankings_from_bars(
+    as_of_date: str,
+    today_bars: list[JsonDict],
+    prev_bars: list[JsonDict],
+    name_by_code: Mapping[str, str],
+    pool_size: int,
+) -> RankingsResponse:
+    """2 営業日分の全銘柄一括バーから値上がり / 値下がり / 出来高ランキングを計算する（I/O なし）.
+
+    🆕 P37: 過去日リプレイ（`services/replay/`）が「その日」と「前営業日」のキャッシュ済みバーから、
+    本番と同じ規則で候補プールの母集団を再現できるよう `_compute_rankings` から切り出した。
+    """
+    prev_by_code = _index_by_code(prev_bars)
 
     entries: list[RankingEntry] = []
     advancers = 0
@@ -180,15 +196,12 @@ async def _compute_rankings(pool_size: int) -> tuple[RankingsResponse, bool]:
         comment=_generate_breadth_comment(advancers, decliners),
     )
 
-    return (
-        RankingsResponse(
-            as_of_date=today_date,
-            market_breadth=breadth,
-            gainers=gainers,
-            losers=losers,
-            volume_leaders=volume_leaders,
-        ),
-        names_resolved,
+    return RankingsResponse(
+        as_of_date=as_of_date,
+        market_breadth=breadth,
+        gainers=gainers,
+        losers=losers,
+        volume_leaders=volume_leaders,
     )
 
 
@@ -287,7 +300,7 @@ async def _walk_back_with_subscription_fallback(start: datetime.date) -> tuple[s
     try:
         return await _walk_back_for_bars(start)
     except JQuantsClientError as e:
-        bounds = _parse_subscription_range(e)
+        bounds = parse_subscription_range(e)
         if bounds is None:
             raise
         lower_bound, upper_bound = bounds
@@ -301,7 +314,7 @@ async def _walk_back_with_subscription_fallback(start: datetime.date) -> tuple[s
         return await _walk_back_for_bars(datetime.date.fromisoformat(fallback))
 
 
-def _parse_subscription_range(exc: JQuantsClientError) -> tuple[str, str] | None:
+def parse_subscription_range(exc: JQuantsClientError) -> tuple[str, str] | None:
     """400 エラー本文から契約プランのカバー範囲 (下限, 上限) を抽出する（一致しなければ None）."""
     match = _SUBSCRIPTION_RANGE_PATTERN.search(exc.body)
     if match is None:

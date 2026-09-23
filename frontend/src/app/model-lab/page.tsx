@@ -18,6 +18,7 @@ import { TrainingTrendSummaryLine } from '@/components/model-lab/TrainingTrendSu
 import { PitCoveragePanel } from '@/components/model-lab/PitCoveragePanel';
 import { PitCoverageSummaryLine } from '@/components/model-lab/PitCoverageSummaryLine';
 import { AblationPanel } from '@/components/model-lab/AblationPanel';
+import { ReplayPanel } from '@/components/model-lab/ReplayPanel';
 
 // 🆕 P14: 初心者は「かんたん」タブ（学習トリガー中心）だけで完結できるようにし、
 // champion/challenger 比較・PSI ドリフト・成長曲線等の既存の上級者向けセクションは
@@ -187,6 +188,36 @@ function AdvancedTab(): ReactNode {
           <CalibrationChart />
         </section>
       </div>
+
+      <section aria-labelledby="replay-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
+        <div className="model-lab-heading-row">
+          <h2 id="replay-heading" style={H2_STYLE}>
+            過去データでの再現学習（リプレイ）
+          </h2>
+          <InfoPopoverButton title="過去データでの再現学習とは">
+            <div className="ml-info-body">
+              <p>
+                取得できる最も古い日から1営業日ずつ、「その日の大引け時点で分かっていた情報だけ」でAIピックを
+                再現し、翌日以降の実際の値動きで答え合わせします。本番の運用開始を待たずに、数年分の
+                答え合わせ結果で学習・検証できます。
+              </p>
+              <p>
+                未来の情報が混ざらないよう、各日の処理はその日より後のデータを読めない仕組みで動きます。
+                当時の値が残っていないファンダメンタル・ニュースと、結果を知っている可能性があるLLMは使わず、
+                株価から計算できる部分（テクニカル・トレンド・MLモデル・3値ブラケット）だけで再現します。
+              </p>
+              <p>
+                結果は本番の台帳とは別に記録するため、ダッシュボードの実測勝率や昇格判定のペーパー成績には
+                影響しません。学び直したモデルは challenger として登録され、本番への採用は人手承認を経てのみ行われます。
+              </p>
+            </div>
+          </InfoPopoverButton>
+        </div>
+        <p className="model-lab-as-of">
+          過去の各営業日に「その日の情報だけ」でピックを再現し、翌日以降の実データで答え合わせした成績と学習結果です。
+        </p>
+        <ReplayPanel />
+      </section>
 
       <section aria-labelledby="champions-heading" style={{ marginTop: 'var(--spacing-2xl)' }}>
         <h2 id="champions-heading" style={H2_STYLE}>

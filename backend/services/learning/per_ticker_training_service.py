@@ -30,7 +30,7 @@ import asyncio
 import functools
 import json
 import logging
-import os
+import sys
 import time
 import uuid
 from collections.abc import Callable
@@ -346,23 +346,21 @@ async def run_daily_training_batch(
 _PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 
 
-def _ensure_project_root_on_child_pythonpath() -> None:
+def _ensure_project_root_on_sys_path() -> None:
     """`ProcessPoolExecutor` が spawn する子プロセスへ `backend` パッケージを確実に見せる.
 
-    `celery.exe`（console-script 起動、`-m celery` ではない）配下で `ProcessPoolExecutor` を
-    使うと、子プロセスの起動時に `sys.path` へプロジェクトルートが引き継がれず
-    `ModuleNotFoundError: No module named 'backend'` で即クラッシュする事例が実際に発生した
-    （2026-09-20、celery worker）。`uvicorn -m` 経路では発生しなかったことから、multiprocessing
-    の spawn ブートストラップが `sys.path` をどう再構築するかは起動方法（`-m` か console-script
-    か）に依存すると判明した。OS 環境変数の `PYTHONPATH` はその実装詳細に関わらず子プロセスへ
-    確実に継承されるため、これで対策する。
+    `celery.exe -A backend.celery_app` は app の import 中だけ `cwd_in_path()` で cwd を
+    `sys.path` に足し、import 後に取り除く。そのため親プロセスは `backend` を import 済みでも
+    `sys.path` にプロジェクトルートが残らない。spawn の子プロセスは起動直後に `sys.path` を
+    親のコピーで丸ごと上書きする（`multiprocessing.spawn.prepare`）ので、子は
+    `ModuleNotFoundError: No module named 'backend'` で即死し、プールが壊れて後続全銘柄が
+    失敗する（2026-09-20 発生）。当初は `PYTHONPATH` 環境変数で対策したが、この上書きで
+    消されて効いておらず 2026-09-23 に全件失敗が再発した。親の `sys.path` 自体へ入れれば
+    子へコピーされる。
     """
-    existing = os.environ.get("PYTHONPATH", "")
     root = str(_PROJECT_ROOT)
-    entries = existing.split(os.pathsep) if existing else []
-    if root in entries:
-        return
-    os.environ["PYTHONPATH"] = os.pathsep.join([root, *entries]) if entries else root
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 def _create_worker_pool(max_workers: int) -> ProcessPoolExecutor | None:
@@ -375,7 +373,7 @@ def _create_worker_pool(max_workers: int) -> ProcessPoolExecutor | None:
     ため、monkeypatch によるモデル保存先の隔離（`_isolated_per_ticker_model_dir` 等）が
     子プロセスへ引き継がれず、テストの独立性が壊れてしまうため。
     """
-    _ensure_project_root_on_child_pythonpath()
+    _ensure_project_root_on_sys_path()
     return ProcessPoolExecutor(max_workers=max_workers)
 
 

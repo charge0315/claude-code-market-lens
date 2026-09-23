@@ -27,6 +27,7 @@ data/*.db-shm
 data/models/
 data/calibrators/
 data/cache/
+data/replay/
 celerybeat-schedule*
 logs/
 .run/

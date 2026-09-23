@@ -512,44 +512,76 @@ async def test_create_worker_pool_builds_process_pool_executor_with_requested_si
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def test_ensure_project_root_on_child_pythonpath_sets_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`PYTHONPATH` 未設定なら、子プロセスが `backend` を import できるようプロジェクトルートを設定する.
+def _without_project_root(paths: list[str]) -> list[str]:
+    root = Path(svc._PROJECT_ROOT)
+    return [p for p in paths if Path(p or ".").resolve() != root]
 
-    `celery.exe`（console-script 起動、`-m` ではない）配下で `ProcessPoolExecutor` を使うと、
-    子プロセスの起動時に `sys.path` へプロジェクトルートが引き継がれず
-    `ModuleNotFoundError: No module named 'backend'` で即クラッシュする事例が実際に発生した
-    （2026-09-20、celery worker）。OS 環境変数の `PYTHONPATH` は multiprocessing の spawn
-    ブートストラップの実装詳細に関わらず子プロセスへ確実に継承されるため、これで対策する。
+
+def test_ensure_project_root_on_sys_path_inserts_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """親の `sys.path` にプロジェクトルートが無ければ先頭へ追加する.
+
+    `celery.exe` は `-A backend.celery_app` の import 中だけ `cwd_in_path()` で cwd を
+    `sys.path` へ足し、import 後に外す。spawn の子プロセスは起動直後に `sys.path` を
+    親のコピーで丸ごと上書きするため、`PYTHONPATH` 環境変数で足しても消されてしまい
+    `ModuleNotFoundError: No module named 'backend'` になる（2026-09-23 に再発・特定）。
     """
-    monkeypatch.delenv("PYTHONPATH", raising=False)
+    import sys
 
-    svc._ensure_project_root_on_child_pythonpath()
+    monkeypatch.setattr(sys, "path", _without_project_root(list(sys.path)))
 
-    import os
+    svc._ensure_project_root_on_sys_path()
 
-    assert os.environ["PYTHONPATH"] == str(svc._PROJECT_ROOT)
-
-
-def test_ensure_project_root_on_child_pythonpath_preserves_existing_entries(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の `PYTHONPATH` を破壊せず、プロジェクトルートを先頭に追記する."""
-    import os
-
-    monkeypatch.setenv("PYTHONPATH", "C:\\some\\other\\path")
-
-    svc._ensure_project_root_on_child_pythonpath()
-
-    assert os.environ["PYTHONPATH"] == f"{svc._PROJECT_ROOT}{os.pathsep}C:\\some\\other\\path"
+    assert sys.path[0] == str(svc._PROJECT_ROOT)
 
 
-def test_ensure_project_root_on_child_pythonpath_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_project_root_on_sys_path_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """既にプロジェクトルートが含まれていれば重複追加しない."""
+    import sys
+
+    monkeypatch.setattr(sys, "path", [str(svc._PROJECT_ROOT), *_without_project_root(list(sys.path))])
+
+    svc._ensure_project_root_on_sys_path()
+    svc._ensure_project_root_on_sys_path()
+
+    assert sys.path.count(str(svc._PROJECT_ROOT)) == 1
+
+
+def test_create_worker_pool_child_can_import_backend_under_celery_like_sys_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """celery.exe 相当（親 `sys.path` にルート無し）でも spawn 子プロセスが `backend` を import できる.
+
+    実プロセスを spawn する回帰テスト。修正前（`PYTHONPATH` 方式）はこのテストが
+    `BrokenProcessPool` で失敗する。
+    """
+    import importlib.util
     import os
+    import sys
 
-    monkeypatch.setenv("PYTHONPATH", str(svc._PROJECT_ROOT))
+    # autouse fixture がスレッドプールへ差し替えているため、素の実装へ戻す
+    monkeypatch.undo()
+    monkeypatch.setattr(sys, "path", _without_project_root(list(sys.path)))
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    # 子プロセスの cwd 経由で偶然 import できてしまわないよう、ルート外へ移動する
+    monkeypatch.chdir(Path(os.sep))
 
-    svc._ensure_project_root_on_child_pythonpath()
+    pool = svc._create_worker_pool(1)
+    assert pool is not None
+    try:
+        spec_origin = pool.submit(_find_backend_origin).result(timeout=60)
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
-    assert os.environ["PYTHONPATH"] == str(svc._PROJECT_ROOT)
+    assert spec_origin is not None
+    assert importlib.util.find_spec("backend") is not None
+
+
+def _find_backend_origin() -> str | None:
+    """子プロセス側で `backend` パッケージを解決できるかを返す（pickle 可能なトップレベル関数）."""
+    import importlib.util
+
+    spec = importlib.util.find_spec("backend")
+    return None if spec is None else spec.origin
 
 
 async def test_run_daily_training_batch_processes_in_windows_of_max_parallel_workers(

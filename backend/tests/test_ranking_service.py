@@ -45,8 +45,8 @@ def test_index_by_code_skips_invalid_rows() -> None:
 
 def test_parse_subscription_range() -> None:
     exc = JQuantsClientError("/x", 400, body="Your subscription covers the following dates: 2024-04-25 ~ 2026-04-25.")
-    assert rs._parse_subscription_range(exc) == ("2024-04-25", "2026-04-25")
-    assert rs._parse_subscription_range(JQuantsClientError("/x", 400, body="nope")) is None
+    assert rs.parse_subscription_range(exc) == ("2024-04-25", "2026-04-25")
+    assert rs.parse_subscription_range(JQuantsClientError("/x", 400, body="nope")) is None
 
 
 async def test_walk_back_for_bars_skips_non_trading_days(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,3 +113,29 @@ async def test_compute_rankings_end_to_end(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.volume_leaders[0].code == "6758"  # volume 8000
     assert result.market_breadth.advancers == 1
     assert result.market_breadth.decliners == 1
+
+
+def test_rankings_from_bars_is_pure_and_matches_ordering() -> None:
+    """🆕 P37: 2 日分の全銘柄バーからランキングを作る純関数（過去日リプレイが同じ規則で候補プールを再現する）."""
+    prev = [_bar("11110", 100.0), _bar("22220", 100.0), _bar("33330", 100.0), _bar("44440", 100.0)]
+    today = [
+        _bar("11110", 110.0, volume=10),
+        _bar("22220", 90.0, volume=5000),
+        _bar("33330", 100.0, volume=300),
+        _bar("55550", 50.0, volume=9999),  # 前日に存在しない（新規上場）→ 除外
+    ]
+
+    out = rs.rankings_from_bars("2021-10-01", today, prev, {"11110": "銘柄A"}, pool_size=2)
+
+    assert out.as_of_date == "2021-10-01"
+    assert [e.code for e in out.gainers] == ["1111", "3333"]
+    assert [e.code for e in out.losers] == ["2222", "3333"]
+    assert [e.code for e in out.volume_leaders] == ["2222", "3333"]
+    assert out.gainers[0].name == "銘柄A"
+    assert out.gainers[1].name == "33330"  # 名前解決できない銘柄はコード表示
+    assert (out.market_breadth.advancers, out.market_breadth.decliners, out.market_breadth.unchanged) == (1, 1, 1)
+
+
+def test_rankings_from_bars_raises_when_no_entries() -> None:
+    with pytest.raises(rs.JQuantsError):
+        rs.rankings_from_bars("2021-10-01", [_bar("11110", 100.0)], [], {}, pool_size=5)

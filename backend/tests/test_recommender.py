@@ -133,3 +133,33 @@ def test_custom_thresholds_change_recommendation(monkeypatch: pytest.MonkeyPatch
     strict = rec.RecommenderThresholds(buy=99.0, sell=1.0)
     out = rec.compute_recommendation("7203", thresholds=strict)
     assert out["recommendation"] == "HOLD"  # buy 閾値 99 には届かない
+
+
+# --- 🆕 リプレイ学習（P37）: 入力注入版 `recommend_from_inputs` ---
+
+
+def test_compute_recommendation_matches_recommend_from_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """本番経路（取得込み）と入力注入版が同じ入力に対して同一結果を返す（本番挙動を変えない）."""
+    df = _uptrend_df()
+    fundamental: dict[str, object] = {"per": 9.0, "pbr": 0.8, "roe": 0.22, "company_name": "テスト"}
+    _patch_sources(monkeypatch, df=df, fundamental=fundamental, sentiment_total=5)
+
+    via_fetch = rec.compute_recommendation("7203")
+    via_inputs = rec.recommend_from_inputs(
+        "7203", df=df, fundamental=fundamental, sentiment={"total": 5, "average_score": 0.7}
+    )
+
+    assert via_fetch == via_inputs
+
+
+def test_recommend_from_inputs_excludes_missing_fundamental_and_sentiment() -> None:
+    """過去時点で入手できない情報（None）は中立 50 で埋めず、合成スコアから除外して再正規化する."""
+    out = rec.recommend_from_inputs("7203", df=_uptrend_df(), fundamental=None, sentiment=None)
+
+    breakdown = cast("dict[str, object]", out["score_breakdown"])
+    assert breakdown["fundamental"] is None
+    assert breakdown["sentiment"] is None
+    contributions = cast("dict[str, object]", out["source_contributions"])
+    assert set(contributions) == {"technical"}
+    tech = cast("float", breakdown["technical"])
+    assert out["composite_score"] == pytest.approx(tech, abs=0.1)

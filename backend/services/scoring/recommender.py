@@ -193,15 +193,50 @@ def compute_recommendation(
     df = get_stock_data(ticker, period="1y")
     fund = dict(fundamental) if fundamental is not None else get_fundamental_data(ticker)
     sentiment_data = get_news_sentiment(ticker, max_items=20)
+    return recommend_from_inputs(
+        ticker,
+        df=df,
+        fundamental=fund,
+        sentiment=sentiment_data,
+        ml_score_provider=ml_score_provider,
+        thresholds=thresholds,
+    )
 
+
+def recommend_from_inputs(
+    ticker: str,
+    *,
+    df: pd.DataFrame,
+    fundamental: Mapping[str, object] | None,
+    sentiment: Mapping[str, object] | None,
+    ml_score_provider: MlScoreProvider = null_ml_score,
+    thresholds: RecommenderThresholds = DEFAULT_THRESHOLDS,
+) -> dict[str, object]:
+    """取得済みの入力からレコメンドを生成する（I/O なし、🆕 P37 で `compute_recommendation` から分離）.
+
+    過去日リプレイ（`services/replay/`）が「その日までの価格」だけを渡して同じ採点を再現するため、
+    データ取得をここから切り離した。`fundamental` / `sentiment` が None の場合は、過去時点の値が
+    残っていない（PIT 未収集）ことを意味するので、中立 50 で埋めずにファクターごと合成から外す。
+    中立値で埋めると「常に 50 の定数ファクター」が合成スコアを 50 へ引き寄せ、実測 IC も歪むため。
+    本番経路（`compute_recommendation`）は常に dict を渡すので挙動は変わらない。
+    """
+    fund: dict[str, object] = dict(fundamental) if fundamental is not None else {}
     tech_score, tech_details = compute_technical_score(df)
-    fund_score, fund_details = compute_fundamental_score(fund)
+    fund_score: float | None = None
+    fund_details: dict[str, object] = {}
+    if fundamental is not None:
+        fund_score, fund_details = compute_fundamental_score(fund)
 
     # ニュース 0 件のとき sentiment_analyzer は average_score=0.5（中立）を返すため、
     # そのまま採用すると常時定数 50 のファクターが混入する。total==0 は None 扱い。
+    sentiment_avg = 0.5
     sentiment_score: float | None = None
-    if sentiment_data["total"] > 0:
-        sentiment_score = sentiment_data["average_score"] * 100.0
+    if sentiment is not None:
+        avg = as_float(sentiment.get("average_score"))
+        sentiment_avg = avg if avg is not None else 0.5
+        total = as_float(sentiment.get("total"))
+        if total is not None and total > 0:
+            sentiment_score = sentiment_avg * 100.0
 
     ml_score, prediction_rate = ml_score_provider(df, ticker)
 
@@ -212,13 +247,13 @@ def compute_recommendation(
         "sentiment": sentiment_score,
     }
     composite = compute_composite(scores, weights=FACTOR_WEIGHTS)
-    # technical/fundamental は常に中立 50 を返す設計のため composite が None になることは無い。
+    # technical は常にスコアを返す設計のため composite が None になることは無い。
     composite = round(max(0.0, min(100.0, composite if composite is not None else 50.0)), 1)
 
     score_breakdown: dict[str, float | None] = {
         "technical": round(tech_score, 1),
         "ml_prediction": round(ml_score, 1) if ml_score is not None else None,
-        "fundamental": round(fund_score, 1),
+        "fundamental": round(fund_score, 1) if fund_score is not None else None,
         "sentiment": round(sentiment_score, 1) if sentiment_score is not None else None,
     }
 
@@ -231,7 +266,7 @@ def compute_recommendation(
     else:
         recommendation = "HOLD"
 
-    reasoning = _build_reasoning(tech_details, fund_details, sentiment_data["average_score"], prediction_rate)
+    reasoning = _build_reasoning(tech_details, fund_details, sentiment_avg, prediction_rate)
 
     return {
         "ticker": ticker,
@@ -255,7 +290,7 @@ def compute_recommendation(
             "recent_cross_event": tech_details.get("recent_cross_event"),
         },
         "fundamental_signals": fund_details,
-        "sentiment_average": sentiment_data["average_score"],
+        "sentiment_average": sentiment_avg,
         "ml_prediction_rate": prediction_rate,
         "reasoning": reasoning,
     }

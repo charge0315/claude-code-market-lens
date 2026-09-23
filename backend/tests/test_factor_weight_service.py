@@ -135,3 +135,33 @@ async def test_missing_factor_contribution_does_not_crash_and_still_normalizes(m
 async def test_default_horizon_is_the_longer_one() -> None:
     """デフォルト horizon は保有期間の目安に近い長い方（20営業日）を使う."""
     assert svc.DEFAULT_HORIZON_DAYS == 20
+
+
+def test_ic_weights_from_rows_accepts_parsed_contributions() -> None:
+    """🆕 P37: リプレイ台帳（JSON 解析済み dict）からも同じ規則で IC 重みを出せる純関数."""
+    rows: list[dict[str, object]] = [
+        {"source_contributions": {"technical": {"score": float(i)}}, "excess_return": i / 100.0} for i in range(30)
+    ]
+
+    weights = svc.ic_weights_from_rows(rows)
+
+    assert set(weights) == set(svc.FACTOR_WEIGHTS)
+    assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
+    # technical の |IC| = 1.0（完全順位相関）が既定重みより大きいので最大の重みになる
+    assert max(weights, key=lambda k: weights[k]) == "technical"
+
+
+def test_ic_weights_from_rows_can_restrict_factors() -> None:
+    """🆕 P37: 対象ファクターを絞ると、その集合だけで正規化する（入力の無いファクターへ既定重みを残さない）."""
+    rows: list[dict[str, object]] = [
+        {
+            "source_contributions": {"technical": {"score": float(i)}, "ml_prediction": {"score": 30.0 - i}},
+            "excess_return": i / 100.0,
+        }
+        for i in range(30)
+    ]
+
+    weights = svc.ic_weights_from_rows(rows, factors=("technical", "ml_prediction"))
+
+    assert set(weights) == {"technical", "ml_prediction"}
+    assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)

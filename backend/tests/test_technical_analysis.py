@@ -91,3 +91,22 @@ def test_ichimoku_returns_five_lines_with_forward_shifted_cloud(price_df: pd.Dat
 def test_compute_atr_series_matches_scalar_tail(price_df: pd.DataFrame) -> None:
     series = ta.compute_atr_series(price_df, period=14)
     assert series.iloc[-1] == pytest.approx(ta.compute_atr(price_df, period=14))
+
+
+def test_series_to_records_matches_elementwise_reference() -> None:
+    """🆕 P37: 高速化（要素ごとの iloc → 一括変換）で出力が変わらないことの特性テスト."""
+    import numpy as np
+    import pandas as pd
+
+    from backend.services.scoring.technical_analysis import _safe_value, _series_to_records, _to_date_str
+
+    idx = pd.date_range("2024-01-01", periods=50, freq="B")
+    values = np.random.default_rng(0).normal(size=50)
+    values[[0, 3, 7]] = np.nan
+    values[10] = np.inf
+    series = pd.Series(values, index=idx)
+    int_series = pd.Series(range(50), index=idx)
+
+    for s in (series, int_series):
+        expected = [{"date": _to_date_str(idx, i), "value": _safe_value(s.iloc[i])} for i in range(len(s))]
+        assert _series_to_records(s, idx) == expected

@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import cast
 
+from backend.models.dashboard import RankingsResponse
 from backend.models.inference import InferenceOutcome
 from backend.services.data.data_fetcher import get_stock_data
 from backend.services.data.ranking_service import get_rankings
@@ -91,7 +92,14 @@ async def _candidate_pool(horizon_type: str, limit: int) -> list[str]:
     except Exception as e:  # noqa: BLE001 — 候補プール取得失敗（J-Quants 障害等）は empty 応答へ畳む
         logger.warning("候補プール取得に失敗: %s", e)
         return []
+    return order_candidate_codes(rankings, horizon_type, limit)
 
+
+def order_candidate_codes(rankings: RankingsResponse, horizon_type: str, limit: int) -> list[str]:
+    """ランキングから候補プールの銘柄コード列を並べる（I/O なし、🆕 P37 で `_candidate_pool` から分離）.
+
+    過去日リプレイ（`services/replay/`）が本番と同じ並び順規則を使うための共通化。
+    """
     if horizon_type == "short_term":
         ordered = [*rankings.volume_leaders, *rankings.gainers]
     else:

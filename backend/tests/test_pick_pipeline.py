@@ -308,3 +308,24 @@ async def test_gemini_shadow_judgment_recorded_after_ledger_insert(
         rows = await list_shadow_predictions_for_pick(pick.pick_id)
         assert len(rows) == 1
         assert rows[0]["challenger_version"] == "gemini:gemini-2.5-pro"
+
+
+def test_order_candidate_codes_follows_horizon_rules() -> None:
+    """🆕 P37: 候補プールの並び順規則（短期は出来高→値上がり、中長期は値上がり→出来高→値下がり、重複除去）."""
+    from backend.models.dashboard import MarketBreadth, RankingEntry, RankingsResponse
+    from backend.services.picks.pipeline import order_candidate_codes
+
+    def entry(code: str) -> RankingEntry:
+        return RankingEntry(code=code, name=code, close=1.0, change_percent=0.0, volume=1)
+
+    rankings = RankingsResponse(
+        as_of_date="2021-10-01",
+        market_breadth=MarketBreadth(advancers=0, decliners=0, unchanged=0, comment=""),
+        gainers=[entry("1111"), entry("2222")],
+        losers=[entry("3333")],
+        volume_leaders=[entry("2222"), entry("4444")],
+    )
+
+    assert order_candidate_codes(rankings, "short_term", 10) == ["2222", "4444", "1111"]
+    assert order_candidate_codes(rankings, "mid_term", 10) == ["1111", "2222", "4444", "3333"]
+    assert order_candidate_codes(rankings, "mid_term", 2) == ["1111", "2222"]

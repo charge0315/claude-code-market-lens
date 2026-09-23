@@ -63,9 +63,21 @@ async def compute_ic_weights(horizon_days: int = DEFAULT_HORIZON_DAYS) -> dict[s
     正規化済みで、`signal_scan_scoring.compute_composite` の `weights` 引数へそのまま渡せる形。
     """
     rows = await pick_outcome_db.list_resolved_for_eval(horizon_days=horizon_days)
+    return ic_weights_from_rows(rows)
 
+
+def ic_weights_from_rows(
+    rows: Sequence[Mapping[str, object]], *, factors: Sequence[str] | None = None
+) -> dict[str, float]:
+    """決着済み行（`source_contributions` と `excess_return` を持つ）から |IC| 比例の重みを出す.
+
+    🆕 P37: 過去日リプレイ（`services/replay/learning.py`）が専用台帳の行から同じ規則で重みを
+    算出できるよう、DB 取得から切り離した。`source_contributions` は JSON 文字列（本番台帳）と
+    解析済み dict（リプレイ台帳）の両方を受け付ける。`factors` を渡すとその集合だけで重みを作る
+    （リプレイでは過去時点の値が無いファクターに既定重みが残ると誤解を招くため、呼び出し側で外す）。
+    """
     raw: dict[str, float] = {}
-    for factor in FACTOR_WEIGHTS:
+    for factor in factors if factors is not None else tuple(FACTOR_WEIGHTS):
         pairs = [
             (score, _f(r["excess_return"]))
             for r in rows
@@ -79,6 +91,8 @@ async def compute_ic_weights(horizon_days: int = DEFAULT_HORIZON_DAYS) -> dict[s
 
 def _source_contributions_of(row: Mapping[str, object]) -> Mapping[str, object]:
     raw = row.get("source_contributions")
+    if isinstance(raw, Mapping):
+        return raw
     if not isinstance(raw, str) or not raw:
         return {}
     parsed = json.loads(raw)

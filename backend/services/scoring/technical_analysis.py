@@ -42,8 +42,16 @@ def _safe_value(val: object) -> float | None:
 
 
 def _series_to_records(series: pd.Series, index: pd.DatetimeIndex | pd.Index) -> list[IndicatorPoint]:
-    """時系列データを {date, value} 辞書のリストに変換する."""
-    return [IndicatorPoint(date=_to_date_str(index, i), value=_safe_value(series.iloc[i])) for i in range(len(series))]
+    """時系列データを {date, value} 辞書のリストに変換する.
+
+    🆕 P37: 要素ごとの `series.iloc[i]` / `index[i]` は 1 回あたり数十 µs かかり、テクニカル採点
+    1 銘柄で約 0.1 秒を占めていた（過去日リプレイで 950 日 × 候補数ぶん呼ぶと律速になる）。
+    `to_numpy()` を反復して一括変換する（`iloc` と同じ numpy スカラーが得られるので、`np.int64` が
+    `_safe_value` で None になる従来の挙動も含め出力は同一。`tolist()` だと Python int に化けて変わる）。
+    """
+    n = len(series)
+    dates = [ts.isoformat()[:10] if hasattr(ts, "isoformat") else str(ts) for ts in index[:n]]
+    return [IndicatorPoint(date=d, value=_safe_value(v)) for d, v in zip(dates, series.to_numpy(), strict=True)]
 
 
 def calculate_sma(df: pd.DataFrame, periods: list[int]) -> dict[str, list[IndicatorPoint]]:

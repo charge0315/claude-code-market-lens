@@ -242,6 +242,18 @@ cp data/alpha_forge.db "data/alpha_forge_$(date +%Y%m%d_%H%M%S).db"
 
 ---
 
+## 5b. 過去日リプレイ学習（🆕 P37）
+
+モデルラボ「詳細」タブの「過去データでの再現学習（リプレイ）」から開始・停止・再開する
+（API: `POST /api/replay/runs` 等）。実行は backend・celery worker とは独立した子プロセス
+（`python -m backend.services.replay --run-id <uuid>`）で進み、進捗は `replay_runs` に残る。
+
+- 初回は J-Quants から日付ごとの全銘柄日足を取得して `data/replay/bars/` にキャッシュする（約 1,300 日分・数分〜十数分）。2 回目以降は差分だけ取得する
+- 子プロセスのログ: `data/replay/logs/<run_id>.log`
+- 結果は本番台帳と別の `replay_*` テーブル。ダッシュボードの実測勝率・昇格判定のペーパー成績には影響しない
+- 最後に学び直したプールモデルは `ml_pool` の challenger として登録されるだけで、本番採用は「モデルバージョン比較」の人手承認のみ
+- backend 再起動やクラッシュで止まった場合（ハートビートが 15 分途絶えると停止扱い）は「続きから再開」で最後に完了した日の翌営業日から続く
+
 ## 6. 既知の制限・今後の課題
 
 - 自動バックアップスクリプトは未整備（§5参照）。起動/停止スクリプト（`scripts/start.ps1`/`stop.ps1`、ログオン時自動起動の`scripts/register-startup-task.ps1`）は🔧2026-09-13に整備済み（§1参照、本節はその前の記述が残っていたもの）
