@@ -1,0 +1,92 @@
+[
+ {
+  "symbol": "4047",
+  "name": "関東電化工業",
+  "horizon": "中長期",
+  "direction": "強気",
+  "composite_score": 56.2,
+  "concordance": 0.5,
+  "confidence": 45,
+  "scores": {
+   "テクニカル": 62.0,
+   "トレンド": 20.0,
+   "ファンダ": 46.0,
+   "センチメント": 50.0
+  }
+ },
+ {
+  "symbol": "285A",
+  "name": "キオクシアHD",
+  "horizon": "中長期",
+  "direction": "強気",
+  "composite_score": 55.0,
+  "concordance": 0.333,
+  "confidence": 45,
+  "scores": {
+   "テクニカル": 62.0,
+   "トレンド": 20.0,
+   "ファンダ": 42.0,
+   "センチメント": 56.7
+  }
+ },
+ {
+  "symbol": "6920",
+  "name": "レーザーテック",
+  "horizon": "中長期",
+  "direction": "強気",
+  "composite_score": 46.1,
+  "concordance": 0.25,
+  "confidence": 42,
+  "scores": {
+   "テクニカル": 29.0,
+   "トレンド": 40.0,
+   "ファンダ": 46.0,
+   "センチメント": 75.0
+  }
+ },
+ {
+  "symbol": "9984",
+  "name": "ソフトバンクG",
+  "horizon": "短期",
+  "direction": "強気",
+  "composite_score": 55.7,
+  "concordance": 0.333,
+  "confidence": 42,
+  "scores": {
+   "テクニカル": 42.0,
+   "トレンド": 59.7,
+   "ファンダ": 80.0,
+   "センチメント": 55.0
+  }
+ },
+ {
+  "symbol": "285A",
+  "name": "キオクシアHD",
+  "horizon": "短期",
+  "direction": "強気",
+  "composite_score": 55.0,
+  "concordance": 0.333,
+  "confidence": 42,
+  "scores": {
+   "テクニカル": 62.0,
+   "トレンド": 20.0,
+   "ファンダ": 42.0,
+   "センチメント": 56.7
+  }
+ },
+ {
+  "symbol": "8001",
+  "name": "伊藤忠商事",
+  "horizon": "短期",
+  "direction": "強気",
+  "composite_score": 52.5,
+  "concordance": 0.333,
+  "confidence": 42,
+  "scores": {
+   "テクニカル": 42.0,
+   "トレンド": 90.0,
+   "ファンダ": 67.0,
+   "センチメント": 60.0
+  }
+ }
+]

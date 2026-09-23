@@ -268,11 +268,14 @@ def draw_cover_image(
     # 3. 日付バッジ（左上）
     badge_x = card_x1 + 40
     badge_y = card_y1 + 40
-    badge_w = 260
     badge_h = 42
-    draw.rounded_rectangle([(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)], radius=8, fill=(198, 113, 57))
     font_badge = get_pil_japanese_font(20, bold=True)
-    draw.text((badge_x + 18, badge_y + 8), f"DAILY AI REPORT ｜ {date_str}", fill=(255, 255, 255), font=font_badge)
+    badge_text = f"DAILY AI REPORT ｜ {date_str}"
+    # 固定幅だと日付が切れるため、文字幅 + 左右パディングからバッジ幅を決める
+    text_bbox = draw.textbbox((0, 0), badge_text, font=font_badge)
+    badge_w = (text_bbox[2] - text_bbox[0]) + 36
+    draw.rounded_rectangle([(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)], radius=8, fill=(198, 113, 57))
+    draw.text((badge_x + 18, badge_y + 8), badge_text, fill=(255, 255, 255), font=font_badge)
 
     # 4. サブタイトル
     font_sub = get_pil_japanese_font(22, bold=False)
