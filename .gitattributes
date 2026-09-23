@@ -1,0 +1,21 @@
+# 改行コードをリポジトリ内では LF に統一する。
+# Why: Windows 環境でエディタ・スクリプトごとに LF/CRLF が混在し、中身が同じでも
+# ファイル全体が差分に出て「先祖返り」の確認が難しくなったため（2026-09-23）。
+* text=auto eol=lf
+
+# バイナリは改行変換・差分の対象外
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.db binary
+*.sqlite binary
+*.pkl binary
+*.joblib binary
+*.pt binary
