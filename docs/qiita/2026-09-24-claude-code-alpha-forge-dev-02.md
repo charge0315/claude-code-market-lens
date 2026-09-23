@@ -11,7 +11,7 @@ private: false
 
 # はじめに
 
-日本株のAI銘柄スクリーニング＆継続学習端末**「ALPHA FORGE（アルファフォージ）」**を個人で開発・運用しています。開発には Claude Code を使っています。
+日本株のAI銘柄スクリーニング＆継続学習端末「**ALPHA FORGE（アルファフォージ）**」を個人で開発・運用しています。開発には Claude Code を使っています。
 
 前回は、構築プロンプト1枚から約25時間で一通り動くシステムが立ち上がった話を書きました。今回は、その2日後、**初めて本番の朝にAIピック（銘柄選定バッチ）を動かしたら、失敗したうえにバックエンド全体が応答しなくなった**ときの記録です。
 
@@ -23,11 +23,12 @@ private: false
 - `async def` の中で同期のHTTP呼び出し（yfinance）を直接実行し、イベントループ全体が止まっていた → `asyncio.to_thread` で別スレッドへ
 - 1銘柄の取得失敗が例外のまま上に伝わり、バッチ全体が500で落ちていた → 銘柄単位で `try/except` してスキップ
 - 別サービス（ベクトル検索API）の起動忘れで、候補ごとに接続待ちが積み重なっていた → 起動チェックリストをルール化
-
-※本記事はnote連載［ALPHA FORGE 開発秘話 #02］(https://note.com/featured_stocks/n/naf33466d4d8d) の技術的な部分を、エンジニア向けに再構成したものです。
 :::
 
----
+※本記事はnote連載［ALPHA FORGE 開発秘話 #02］ の技術的な部分を、エンジニア向けに再構成したものです。
+
+https://note.com/featured_stocks/n/naf33466d4d8d
+
 
 # 1. システム構成（前提）
 
@@ -50,7 +51,6 @@ flowchart LR
     E --> F[予測台帳へ記録]
 ```
 
----
 
 # 2. 症状：ピック生成が失敗し、設定画面まで開かない
 
@@ -69,7 +69,6 @@ J-Quants 429 /equities/master → Rate limit exceeded
 
 さらに、関係なさそうな設定画面も開かなくなっていました。調べると、バックエンドのプロセスはポート8002でLISTENしているのに、**どのエンドポイントもリクエストを処理していない**状態でした。
 
----
 
 # 3. 原因① 無料プランの仕様（データ期間とレート制限）
 
@@ -81,7 +80,6 @@ J-Quants 429 /equities/master → Rate limit exceeded
 外部APIの `400` が「データ期間外」を示す場合、キーの更新やリトライでは直りません。エラーメッセージに出ている日付範囲と、プランの提供範囲を突き合わせるのが近道です。
 :::
 
----
 
 # 4. 原因② `async def` の中の同期I/Oがイベントループを止めていた
 
@@ -116,7 +114,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 同じファイルの中でも、スコアリング本体（`_score_one`）は最初から `to_thread` で包まれていました。**一部だけ包み忘れる**のが典型的な漏れ方です。「`async def` の中で、`await` の付かない外部I/Oがないか」をレビュー観点にしておくと見つけやすくなります。
 :::
 
----
 
 # 5. 原因③ 1銘柄の失敗がバッチ全体を500で落としていた
 
@@ -147,7 +144,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 
 ①〜③の修正は、朝7時53分に1コミットにまとめました。
 
----
 
 # 6. 原因④ 別サービスの起動忘れで「接続待ち」が積み重なった
 
@@ -163,7 +159,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 「CPU時間は短いのに経過時間が長い」ときは、計算ではなく**I/O待ち**を疑います。fail-soft な外部呼び出しは、失敗しても処理が止まらないぶん、遅延の原因として見落としやすくなります。
 :::
 
----
 
 # 7. 再発防止：起動チェックリストをAIのルールファイルに書く
 
@@ -180,7 +175,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 
 今は毎朝「システム起動して」と伝えるだけで、依存サービスまで含めて上から順に確認・起動されます。
 
----
 
 # 8. 役割分担（Human in the Loop）
 
@@ -193,7 +187,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 
 「根本原因をさぐってください」と頼んだことで、④の起動忘れまでたどり着けました。症状ではなく原因を求める頼み方は、AIエージェントに調査させるときの基本だと感じています。
 
----
 
 # まとめ
 
@@ -204,7 +197,6 @@ async def get_fundamental_with_vault_fallback(ticker: str) -> dict[str, str | fl
 
 次回は、AIに渡した「構築プロンプト」の中身と、機能一覧より先に「約束」と「作らないもの」を書く設計の考え方を紹介します。
 
----
 
 # ☕ note.comで開発秘話とデイリーAIピックを連載中
 
