@@ -76,7 +76,7 @@ frontend/src/
 
 ## 4. 継続学習ループの実データフロー
 
-1. **寄り付き前（JST 07:30/07:32、当初 08:50/08:52 から前倒し。P28、下記参照）**: celery-beat がピック生成 → 推論オーケストレータが中長期・短期を実行 → 各ステージのトレースを `inference_traces` へ、最終ピックを `prediction_ledger` へ（`feature_snapshot` 完全版）。続けて JST 08:05 に note下書き自動生成（`services/notes/`）、08:15 に個人用Vaultアーカイブレポート生成（`services/vault_report/`）が同じ台帳データから実行され、いずれも寄り付き（9:00）前に完了する（`plans/04` P28）。
+1. **寄り付き前（JST 07:00/07:02、当初 08:50/08:52 → 07:30/07:32 から前倒し。P28、下記参照）**: celery-beat がピック生成 → 推論オーケストレータが中長期・短期を実行 → 各ステージのトレースを `inference_traces` へ、最終ピックを `prediction_ledger` へ（`feature_snapshot` 完全版）。続けて JST 08:05 に note下書き自動生成（`services/notes/`）、08:15 に個人用Vaultアーカイブレポート生成（`services/vault_report/`）が同じ台帳データから実行され、いずれも寄り付き（9:00）前に完了する（`plans/04` P28）。
 2. **場中（9:00–15:30 JST、5分おき）**: 保有銘柄を AI が評価 → 同一銘柄の未承認（`proposed`）判定があれば新規判定の挿入直前に削除し（🆕 P30、`supersede_pending`）最新1件だけを承認待ちキューに残してから `portfolio_signals` へ `proposed` で記録 → `action != hold` なら `notifications` へ記録 + Web Push。人間が承認/却下/実約定報告するまでアプリは一切発注しない。
 3. **大引け後（16:31 JST）**: 当日の `portfolio_signals` を集計し EOD レビュー（`eod_reviews`）を生成。学習教訓は要約として保存するのみで、翌日のプロンプトへの自動注入は行っていない（`plans/04` P7d のスコープ判断）。
 4. **夜間（16:38/16:48 JST）**: 決着記録（複数ホライズン）→ 評価指標再集計（較正・IC・成績）。

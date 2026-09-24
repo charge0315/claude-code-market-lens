@@ -89,13 +89,13 @@ curl http://localhost:8002/health        # readiness: DB/Redis まで含めた�
 
 | 時刻 / 周期 | タスク | 内容 |
 |---|---|---|
-| 平日 07:30 | `run_picks_task("mid_term")` | 中長期ピック生成（🔧 P28、当初 08:50 から前倒し。下記参照） |
-| 平日 07:32 | `run_picks_task("short_term")` | 短期ピック生成（🔧 P28、当初 08:52 から前倒し。`--pool=solo` の直列ワーカーでは2分ずらしても順番待ちになるだけで二重占有回避の効果は無いが、ピック生成完了を早めるために時刻自体を前倒しした） |
+| 平日 07:00 | `run_picks_task("mid_term")` | 中長期ピック生成（🔧 P28、当初 08:50 → 07:30 → 2026-09-25 に 07:00 へ前倒し。下記参照） |
+| 平日 07:02 | `run_picks_task("short_term")` | 短期ピック生成（🔧 P28、当初 08:52 → 07:32 → 2026-09-25 に 07:02 へ前倒し。`--pool=solo` の直列ワーカーでは2分ずらしても順番待ちになるだけで二重占有回避の効果は無いが、ピック生成完了を早めるために時刻自体を前倒しした） |
 | 平日 08:05 | `run_daily_note_draft_task` | 🆕 P28、note下書き自動生成（Obsidian/SingleHTML書き出しまで同タスク内で実行）。ピック生成完了を待てるだけの余裕を見て設定 |
 | 平日 08:15 | `generate_vault_report_task` | 🆕 P28、個人用Vaultアーカイブレポート生成（note下書き生成の後、同じ台帳データから作成） |
 | 毎日 16:38 | `resolve_pick_outcomes_task` | 未決着ピックの決着解決（複数ホライズン） |
 | 毎日 16:48 | `update_eval_metrics_task` | 評価指標（較正・IC・成績）再集計 |
-| 毎日 07:13/10:13/13:13/16:13 | `sync_trends_task` | Trend Tracking Agent 同期（TTL 3h） |
+| 毎日 06:45/10:13/13:13/16:13 | `sync_trends_task` | Trend Tracking Agent 同期（TTL 3h）。🔧 2026-09-25 朝の分を 07:13 → 06:45 へ前倒し（ピック生成 07:00 より前に当日朝のトレンドを揃えるため。beat エントリは `sync-trends-morning` として分離） |
 | 毎日 16:31 | `run_eod_review_task` | 大引け後レビュー生成（`portfolio_signals` 当日分の集計 + LLM 教訓抽出） |
 | 場中5分おき（平日 9:00–15:30、内部ゲート） | `run_portfolio_monitor_task` | 保有銘柄の AI 売買タイミング判定（HITL 提案のみ、自動約定なし） |
 | 常時5分おき | — | *(枠のみ。P5 以降で個別タスクを追加した箇所は上記に統合済み)* |

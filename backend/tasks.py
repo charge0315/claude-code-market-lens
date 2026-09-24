@@ -54,7 +54,7 @@ def ping() -> str:
 
 @celery_app.task(name="backend.tasks.run_picks_task")
 def run_picks_task(horizon_type: str) -> dict[str, object]:
-    """指定系統（mid_term / short_term）のピックを生成し台帳化する（JST 07:30/07:32）.
+    """指定系統（mid_term / short_term）のピックを生成し台帳化する（JST 07:00/07:02）.
 
     celery-beat は長時間停止後の再起動時、due 判定した全エントリを即時発火する
     （2026-09-20 に実際発生）。この際、休場日（土日）にもかかわらず本タスクが休場日判定を
@@ -348,7 +348,7 @@ def generate_pipeline_log_task() -> dict[str, object]:
     """本日のパイプライン実行結果（候補プール〜モデル入れ替え）を日次ログとしてVaultへ保存する
     （🆕 P30、JST 17:00）.
 
-    ピック生成（07:30〜）・決着解決（16:38）・評価指標算出（16:48）・PITスナップショット
+    ピック生成（07:00〜）・決着解決（16:38）・評価指標算出（16:48）・PITスナップショット
     （16:45/16:50）がすべて出揃った後に発火する。週次（日曜早朝）・月次の再学習/昇格ゲートも
     その日の分はここに含まれる（`plans/05_決定ログと未決事項.md` 参照）。
     """

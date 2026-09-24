@@ -45,16 +45,19 @@ celery_app = Celery(
 # 安全マージンを確保する。さらに note下書き（Obsidian/SingleHTML 出力込み、ユーザー指示）の
 # LLM生成に時間を要するため、従来の 07:40 から 07:30 へ前倒しし、朝の手動投稿ワークフロー
 # （Obsidianノートを確認して note.com へ貼り付け）に十分な余裕を持たせる。
+# 🔧 2026-09-25 さらに 07:00 へ前倒し: 手動実行で中長期が0件（全件却下）だった日に記事を公開した後、
+# 07:30 の定期実行が「本日分なし」と判定して中長期を再生成し、公開済み記事と台帳が食い違った。
+# 記事作成（07:00 台）より前に定期実行を終わらせ、記事は定期実行の結果を元に書く運用にする。
 _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     "run-picks-mid-term": {
         "task": "backend.tasks.run_picks_task",
         "args": ("mid_term",),
-        "schedule": crontab(hour=22, minute=30),  # JST 07:30（寄り付き前、安全マージン込み）
+        "schedule": crontab(hour=22, minute=0),  # JST 07:00（寄り付き前、記事作成より前）
     },
     "run-picks-short-term": {
         "task": "backend.tasks.run_picks_task",
         "args": ("short_term",),
-        "schedule": crontab(hour=22, minute=32),  # JST 07:32（solo worker で直列実行のため実質は順番待ち）
+        "schedule": crontab(hour=22, minute=2),  # JST 07:02（solo worker で直列実行のため実質は順番待ち）
     },
     # 🆕 P29: PIT（point-in-time）特徴量スナップショット収集。大引け後・当日分の frontmatter/
     # ニュースが出揃うタイミング（`plans/03_システム設計` §3.6）。決着解決・評価バッチとは
@@ -76,9 +79,15 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "backend.tasks.update_eval_metrics_task",
         "schedule": crontab(hour=7, minute=48),  # JST 16:48（決着後）
     },
+    # 🔧 2026-09-25 朝の同期のみ 07:13 → 06:45 へ分離・前倒し: ピック生成を 07:00 へ前倒ししたため、
+    # 旧時刻のままだと朝のピックが前日 16:13 同期分のトレンド文脈を使ってしまう（同期の実測は ~1 分）。
+    "sync-trends-morning": {
+        "task": "backend.tasks.sync_trends_task",
+        "schedule": crontab(hour=21, minute=45),  # JST 06:45（ピック生成 07:00 の前）
+    },
     "sync-trends": {
         "task": "backend.tasks.sync_trends_task",
-        "schedule": crontab(hour="22,1,4,7", minute=13),  # JST 07:13 / 10:13 / 13:13 / 16:13
+        "schedule": crontab(hour="1,4,7", minute=13),  # JST 10:13 / 13:13 / 16:13
     },
     "run-drift-check": {
         "task": "backend.tasks.run_drift_check_task",
@@ -112,7 +121,7 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     },
     "run-daily-note-draft": {
         "task": "backend.tasks.run_daily_note_draft_task",
-        # JST 08:05（ピック生成 07:30/07:32 開始・実測合計 ~25分から十分な余裕を見た開始時刻）。
+        # JST 08:05（ピック生成 07:00/07:02 開始・実測合計 ~25分から十分な余裕を見た開始時刻）。
         # 生成に成功すると同じタスク内で Obsidian(.md)/SingleHTML の書き出しも行う
         # （`services/notes/note_export_service.py`、ユーザー指示: 毎朝手動でnote.comへ貼り付ける
         # ワークフロー向け）。
@@ -123,7 +132,7 @@ _BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         # JST 08:15（note下書き生成の後、同じ台帳データから個人用アーカイブを作る）。
         "schedule": crontab(hour=23, minute=15),
     },
-    # 🆕 P30: 日次パイプラインログ。その日のピック生成（07:30〜）・決着解決（16:38）・
+    # 🆕 P30: 日次パイプラインログ。その日のピック生成（07:00〜）・決着解決（16:38）・
     # 評価指標算出（16:48）・PITスナップショット（16:45/16:50）が出揃った後に発火する。
     "generate-pipeline-log": {
         "task": "backend.tasks.generate_pipeline_log_task",
