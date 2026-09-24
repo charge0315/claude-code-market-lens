@@ -84,6 +84,26 @@ async def get_latest_trained_at_by_ticker(model_type: str) -> dict[str, str]:
         return {str(r[0]): str(r[1]) for r in result}
 
 
+async def get_latest_failed_at_by_ticker(model_type: str) -> dict[str, str]:
+    """指定モデルタイプについて、銘柄ごとの最新の学習失敗日時（created_at）を返す.
+
+    `_select_candidates` が失敗も「最後に試した日時」として扱うために使う。成功日時
+    （`model_registry.trained_at`）だけで並べると、上場直後・データ不足で恒常的に失敗する
+    銘柄が永久に「未学習」扱いで毎日最優先になり、日次枠を食い潰す（2026-09-21〜24 に発生）。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text("""
+                SELECT ticker, MAX(created_at) AS latest_failed_at
+                FROM training_batch_runs
+                WHERE model_type = :model_type AND status = 'failed'
+                GROUP BY ticker
+                """),
+            {"model_type": model_type},
+        )
+        return {str(r[0]): str(r[1]) for r in result}
+
+
 async def get_latest_data_source_by_model_type() -> dict[str, dict[str, int]]:
     """モデルタイプ別に、銘柄ごとの最新の学習成功試行が使ったデータソースの内訳件数を返す.
 

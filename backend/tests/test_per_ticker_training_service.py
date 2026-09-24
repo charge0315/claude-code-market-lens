@@ -83,6 +83,34 @@ async def test_select_candidates_prioritizes_untrained_then_oldest(
     assert candidates == ["1111", "2222", "3333"]
 
 
+async def test_select_candidates_defers_recently_failed_untrained_tickers(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """恒常的に失敗する未学習銘柄（上場直後・データ不足等）が毎日最優先で日次枠を食い潰さないこと.
+
+    2026-09-21〜24 に、失敗し続ける約200銘柄が「未学習」扱いで毎日先頭に来て枠（200/40）を
+    使い切り、学習済み銘柄の再学習が止まった。失敗日時も「最後に試した日時」として扱う。
+    """
+    universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222", "3333", "4444"]]
+    monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))
+
+    await model_registry_db.upsert_model(
+        version="v1", model_type="xgboost", ticker="2222", objective="regression", trained_at="2026-09-01T00:00:00"
+    )
+    await model_registry_db.upsert_model(
+        version="v2", model_type="xgboost", ticker="3333", objective="regression", trained_at="2026-09-05T00:00:00"
+    )
+    # 1111 は一度も学習に成功しておらず、直近（現在時刻）で失敗している
+    await training_batch_db.insert_training_batch_run(
+        run_date="2026-09-06", ticker="1111", model_type="xgboost", status="failed", error="データ不足"
+    )
+
+    candidates = await svc._select_candidates(set(), "xgboost")
+
+    # 4444 は一度も試行していない（最優先）、1111 は直近で失敗したため最後尾へ回る
+    assert candidates == ["4444", "2222", "3333", "1111"]
+
+
 async def test_select_candidates_excludes_attempted_today(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     universe = [TickerInfo(code=c, name=c, sector=None) for c in ["1111", "2222"]]
     monkeypatch.setattr(svc.training_target_service, "resolve_training_universe", _async_return(universe))

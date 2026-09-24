@@ -528,21 +528,29 @@ async def _select_candidates(attempted_today: set[str], model_type: str) -> list
     ユニバースは `training_target_service.resolve_training_universe()`（🆕 学習対象設定、
     既定は従来通り東証全銘柄）。`custom` モードで新規追加された銘柄は、学習対象への追加日時が
     最終学習日時より後なら「未学習」扱いに昇格させ最優先候補にする（要件6の差分学習）。
+
+    「最後に試した日時」は成功（`model_registry.trained_at`）と失敗（`training_batch_runs`）の
+    新しい方を使う。成功日時だけだと、データ不足で恒常的に失敗する銘柄が永久に「未学習」扱いで
+    毎日先頭に来て日次枠を使い切り、学習済み銘柄の再学習が止まる（2026-09-21〜24 に発生）。
+    失敗銘柄も一巡に1回は再挑戦されるため、データが揃えばいずれ学習される。
     """
     universe = await training_target_service.resolve_training_universe()
     latest_trained = await training_batch_db.get_latest_trained_at_by_ticker(model_type)
+    latest_failed = await training_batch_db.get_latest_failed_at_by_ticker(model_type)
     priority_override = await training_target_service.get_priority_override_map()
 
     remaining = [t.code for t in universe if t.code not in attempted_today]
 
     def sort_key(code: str) -> tuple[bool, str]:
-        trained_at = latest_trained.get(code)
+        # どちらも ISO8601（+09:00）文字列のため、文字列比較で時系列順になる
+        attempts = [ts for ts in (latest_trained.get(code), latest_failed.get(code)) if ts is not None]
+        last_attempt = max(attempts) if attempts else None
         added_at = priority_override.get(code)
-        if trained_at is not None and added_at is not None and added_at > trained_at:
-            trained_at = None
-        # 未学習（trained_atがNone）銘柄を最優先（Falseはtrue未満なので先頭に来る）、
-        # 学習済み銘柄同士は trained_at 昇順（最も古い＝最も長く再学習されていない銘柄を優先）。
-        return (trained_at is not None, trained_at or "")
+        if last_attempt is not None and added_at is not None and added_at > last_attempt:
+            last_attempt = None
+        # 一度も試行していない銘柄を最優先（Falseはtrue未満なので先頭に来る）、
+        # 試行済み銘柄同士は last_attempt 昇順（最も長く試していない銘柄を優先）。
+        return (last_attempt is not None, last_attempt or "")
 
     remaining.sort(key=sort_key)
     return remaining

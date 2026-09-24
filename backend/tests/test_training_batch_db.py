@@ -87,3 +87,20 @@ async def test_get_latest_trained_at_by_ticker_takes_max_per_ticker(migrated_db:
     latest = await training_batch_db.get_latest_trained_at_by_ticker("xgboost")
 
     assert latest == {"7203": "2026-09-05T00:00:00", "9984": "2026-09-03T00:00:00"}
+
+
+async def test_get_latest_failed_at_by_ticker_only_counts_failures_of_model_type(migrated_db: Path) -> None:
+    await training_batch_db.insert_training_batch_run(
+        run_date="2026-09-21", ticker="1432", model_type="xgboost", status="failed", error="データ不足"
+    )
+    await training_batch_db.insert_training_batch_run(
+        run_date="2026-09-21", ticker="7203", model_type="xgboost", status="completed"
+    )
+    # 別モデルタイプの失敗は対象外
+    await training_batch_db.insert_training_batch_run(
+        run_date="2026-09-21", ticker="9984", model_type="lstm", status="failed", error="データ不足"
+    )
+
+    latest = await training_batch_db.get_latest_failed_at_by_ticker("xgboost")
+
+    assert set(latest) == {"1432"}
