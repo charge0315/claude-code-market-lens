@@ -61,7 +61,7 @@ def test_technical_signals_has_no_recent_cross_event_when_none_within_lookback()
 def test_technical_signals_includes_recent_cross_event_within_lookback_window() -> None:
     _, details = compute_technical_score(_df_with_recent_golden_cross())
     recent = details["recent_cross_event"]
-    assert recent is not None
+    assert isinstance(recent, dict)
     assert recent["kind"] == "golden_cross"
     assert recent["days_ago"] <= 10
 
