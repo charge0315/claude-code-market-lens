@@ -1,0 +1,12 @@
+[
+ {
+  "symbol": "5802",
+  "name": "住友電気工業",
+  "horizon": "短期",
+  "direction": "強気",
+  "composite_score": 64.8,
+  "concordance": 1.0,
+  "confidence": 62,
+  "scores": {"テクニカル": 62.0, "トレンド": 20.0, "ファンダ": 67.0, "センチメント": 70.0}
+ }
+]
