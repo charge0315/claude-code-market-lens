@@ -140,7 +140,9 @@ def resolve_pick_outcomes_task() -> dict[str, int]:
     """未決着ピックを古い順に解決して `pick_outcomes` へ書き込む（夜間）."""
     from backend.services.ledger.outcome_resolver import resolve_pending
 
-    s = asyncio.run(resolve_pending(max_picks=20))
+    # 🔧 2026-09-26: 20 → 50。短期は 1/2/3 日、中長期は 5/20/60 日と 1 ピックが最大 3 回決着対象に
+    # 入るため、抽出が増えたときの余裕を持たせる（同日の試算では現状の台帳の対象は多い日でも 17 件）。
+    s = asyncio.run(resolve_pending(max_picks=50))
     return {
         "resolved_picks": s.resolved_picks,
         "written_outcomes": s.written_outcomes,
