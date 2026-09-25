@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from backend.services.notes import compliance_terms as ct
+from backend.services.notes.markdown_to_html import markdown_to_html
 
 
 @pytest.mark.parametrize(
@@ -68,7 +69,18 @@ def test_disclaimer_block_is_the_fixed_text() -> None:
     assert "### ⚠️ 【システム検証記録に関する免責事項・注意事項】" in ct.COMPLIANCE_DISCLAIMER
     assert "独自開発アルゴリズム「ALPHA FORGE」" in ct.COMPLIANCE_DISCLAIMER
     assert "投資助言・代理行為を目的としたものではありません" in ct.COMPLIANCE_DISCLAIMER
+    # 本文は3項目の箇条書き（2026-09-25 ユーザー指示）。
+    bullets = [line for line in ct.COMPLIANCE_DISCLAIMER.splitlines() if line.startswith("- ")]
+    assert len(bullets) == 3
+    assert bullets[0].startswith("- 本記事は、独自開発アルゴリズム")
+    assert bullets[2].startswith("- また、将来の株価変動")
     assert ct.COMPLIANCE_DISCLAIMER.strip().startswith("---")
+    # SingleHTML 書き出しで区切り線・見出し・リストがそれぞれ正しいブロックになること。
+    html = markdown_to_html(ct.COMPLIANCE_DISCLAIMER)
+    assert "---" not in html
+    assert "###" not in html
+    assert html.count("<hr>") == 2
+    assert html.count("<li>") == 3
     assert ct.COMPLIANCE_DISCLAIMER.strip().endswith("---")
     # 定型文に置換対象のNG表現が混ざっていないこと。
     assert ct.find_ng_terms(ct.COMPLIANCE_DISCLAIMER) == []
