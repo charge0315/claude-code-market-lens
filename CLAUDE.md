@@ -85,7 +85,12 @@
 
 - **frontend (3001) / backend (8002)**: 未起動なら起動。
 - **Redis**: Dockerコンテナ `market-lens-redis`（ポート6379）。Celeryのブローカー兼結果バックエンド。停止していれば `docker start market-lens-redis`。
-- **celery worker**: `.venv/Scripts/celery.exe -A backend.celery_app worker --pool=solo --loglevel=info` をバックグラウンド起動（Windows では `--pool=solo` 必須）。ピック生成・保有監視等のタスクを裏で実行するため常時稼働させる。
+- **Claude から起動するプロセスは必ず Claude のプロセスツリーから切り離す**（2026-09-26 ユーザー指示）: Bash/PowerShell の `run_in_background` や `Start-Process` で起動すると Claude の子プロセスになり、**セッション終了時に巻き添えで停止する**（2026-09-25 17:44 のセッション終了で celery worker/beat が停止し、翌朝まで定期タスクが止まった）。WMI 経由で起動すれば親が `WmiPrvSE.exe` になり切り離される。ログは `start.ps1` と同じ `logs/` へ出す:
+  ```powershell
+  Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /c ".venv\Scripts\celery.exe -A backend.celery_app worker --pool=solo --loglevel=info >> logs\celery.out.log 2>> logs\celery.err.log"'; CurrentDirectory = (Get-Location).Path }
+  ```
+  （beat は `worker --pool=solo` → `beat`、ログ名 `celery-beat.*.log` に置き換える。frontend/backend を Claude から起動する場合も同様。）
+- **celery worker**: `.venv/Scripts/celery.exe -A backend.celery_app worker --pool=solo --loglevel=info` を上記の切り離し方式で起動（Windows では `--pool=solo` 必須）。ピック生成・保有監視等のタスクを裏で実行するため常時稼働させる。
 - **celery beat**（定期実行スケジューラ、`.venv/Scripts/celery.exe -A backend.celery_app beat --loglevel=info`）: 未起動なら起動してよい（確認不要）。2026-09-14 に「初回起動時の全タスク一斉発火 → ピック二重生成・学習バッチ暴走」のインシデントが発生し一時的に自動起動対象外としていたが、根本原因は解消済み: `run_picks_task` に休場日判定 `_is_trading_day_jst`（祝日は `jpholiday`）＋当日分の既発行チェックを追加（`backend/tests/test_run_picks_task_idempotency.py`）、銘柄別モデル学習バッチは元々 `TRAINING_*_DAILY_LIMIT` ＋時間予算の安全網を持つ（`per_ticker_training_service.py`）。さらにユーザー自身が `scripts/register-startup-task.ps1`（`AlphaForge-Autostart` タスク）でログオン時に backend/celery worker/celery beat/frontend を一括自動起動する運用へ移行済み（`docs/operations.md` §1）。週次タスク（ドリフト検知・昇格評価）は同日重複防止ガードを持たないが、提案書き込みのみで実売買・自動昇格には影響しないため許容している。
 - **kb_creator ベクトル検索API（ポート8077）**: 別リポジトリ `C:\Users\charg\myWorkspace\obsidian-knowledge-base-creator` が提供する外部サービス。`services/vault/knowledge_search_client.py` の接続先で、**未起動だとナレッジ検索が全銘柄で接続失敗・タイムアウトを繰り返し、ピック生成が大幅に遅延する**（2026-09-14 に実際に発生）。同リポジトリの `tasks/start_vector_api.ps1` 等で起動、または Docker の Qdrant コンテナ含めて確認する。同スクリプトは休場日判定でスキップする仕様のため、休場日でも検証目的で起動したい場合は `venv/Scripts/python.exe -m kb_creator vector-api --host 0.0.0.0 --port 8077` を直接叩く。
 
