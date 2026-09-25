@@ -1,4 +1,4 @@
-# CLAUDE.md — Alpha Forge
+# AGENTS.md — Alpha Forge
 
 日本株の AI 銘柄ピック（中長期 / 短期）と継続学習ループを提供するトレーディング支援端末。
 再利用元は **Market Lens**（`C:\Users\charg\myWorkspace\market-lens`）。ドメインロジック・
