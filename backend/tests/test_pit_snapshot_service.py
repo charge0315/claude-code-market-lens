@@ -12,6 +12,7 @@ from backend.services.jst_time import today_jst
 from backend.services.learning import pit_snapshot_service as svc
 from backend.services.learning.pit_provider import PitFundamentalRecord
 from backend.services.scoring.llm_news_sentiment_service import LlmNewsSentimentResult
+from backend.services.scoring.sentiment_analyzer import NewsFetchError
 
 
 class _FakeProvider:
@@ -99,7 +100,9 @@ async def test_collect_sentiment_snapshots_keyword_records_zero_count_too(
 ) -> None:
     """ニュース 0 件（中立扱い）も「情報あり」として `news_count=0` の行を残すこと."""
 
-    def fake_get_news_sentiment(code: str, max_items: int = 20) -> dict[str, object]:  # noqa: ARG001
+    def fake_get_news_sentiment(
+        code: str, max_items: int = 20, *, strict: bool = False
+    ) -> dict[str, object]:  # noqa: ARG001
         if code == "7203":
             return {"total": 3, "positive": 2, "negative": 1, "neutral": 0, "average_score": 0.7}
         return {"total": 0, "positive": 0, "negative": 0, "neutral": 0, "average_score": 0.5}
@@ -118,6 +121,96 @@ async def test_collect_sentiment_snapshots_keyword_records_zero_count_too(
     assert by_code["7203"]["keyword_score"] == 0.7
     assert by_code["9984"]["news_count"] == 0
     assert by_code["9984"]["keyword_score"] is None  # 中立の 0.5 をそのまま特徴量化しない
+
+
+def _news(total: int) -> dict[str, object]:
+    return {"total": total, "positive": total, "negative": 0, "neutral": 0, "average_score": 0.7 if total else 0.5}
+
+
+async def test_collect_sentiment_snapshots_keyword_skips_rows_on_fetch_error(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """取得失敗（Yahoo の拒否等）は「ニュース 0 件」として書かない — 学習データの汚染防止."""
+
+    def fake(code: str, max_items: int = 20, *, strict: bool = False) -> dict[str, object]:  # noqa: ARG001
+        assert strict is True  # 失敗を 0 件と区別するため strict で呼ぶこと
+        if code == "9984":
+            raise NewsFetchError("rejected")
+        return _news(2)
+
+    monkeypatch.setattr(svc, "get_news_sentiment", fake)
+
+    stats = await svc.collect_sentiment_snapshots_keyword(["7203", "9984"])
+
+    assert stats.attempted == 2
+    assert stats.collected == 1
+    assert stats.failed == 1
+    assert stats.aborted is False
+    rows = await pit_snapshot_db.list_sentiment_range(
+        codes=["7203", "9984"], since="2000-01-01", until="2100-01-01", source="keyword"
+    )
+    assert [r["code"] for r in rows] == ["7203"]
+
+
+async def test_collect_sentiment_snapshots_keyword_aborts_after_consecutive_failures(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """連続失敗が閾値に達したら打ち切る（遮断中に叩き続けて遮断を長引かせない）."""
+    calls: list[str] = []
+
+    def fake(code: str, max_items: int = 20, *, strict: bool = False) -> dict[str, object]:  # noqa: ARG001
+        calls.append(code)
+        if code == "1001":
+            return _news(1)
+        raise NewsFetchError("rejected")
+
+    monkeypatch.setattr(svc, "get_news_sentiment", fake)
+    codes = ["1001", "2001", "2002", "2003", "2004", "2005"]
+
+    stats = await svc.collect_sentiment_snapshots_keyword(codes, max_consecutive_failures=3)
+
+    assert calls == ["1001", "2001", "2002", "2003"]
+    assert stats.attempted == 6
+    assert stats.collected == 1
+    assert stats.failed == 3
+    assert stats.aborted is True
+
+
+async def test_collect_sentiment_snapshots_keyword_success_resets_failure_streak(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """散発的な失敗では打ち切らない（閾値は「連続」失敗で判定する）."""
+
+    def fake(code: str, max_items: int = 20, *, strict: bool = False) -> dict[str, object]:  # noqa: ARG001
+        if code.startswith("9"):
+            raise NewsFetchError("rejected")
+        return _news(1)
+
+    monkeypatch.setattr(svc, "get_news_sentiment", fake)
+
+    stats = await svc.collect_sentiment_snapshots_keyword(
+        ["9001", "9002", "1001", "9003", "9004", "1002"], max_consecutive_failures=3
+    )
+
+    assert stats.aborted is False
+    assert stats.collected == 2
+    assert stats.failed == 4
+
+
+async def test_collect_sentiment_snapshots_keyword_waits_between_requests(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sleeps: list[float] = []
+
+    async def fake_sleep(sec: float) -> None:
+        sleeps.append(sec)
+
+    monkeypatch.setattr(svc, "get_news_sentiment", lambda code, max_items=20, *, strict=False: _news(1))  # noqa: ARG005
+    monkeypatch.setattr(svc.asyncio, "sleep", fake_sleep)
+
+    await svc.collect_sentiment_snapshots_keyword(["1001", "1002", "1003"], request_interval_sec=0.5)
+
+    assert sleeps == [0.5, 0.5]  # 銘柄間のみ待つ（先頭の前には待たない）
 
 
 async def test_record_llm_sentiment_snapshot_writes_row(migrated_db: Path) -> None:

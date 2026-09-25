@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import threading
+
 import pytest
 
 from backend.services.scoring import sentiment_analyzer as sa
@@ -95,3 +98,99 @@ def test_empty_news_returns_neutral_and_is_not_cached(monkeypatch: pytest.Monkey
     assert out["average_score"] == 0.5
     assert out["confidence"] == 0.0
     assert saved == []  # 取得失敗はキャッシュしない
+
+
+def _blocked_ticker_class() -> type:
+    """Yahoo が HTTP 999 等で拒否したときの yfinance の挙動（ERROR ログを出して空リストを返す）を再現する."""
+
+    class BlockedTicker:
+        def __init__(self, symbol: str) -> None:
+            self._symbol = symbol
+
+        @property
+        def news(self) -> list[dict[str, object]]:
+            logging.getLogger("yfinance").error(
+                "%s: Failed to retrieve the news and received faulty response instead.", self._symbol
+            )
+            return []
+
+    return BlockedTicker
+
+
+def _disable_cache(monkeypatch: pytest.MonkeyPatch, saved: list[object] | None = None) -> None:
+    monkeypatch.setattr(sa.stock_cache, "get_json", lambda _k: None)
+    monkeypatch.setattr(sa.stock_cache, "set_json", lambda *a, **k: saved.append(a) if saved is not None else None)
+
+
+def test_strict_raises_news_fetch_error_when_yahoo_rejects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """拒否応答を「ニュース 0 件」と区別し、strict 呼び出しでは例外として呼び出し元へ伝える."""
+    monkeypatch.setattr(sa.yf, "Ticker", _blocked_ticker_class())
+    _disable_cache(monkeypatch)
+
+    with pytest.raises(sa.NewsFetchError):
+        sa.get_news_sentiment("7203", strict=True)
+
+
+def test_strict_raises_news_fetch_error_when_yfinance_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RaisingTicker:
+        def __init__(self, _s: str) -> None:
+            pass
+
+        @property
+        def news(self) -> list[dict[str, object]]:
+            raise RuntimeError("*** YAHOO! FINANCE IS CURRENTLY DOWN! ***")
+
+    monkeypatch.setattr(sa.yf, "Ticker", RaisingTicker)
+    _disable_cache(monkeypatch)
+
+    with pytest.raises(sa.NewsFetchError):
+        sa.get_news_sentiment("7203", strict=True)
+
+
+def test_non_strict_falls_back_to_neutral_on_rejection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既定（非 strict）の呼び出し元（ピック生成・UI）は従来どおり中立フォールバックで止まらない."""
+    saved: list[object] = []
+    monkeypatch.setattr(sa.yf, "Ticker", _blocked_ticker_class())
+    _disable_cache(monkeypatch, saved)
+
+    out = sa.get_news_sentiment("7203")
+
+    assert out["total"] == 0
+    assert out["average_score"] == 0.5
+    assert saved == []
+
+
+def test_rejection_logged_by_other_thread_is_not_attributed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """別スレッドの yfinance 失敗ログを自分の取得失敗と誤認しない（FastAPI のスレッド並行呼び出し対策）."""
+
+    class OtherThreadFailsTicker:
+        def __init__(self, _s: str) -> None:
+            pass
+
+        @property
+        def news(self) -> list[dict[str, object]]:
+            t = threading.Thread(
+                target=lambda: logging.getLogger("yfinance").error(
+                    "9999.T: Failed to retrieve the news and received faulty response instead."
+                )
+            )
+            t.start()
+            t.join()
+            return []
+
+    monkeypatch.setattr(sa.yf, "Ticker", OtherThreadFailsTicker)
+    _disable_cache(monkeypatch)
+
+    out = sa.get_news_sentiment("7203", strict=True)
+
+    assert out["total"] == 0
+
+
+def test_detects_rejection_even_if_yfinance_logger_was_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`fileConfig`（Alembic env.py 等）が既存ロガーを無効化しても拒否を検知できること."""
+    monkeypatch.setattr(logging.getLogger("yfinance"), "disabled", True)
+    monkeypatch.setattr(sa.yf, "Ticker", _blocked_ticker_class())
+    _disable_cache(monkeypatch)
+
+    with pytest.raises(sa.NewsFetchError):
+        sa.get_news_sentiment("7203", strict=True)

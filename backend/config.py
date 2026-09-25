@@ -156,6 +156,12 @@ class Settings(BaseSettings):
     pit_sentiment_scope: Literal["universe", "candidates", "watchlist"] = Field(
         default="universe", validation_alias="PIT_SENTIMENT_SCOPE"
     )
+    # 🆕 2026-09-26: 待ち時間なしの連続取得（実測 約0.3秒/銘柄）で約200銘柄目に Yahoo から
+    # HTTP 999 で遮断されたため、銘柄間に待ち時間を入れる。全ユニバースでは 0.5 秒 × 約4,450 銘柄
+    # ≒ 37 分の上乗せになる（solo worker を占有する時間とのトレードオフ）。遮断が再発したら延ばす。
+    pit_sentiment_request_interval_sec: float = Field(
+        default=0.5, validation_alias="PIT_SENTIMENT_REQUEST_INTERVAL_SEC", ge=0.0
+    )
     # 学習パネルへの PIT 列投入そのものの opt-in（既定 OFF、台帳が貯まるまで明示的に有効化しない）。
     pit_features_enabled: bool = Field(default=False, validation_alias="PIT_FEATURES_ENABLED")
     # 🔧 2026-09-18: 60営業日/50% → 120営業日/70% へ厳格化（#K 確定、ユーザーが安定重視を選択）。

@@ -121,8 +121,16 @@ def collect_pit_sentiment_snapshot_task() -> dict[str, object]:
 
     async def _run() -> dict[str, object]:
         codes = await resolve_snapshot_codes(settings.pit_sentiment_scope)
-        stats = await collect_sentiment_snapshots_keyword(codes)
-        return {"scope": settings.pit_sentiment_scope, "attempted": stats.attempted, "collected": stats.collected}
+        stats = await collect_sentiment_snapshots_keyword(
+            codes, request_interval_sec=settings.pit_sentiment_request_interval_sec
+        )
+        return {
+            "scope": settings.pit_sentiment_scope,
+            "attempted": stats.attempted,
+            "collected": stats.collected,
+            "failed": stats.failed,
+            "aborted": stats.aborted,
+        }
 
     return asyncio.run(_run())
 

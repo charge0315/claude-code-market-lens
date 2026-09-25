@@ -11,12 +11,19 @@ FinBERT 等の本格 NLP は使わず見出しのキーワードカウントで�
 `content.provider.displayName` / `content.canonicalUrl.url` / `content.pubDate`(ISO8601)）、
 旧フィールド名では常に空文字列しか取れず全銘柄でニュース 0 件扱いになっていた
 （2026-09-18 実機確認で発覚）。`_extract_content` で両形式を吸収する。
+
+🔧 Yahoo がニュース API を遮断（HTTP 999 `Request denied`）すると、yfinance は例外を投げず
+ERROR ログを出して空リストを返すため、「取得失敗」と「ニュース 0 件」が区別できず、
+PIT 台帳に `news_count=0` の偽データが書かれていた（2026-09-26 発覚）。`_fetch_raw_news` が
+自スレッドの yfinance 失敗ログを検知して `NewsFetchError` にし、`strict=True` の呼び出し元
+（PIT 収集）へ伝える。
 """
 
 from __future__ import annotations
 
 import datetime
 import logging
+import threading
 from typing import TypedDict, cast
 
 import yfinance as yf
@@ -29,6 +36,30 @@ _SENTIMENT_CACHE_TTL = 24 * 60 * 60
 
 # この件数以上ニュースがあれば raw スコアを全面的に信頼する。
 _SHRINKAGE_FULL_CONFIDENCE_COUNT = 10
+
+# yfinance 1.7.0 `TickerBase.get_news` が非 JSON 応答（遮断ページ等）を握り潰すときの ERROR ログ文言。
+_YF_NEWS_FAILURE_MARKER = "Failed to retrieve the news"
+
+
+class NewsFetchError(RuntimeError):
+    """ニュースを取得できなかった（「ニュースが 0 件だった」とは区別する）."""
+
+
+class _NewsFailureDetector(logging.Handler):
+    """このスレッドで出た yfinance のニュース取得失敗ログを検知する.
+
+    FastAPI は `asyncio.to_thread` で並行に呼ぶため、他スレッドの失敗を自分の失敗と誤認しないよう
+    スレッド ID で絞る。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self._thread_id = threading.get_ident()
+        self.detected = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.thread == self._thread_id and _YF_NEWS_FAILURE_MARKER in record.getMessage():
+            self.detected = True
 
 
 class NewsItemDict(TypedDict):
@@ -137,8 +168,32 @@ def _extract_published(content: dict[str, object]) -> str:
     return ""
 
 
-def get_news_sentiment(ticker: str, max_items: int = 20) -> SentimentSummaryDict:
-    """指定銘柄のニュースセンチメントを分析する（1 日キャッシュ、取得失敗はキャッシュしない）."""
+def _fetch_raw_news(jt: str) -> list[dict[str, object]]:
+    """yfinance からニュースを取得する。例外・遮断応答はどちらも `NewsFetchError` にする."""
+    yf_logger = logging.getLogger("yfinance")
+    # `logging.config.fileConfig`（Alembic の env.py 等）は既定で既存ロガーを無効化し、無効化された
+    # ロガーは handler を一切呼ばないため検知が黙って効かなくなる。再有効化の副作用は yfinance の
+    # ERROR ログが出力されるようになることだけなので、戻さずに有効のままにする。
+    yf_logger.disabled = False
+    detector = _NewsFailureDetector()
+    yf_logger.addHandler(detector)
+    try:
+        raw_news: list[dict[str, object]] = yf.Ticker(jt).news or []
+    except Exception as e:
+        raise NewsFetchError(f"{jt}: {e}") from e
+    finally:
+        yf_logger.removeHandler(detector)
+    if detector.detected:
+        raise NewsFetchError(f"{jt}: Yahoo がニュース要求を拒否しました（非 JSON 応答）")
+    return raw_news
+
+
+def get_news_sentiment(ticker: str, max_items: int = 20, *, strict: bool = False) -> SentimentSummaryDict:
+    """指定銘柄のニュースセンチメントを分析する（1 日キャッシュ、取得失敗はキャッシュしない）.
+
+    `strict=False`（既定、ピック生成・UI）は取得失敗を中立（ニュース 0 件扱い）へ畳んで止めない。
+    `strict=True`（PIT 収集）は `NewsFetchError` を送出し、失敗を 0 件として記録させない。
+    """
     jt = ticker if ticker.endswith(".T") else f"{ticker}.T"
     cache_key = f"sentiment_{jt}_{max_items}"
 
@@ -148,10 +203,11 @@ def get_news_sentiment(ticker: str, max_items: int = 20) -> SentimentSummaryDict
         return cast("SentimentSummaryDict", cached)
 
     try:
-        stock = yf.Ticker(jt)
-        raw_news = stock.news or []
-    except Exception as e:
-        logger.warning("ニュース取得エラー: %s — %s", jt, e)
+        raw_news = _fetch_raw_news(jt)
+    except NewsFetchError as e:
+        if strict:
+            raise
+        logger.warning("ニュース取得エラー: %s", e)
         raw_news = []
 
     news_items: list[NewsItemDict] = []

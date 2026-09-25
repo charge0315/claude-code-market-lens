@@ -19,9 +19,13 @@ from backend.services.db.portfolio_db import list_holdings
 from backend.services.jst_time import JST, today_jst
 from backend.services.learning.pit_provider import DEFAULT_PROVIDERS, PitFundamentalProvider
 from backend.services.scoring.llm_news_sentiment_service import LlmNewsSentimentResult
-from backend.services.scoring.sentiment_analyzer import get_news_sentiment
+from backend.services.scoring.sentiment_analyzer import NewsFetchError, get_news_sentiment
 
 logger = logging.getLogger(__name__)
+
+# Yahoo の遮断は IP 単位で全銘柄に及ぶため、連続失敗がこの件数に達したら遮断中とみなして打ち切る
+# （2026-09-26、遮断中に全 4,449 銘柄を叩き続けて遮断を長引かせていた）。
+_DEFAULT_MAX_CONSECUTIVE_FETCH_FAILURES = 20
 
 # `_candidate_pool` の horizon 別プール上限（`services/picks/pipeline.py` の `_CONFIG` と同値）。
 _CANDIDATE_POOL_LIMITS: dict[str, int] = {"mid_term": 30, "short_term": 20}
@@ -80,6 +84,8 @@ class SentimentSnapshotStats:
 
     attempted: int
     collected: int
+    failed: int = 0
+    aborted: bool = False
 
 
 def _now_iso() -> str:
@@ -134,21 +140,45 @@ async def collect_fundamental_snapshots(
     return FundamentalSnapshotStats(attempted=len(codes), collected=collected)
 
 
-async def collect_sentiment_snapshots_keyword(codes: list[str]) -> SentimentSnapshotStats:
+async def collect_sentiment_snapshots_keyword(
+    codes: list[str],
+    *,
+    request_interval_sec: float = 0.0,
+    max_consecutive_failures: int = _DEFAULT_MAX_CONSECUTIVE_FETCH_FAILURES,
+) -> SentimentSnapshotStats:
     """指定コード群について当日分の keyword センチメント PIT スナップショットを収集する.
 
     `scoring/sentiment_analyzer.get_news_sentiment` はニュース 0 件でも
     `average_score=0.5`（中立）付きの結果を返すため、`total>0` の銘柄のみ「情報あり」として
     書き込む（`news_count=0` の行も明示的に残し、「ニュースが無かった」ことも情報として記録する）。
+    ただし取得失敗（`NewsFetchError`）は「0 件」と区別できる情報が無いため行を書かない。
     """
-    collected = 0
+    collected = failed = consecutive_failures = 0
     snapshot_date = today_jst()
-    for code in codes:
+    for index, code in enumerate(codes):
+        if index > 0 and request_interval_sec > 0:
+            await asyncio.sleep(request_interval_sec)
         try:
-            summary = get_news_sentiment(code)
+            summary = get_news_sentiment(code, strict=True)
+        except NewsFetchError as e:
+            failed += 1
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error(
+                    "PIT keyword センチメント収集を打ち切ります: %d 件連続で取得失敗"
+                    "（Yahoo 遮断の可能性、%d/%d 銘柄時点、最後: %s）",
+                    consecutive_failures,
+                    index + 1,
+                    len(codes),
+                    e,
+                )
+                return SentimentSnapshotStats(attempted=len(codes), collected=collected, failed=failed, aborted=True)
+            continue
         except Exception:  # noqa: BLE001 - 1 銘柄の失敗で収集全体を止めない
             logger.warning("PIT keyword センチメント取得に失敗しました（%s）", code, exc_info=True)
+            failed += 1
             continue
+        consecutive_failures = 0
         await pit_snapshot_db.upsert_sentiment_snapshot(
             snapshot_date=snapshot_date,
             code=code,
@@ -161,7 +191,7 @@ async def collect_sentiment_snapshots_keyword(codes: list[str]) -> SentimentSnap
         )
         if summary["total"] > 0:
             collected += 1
-    return SentimentSnapshotStats(attempted=len(codes), collected=collected)
+    return SentimentSnapshotStats(attempted=len(codes), collected=collected, failed=failed)
 
 
 async def record_supply_demand_snapshot(code: str, data: dict[str, object]) -> None:
