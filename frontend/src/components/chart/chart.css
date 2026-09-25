@@ -177,3 +177,105 @@
   width: 100%;
   min-width: 0;
 }
+
+/* 🆕 マルチチャートの所見（MultiChartInsights.tsx）— 各パネル下の要約と一覧下のまとめ */
+.multi-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.multi-chart-insight {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--spacing-sm);
+  margin: var(--spacing-xs) 0 0;
+  font-size: var(--font-size-sm);
+}
+
+.multi-chart-insight dt {
+  color: var(--color-text-muted);
+}
+
+.multi-chart-insight dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.multi-chart-insight-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-chart-summary {
+  background: var(--color-bg-tertiary);
+  border-left: 3px solid var(--color-accent-500);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.multi-chart-summary-heading,
+.indicator-guide-heading {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  margin: 0 0 var(--spacing-sm);
+}
+
+.multi-chart-summary-list {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.multi-chart-summary-note,
+.indicator-guide-note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: var(--spacing-sm) 0 0;
+}
+
+/* 🆕 通常チャート下段の指標解説（IndicatorGuide.tsx） */
+.indicator-guide {
+  margin-top: var(--spacing-xl);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-lg);
+}
+
+.indicator-guide-groups {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-lg) var(--spacing-2xl);
+}
+
+@media (max-width: 900px) {
+  .indicator-guide-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.indicator-guide-group-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent-700);
+  margin: 0 0 var(--spacing-sm);
+}
+
+.indicator-guide-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.indicator-guide-item dt {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.indicator-guide-item dd {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}

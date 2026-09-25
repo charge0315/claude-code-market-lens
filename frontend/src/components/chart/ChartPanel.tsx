@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { IndicatorGuide } from '@/components/chart/IndicatorGuide';
 import { MultiChart } from '@/components/chart/MultiChart';
 import { SandboxInferencePanel } from '@/components/chart/SandboxInferencePanel';
 import { PriceChart } from '@/components/stock-detail/PriceChart';
@@ -73,7 +74,12 @@ export function ChartPanel({ symbol }: { symbol: string | null }): ReactNode {
         </button>
       </div>
 
-      {view === 'normal' && <PriceChart symbol={symbol} enableAdvancedControls />}
+      {view === 'normal' && (
+        <>
+          <PriceChart symbol={symbol} enableAdvancedControls />
+          <IndicatorGuide />
+        </>
+      )}
       {view === 'multi' && <MultiChart symbol={symbol} />}
       {view === 'sandbox' && <SandboxInferencePanel symbol={symbol} />}
     </div>

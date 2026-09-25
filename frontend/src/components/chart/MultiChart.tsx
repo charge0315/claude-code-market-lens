@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { fetchOhlc, type OhlcInterval, type OhlcPeriod } from '@/lib/api/stock';
 import { toChartTime } from '@/lib/chartTime';
+import { analyzeBars, type TimeframeInsight, type TimeframeSet } from '@/lib/multiChartInsights';
+import { MultiChartInsightSummary, TimeframeInsightList } from '@/components/chart/MultiChartInsights';
 import './chart.css';
 
 // 🆕 マルチチャート: 複数の足種を同時に並べて一覧できるグリッド（四季報オンラインの
@@ -31,7 +33,24 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function MiniChartPanel({ symbol, config }: { symbol: string; config: PanelConfig }): ReactNode {
+// 足種 → 所見サマリーでの役割（短期/中期/長期）の対応。
+const TIMEFRAME_ROLE: Record<OhlcInterval, keyof TimeframeSet> = { '15m': 'short', '60m': 'mid', '1d': 'long' };
+
+interface MiniChartPanelProps {
+  symbol: string;
+  config: PanelConfig;
+  insight: TimeframeInsight | null;
+  // 🆕 所見（チャートから読み取れること）を横断集計するため、取得した足データの解析結果を
+  // 親へ渡す。取得失敗時は null を渡して古い銘柄の所見が残らないようにする。
+  onInsight: (symbol: string, interval: OhlcInterval, insight: TimeframeInsight | null) => void;
+}
+
+interface InsightState {
+  symbol: string;
+  byInterval: Partial<Record<OhlcInterval, TimeframeInsight>>;
+}
+
+function MiniChartPanel({ symbol, config, insight, onInsight }: MiniChartPanelProps): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -89,9 +108,13 @@ function MiniChartPanel({ symbol, config }: { symbol: string; config: PanelConfi
           bars.map((b) => ({ time: toChartTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close }))
         );
         chartRef.current?.timeScale().fitContent();
+        onInsight(symbol, config.interval, analyzeBars(bars));
       })
-      .catch(() => setError(true));
-  }, [symbol, config.period, config.interval]);
+      .catch(() => {
+        setError(true);
+        onInsight(symbol, config.interval, null);
+      });
+  }, [symbol, config.period, config.interval, onInsight]);
 
   return (
     <div className="multi-chart-panel">
@@ -99,16 +122,46 @@ function MiniChartPanel({ symbol, config }: { symbol: string; config: PanelConfi
       {error && <p className="signal-queue-error">取得に失敗しました</p>}
       {isEmpty && !error && <p className="signal-queue-empty">データがありません</p>}
       <div ref={containerRef} className="multi-chart-panel-canvas" role="img" aria-label={`${symbol} の${config.label}`} />
+      {insight && <TimeframeInsightList insight={insight} />}
     </div>
   );
 }
 
 export function MultiChart({ symbol }: { symbol: string }): ReactNode {
+  // 所見はどの銘柄の取得結果かを併せて持ち、表示中の銘柄と一致するものだけを使う
+  // （銘柄切替直後に前の銘柄の説明が残らないようにするため）。
+  const [stored, setStored] = useState<InsightState>({ symbol, byInterval: {} });
+  const insights = stored.symbol === symbol ? stored.byInterval : {};
+
+  const handleInsight = useCallback(
+    (fetchedSymbol: string, interval: OhlcInterval, insight: TimeframeInsight | null): void => {
+      setStored((prev) => {
+        const base = prev.symbol === fetchedSymbol ? prev.byInterval : {};
+        return { symbol: fetchedSymbol, byInterval: { ...base, [interval]: insight ?? undefined } };
+      });
+    },
+    []
+  );
+
+  const timeframes: TimeframeSet = PANELS.reduce<TimeframeSet>((acc, { interval }) => {
+    const insight = insights[interval];
+    return insight ? { ...acc, [TIMEFRAME_ROLE[interval]]: insight } : acc;
+  }, {});
+
   return (
-    <div className="multi-chart-grid">
-      {PANELS.map((config) => (
-        <MiniChartPanel key={config.interval} symbol={symbol} config={config} />
-      ))}
+    <div className="multi-chart">
+      <div className="multi-chart-grid">
+        {PANELS.map((config) => (
+          <MiniChartPanel
+            key={config.interval}
+            symbol={symbol}
+            config={config}
+            insight={insights[config.interval] ?? null}
+            onInsight={handleInsight}
+          />
+        ))}
+      </div>
+      <MultiChartInsightSummary timeframes={timeframes} />
     </div>
   );
 }

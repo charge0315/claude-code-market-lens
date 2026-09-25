@@ -65,6 +65,29 @@ describe('MultiChart', () => {
     expect(screen.queryAllByText('取得に失敗しました')).toHaveLength(1);
   });
 
+  it('十分な本数があれば各パネルの所見と横断まとめを表示する', async () => {
+    const bars = Array.from({ length: 60 }, (_, i) => {
+      const close = 1000 + i * 10;
+      return { time: i, open: close, high: close + 5, low: close - 5, close, volume: 1000 };
+    });
+    mockFetchOhlc.mockResolvedValue(response({ bars }));
+
+    render(<MultiChart symbol="7203" />);
+
+    expect(await screen.findByText('チャートから読み取れること')).toBeInTheDocument();
+    expect(screen.getByText(/すべての時間軸で上昇基調/)).toBeInTheDocument();
+    expect(screen.getAllByText('上昇基調')).toHaveLength(3);
+  });
+
+  it('本数が足りないときは所見を表示しない', async () => {
+    mockFetchOhlc.mockResolvedValue(response());
+
+    render(<MultiChart symbol="7203" />);
+    await waitFor(() => expect(mockFetchOhlc).toHaveBeenCalledTimes(3));
+
+    expect(screen.queryByText('チャートから読み取れること')).not.toBeInTheDocument();
+  });
+
   it('アクセシビリティ違反がない', async () => {
     mockFetchOhlc.mockResolvedValue(response());
 
