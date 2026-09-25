@@ -79,19 +79,28 @@ async def upsert_outcome(
         )
 
 
-async def list_unresolved_picks(*, issued_before: str, limit: int = 50) -> list[dict[str, object]]:
-    """まだ決着行を 1 つも持たず、issued_at が `issued_before` より前のピック（本番のみ）を返す."""
+async def list_picks_with_missing_outcomes(*, horizon_count: int) -> list[dict[str, object]]:
+    """決着行が `horizon_count` 件そろっていないピック（本番のみ）を古い順に、書き済みホライズン付きで返す.
+
+    🔧 2026-09-26: 旧 `list_unresolved_picks` は「決着行が 1 つもない」ピックだけを古い順に
+    LIMIT 付きで返していたため、(1) 最初のホライズンだけ書かれたピックの残り（中長期の 20/60 日、
+    短期の 2/3 日）が永久に書かれず、(2) まだ成熟していない古いピックが LIMIT を占領して新しい
+    ピックが処理されなかった。成熟判定は呼び出し側（`outcome_resolver.has_due_horizon`）が行い、
+    件数上限もその後にかけるため、ここでは LIMIT しない（未決着ピックは高々数百件）。
+    各行の `written_horizons` は書き済み `horizon_days` のカンマ区切り（無ければ None）。
+    """
     async with get_db() as db:
         result = await db.execute(
             text("""
-                SELECT p.* FROM prediction_ledger p
+                SELECT p.*, GROUP_CONCAT(o.horizon_days) AS written_horizons
+                FROM prediction_ledger p
+                LEFT JOIN pick_outcomes o ON o.pick_id = p.pick_id
                 WHERE p.is_shadow = 0
-                  AND p.issued_at < :issued_before
-                  AND NOT EXISTS (SELECT 1 FROM pick_outcomes o WHERE o.pick_id = p.pick_id)
+                GROUP BY p.pick_id
+                HAVING COUNT(o.outcome_id) < :horizon_count
                 ORDER BY p.issued_at ASC
-                LIMIT :limit
                 """),
-            {"issued_before": issued_before, "limit": limit},
+            {"horizon_count": horizon_count},
         )
         return [dict(r._mapping) for r in result]
 

@@ -165,3 +165,103 @@ async def test_resolve_pending_writes_outcomes(migrated_db: Path, monkeypatch: p
     rows = await pick_outcome_db.list_outcomes("p1")
     assert {r["horizon_days"] for r in rows} == {1, 2, 3}
     assert all(r["first_hit"] == "target" for r in rows)
+
+
+def _ledger_entry(pick_id: str, *, issued_at: str, horizon_type: str, symbol: str = "7203") -> LedgerEntry:
+    return LedgerEntry(
+        pick_id=pick_id,
+        run_id="r1",
+        issued_at=issued_at,
+        horizon_type=horizon_type,
+        symbol=symbol,
+        direction="bullish",
+        entry=1000.0,
+        stop=900.0,
+        target=1200.0,
+        sub_scores=SubScores(technical=60, trend=55, fundamental=52, sentiment=50),
+        composite_score=60.0,
+        concordance=0.6,
+        confidence_raw=70.0,
+        confidence=72.0,
+        confidence_bucket="high",
+        feature_snapshot={},
+        rationale_struct={},
+        rationale_text="x",
+        model_version="baseline-2026-09-11",
+        source_contributions={},
+        created_at=issued_at,
+    )
+
+
+def _daily_bars(start: str, days: int) -> pd.DataFrame:
+    """start 当日から平日 days 本。初日の翌営業日に約定（安値 995 <= entry 1000）し、以後はバリアに触れない."""
+    idx = pd.bdate_range(start=start, periods=days)
+    lows = [1005.0] + [995.0] + [1001.0] * (days - 2)
+    return pd.DataFrame(
+        {"Open": [1002.0] * days, "High": [1010.0] * days, "Low": lows, "Close": [1004.0] * days}, index=idx
+    )
+
+
+def test_has_due_horizon() -> None:
+    # 短期: 1 日目は発行 10 暦日後に成熟、2 日目は 11 暦日後。
+    assert orv.has_due_horizon("short_term", "2026-09-14T07:41:00+09:00", set(), today="2026-09-24") is True
+    assert orv.has_due_horizon("short_term", "2026-09-14T07:41:00+09:00", set(), today="2026-09-23") is False
+    # 1 日目を書き済みなら、2 日目が成熟するまでは対象外。
+    assert orv.has_due_horizon("short_term", "2026-09-14T07:41:00+09:00", {1}, today="2026-09-24") is False
+    assert orv.has_due_horizon("short_term", "2026-09-14T07:41:00+09:00", {1}, today="2026-09-25") is True
+    # 中長期: 5 日は 16 暦日後。20 日（37 暦日後）は 5 日を書き済みでもまだ対象外。
+    assert orv.has_due_horizon("mid_term", "2026-09-12T14:02:00+09:00", set(), today="2026-09-27") is False
+    assert orv.has_due_horizon("mid_term", "2026-09-12T14:02:00+09:00", set(), today="2026-09-28") is True
+    assert orv.has_due_horizon("mid_term", "2026-09-12T14:02:00+09:00", {5}, today="2026-10-18") is False
+    assert orv.has_due_horizon("mid_term", "2026-09-12T14:02:00+09:00", {5}, today="2026-10-19") is True
+
+
+async def test_resolve_pending_fills_remaining_horizons_later(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一度決着行が書かれたピックも、残りのホライズンが成熟したら追記される（2026-09-26 の不具合）."""
+    from backend.services.db import pick_outcome_db
+
+    await pl.insert_pick(_ledger_entry("p-short", issued_at="2026-09-14T07:41:00+09:00", horizon_type="short_term"))
+    monkeypatch.setattr(orv, "get_stock_data", lambda _s, period="1y": _daily_bars("2026-09-14", 15))
+    monkeypatch.setattr(orv, "_safe_fetch_macro", lambda _s: pd.DataFrame())
+
+    first = await orv.resolve_pending(max_picks=20, today="2026-09-24")
+    rows = await pick_outcome_db.list_outcomes("p-short")
+    assert first.resolved_picks == 1
+    assert [r["horizon_days"] for r in rows] == [1]
+    first_resolved_at = rows[0]["resolved_at"]
+
+    second = await orv.resolve_pending(max_picks=20, today="2026-09-27")
+    rows = await pick_outcome_db.list_outcomes("p-short")
+    assert second.written_outcomes == 2  # 書き済みの 1 日目は書き直さない
+    assert [r["horizon_days"] for r in rows] == [1, 2, 3]
+    assert rows[0]["resolved_at"] == first_resolved_at
+
+
+async def test_resolve_pending_not_starved_by_immature_older_picks(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """まだ成熟していない古いピックが件数上限を占領しても、成熟した新しいピックを処理する."""
+    from backend.services.db import pick_outcome_db
+
+    for i in range(3):
+        await pl.insert_pick(
+            _ledger_entry(f"p-mid-{i}", issued_at="2026-09-12T14:02:00+09:00", horizon_type="mid_term")
+        )
+    await pl.insert_pick(_ledger_entry("p-short", issued_at="2026-09-14T07:41:00+09:00", horizon_type="short_term"))
+    fetched: list[str] = []
+
+    def fake_bars(symbol: str, period: str = "1y") -> pd.DataFrame:  # noqa: ARG001
+        fetched.append(symbol)
+        return _daily_bars("2026-09-12", 15)
+
+    monkeypatch.setattr(orv, "get_stock_data", fake_bars)
+    monkeypatch.setattr(orv, "_safe_fetch_macro", lambda _s: pd.DataFrame())
+
+    summary = await orv.resolve_pending(max_picks=2, today="2026-09-26")
+
+    assert summary.resolved_picks == 1
+    assert len(fetched) == 1  # 成熟していない中長期 3 件は株価取得もしない
+    assert [r["horizon_days"] for r in await pick_outcome_db.list_outcomes("p-short")] == [1, 2]
+    assert await pick_outcome_db.list_outcomes("p-mid-0") == []

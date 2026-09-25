@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import pandas as pd
 
@@ -150,6 +150,24 @@ def horizon_is_mature(issued_at: str, horizon_days: int, today: str) -> bool:
     return elapsed >= min_age
 
 
+def has_due_horizon(horizon_type: str, issued_at: str, written: set[int], today: str) -> bool:
+    """まだ書かれていないホライズンのうち、成熟したものが 1 つでもあるか（株価取得前の安価な絞り込み）.
+
+    未約定の決着は約定窓（3 営業日）の成熟で確定できるが、ここでは判定に使わない。約定したかどうかは
+    株価を取得するまで分からず、約定済みの中長期ピックを最短ホライズン（5 日）の成熟前に取得しても
+    何も書けないため（2026-09-26、これが件数上限を占領して新しいピックが処理されなかった）。
+    その分、未約定の中長期ピックの決着は 5 日ホライズンの成熟まで遅れる。
+    """
+    return any(h not in written and horizon_is_mature(issued_at, h, today) for h in HORIZON_SETS[horizon_type])
+
+
+def _written_horizons(value: object) -> set[int]:
+    """`list_picks_with_missing_outcomes` の `written_horizons`（カンマ区切り or None）を集合にする."""
+    if not isinstance(value, str) or not value:
+        return set()
+    return {int(x) for x in value.split(",")}
+
+
 def build_outcomes(
     *,
     horizon_type: str,
@@ -208,19 +226,29 @@ def build_outcomes(
 # --- オーケストレーション（I/O あり） ---
 
 
-async def resolve_pending(*, max_picks: int = 20) -> ResolveSummary:
-    """まだ決着していないピックを古い順に解決し `pick_outcomes` へ書き込む."""
+async def resolve_pending(*, max_picks: int = 20, today: str | None = None) -> ResolveSummary:
+    """未記録のホライズンが成熟したピックを古い順に最大 `max_picks` 件解決し、未記録分だけ書き込む.
+
+    `max_picks` は株価取得の回数の上限。成熟したホライズンが無いピックは取得前に除外するので、
+    まだ答えの出ない古いピックが上限を占領することはない。
+    """
     from backend.services.db import pick_outcome_db
 
-    today = datetime.now(JST).date().isoformat()
-    # 最短ホライズン（短期 1 営業日）が成熟する最小暦日ぶん前より古いピックを対象にする。
-    cutoff = (date.fromisoformat(today) - timedelta(days=_AGE_BUFFER_DAYS + 3)).isoformat() + "T23:59:59"
-    picks = await pick_outcome_db.list_unresolved_picks(issued_before=cutoff, limit=max_picks)
+    today = today or datetime.now(JST).date().isoformat()
+    horizon_count = max(len(hs) for hs in HORIZON_SETS.values())
+    candidates = await pick_outcome_db.list_picks_with_missing_outcomes(horizon_count=horizon_count)
+    due = [
+        (p, _written_horizons(p["written_horizons"]))
+        for p in candidates
+        if has_due_horizon(str(p["horizon_type"]), str(p["issued_at"]), _written_horizons(p["written_horizons"]), today)
+    ][:max_picks]
 
     summary = ResolveSummary()
+    if not due:
+        return summary
     bench_bars = _safe_fetch_macro(_BENCHMARK_SYMBOL)
 
-    for p in picks:
+    for p, written in due:
         symbol = str(p["symbol"])
         try:
             bars = get_stock_data(symbol, period=_PRICE_PERIOD)
@@ -241,6 +269,8 @@ async def resolve_pending(*, max_picks: int = 20) -> ResolveSummary:
             bench_bars=bench_bars,
             today=today,
         )
+        # 書き済みのホライズンは書き直さない（resolved_at を最初の決着時刻のまま保つ）。
+        outcomes = [o for o in outcomes if o.horizon_days not in written]
         if not outcomes:
             continue
 
