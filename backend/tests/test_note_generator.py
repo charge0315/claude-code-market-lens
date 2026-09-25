@@ -80,7 +80,7 @@ def test_build_prompt_handles_no_prior_reviews() -> None:
     """前日決着分が無い日は、正直に「決着済みのピックはありません」と書かれる（捏造禁止）."""
     prompt = gen.build_prompt("2026-09-17", [], [])
 
-    assert "直近で決着済みのピックはありません" in prompt
+    assert "直近で決着済みの検証対象銘柄はありません" in prompt
 
 
 def test_build_prompt_includes_prior_review_lines() -> None:
@@ -106,7 +106,7 @@ def test_build_prompt_includes_prior_review_lines() -> None:
     assert "判定=的中" in prompt
     assert "実現リターン=2.10%" in prompt
     assert "TOPIX超過リターン=1.50%" in prompt
-    assert "先着=目標到達" in prompt
+    assert "先着=想定レンジ上限到達" in prompt
     # entry/stop/target は PriorOutcomeReview 自体に無く、プロンプトにも現れない。
     assert "entry" not in prompt.lower()
 
@@ -145,7 +145,7 @@ async def test_generate_falls_back_when_no_picks() -> None:
 
     assert "分析結果がありませんでした" in body
     assert model_version == "unavailable"
-    assert "投資助言ではありません" in body
+    assert "投資助言・代理行為を目的としたものではありません" in body
 
 
 async def test_generate_falls_back_when_llm_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,6 +191,36 @@ async def test_generate_appends_disclaimer_and_sources_note_on_success(monkeypat
 
     assert title == "本日の分析"
     assert "強気優勢でした" in body
-    assert "投資助言ではありません" in body
+    assert "投資助言・代理行為を目的としたものではありません" in body
     assert "データソースについて" in body
     assert model_version == "anthropic:test-model"
+
+
+def test_build_prompt_uses_neutral_direction_label_and_term_rules() -> None:
+    """方向性は売買シグナル表現（強気/買い）ではなく検証用の中立ラベルで渡す（金商法対応）."""
+    prompt = gen.build_prompt("2026-09-17", [_pick("7203")], [_pick("6758", direction="bearish")])
+
+    assert "方向性=正のトレンド相関（検証用）" in prompt
+    assert "方向性=負のトレンド相関（検証用）" in prompt
+    assert "方向性=強気" not in prompt
+    assert "【用語規則（厳守）】" in prompt
+    assert "アルゴリズム抽出銘柄" in prompt
+
+
+async def test_generate_replaces_ng_terms_and_appends_fixed_disclaimer(monkeypatch: pytest.MonkeyPatch) -> None:
+    body_with_ng = "本日の推奨銘柄は7203です。推奨買値・損切りライン・目標株価は記事では扱いません。" * 10
+    monkeypatch.setattr(
+        gen,
+        "resolve_feature_provider",
+        lambda _feature: _FakeLLM({"title": "本日のピック銘柄", "body_markdown": body_with_ng}),
+    )
+
+    title, body, _ = await gen.generate("2026-09-17", [_pick("7203")], [])
+
+    assert title == "本日の検証対象銘柄"
+    for ng in ("推奨銘柄", "推奨買値", "損切りライン", "目標株価"):
+        assert ng not in body
+    assert "アルゴリズム抽出銘柄" in body
+    assert "シミュレーション起点価格" in body
+    assert body.rstrip().endswith("---")
+    assert "【システム検証記録に関する免責事項・注意事項】" in body

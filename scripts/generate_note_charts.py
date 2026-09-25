@@ -3,6 +3,10 @@
 4分析レーダーチャート（マルチレーダーグリッド）、
 本日のAIピック一覧サマリーテーブル、
 およびスマホ一覧・SNSで目を引くアイキャッチ画像を生成する。
+
+2026-09-25（金商法対応、ユーザー指示）: 画像内の文言も「売買推奨」ではなく「アルゴリズム検証ログ」の
+語彙に揃える。方向性は picks.json の旧ラベル（強気/弱気）でも中立ラベルへ変換して描画し、
+用語の単一情報源は `backend/services/notes/compliance_terms.py` とする。
 """
 
 import argparse
@@ -17,6 +21,20 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+# `python scripts/generate_note_charts.py` 実行時は scripts/ が sys.path 先頭になるため、
+# 用語の単一情報源（backend パッケージ）を import できるようリポジトリルートを追加する。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.services.notes.compliance_terms import DIRECTION_LABELS, apply_compliance_terms  # noqa: E402
+
+# picks.json の方向性は旧来の「強気/弱気」や英語キーで書かれていることがあるため中立ラベルへ寄せる。
+_LEGACY_DIRECTION_KEYS = {"強気": "bullish", "買い": "bullish", "弱気": "bearish", "売り": "bearish", "中立": "neutral"}
+
+
+def neutral_direction(direction: str) -> str:
+    """方向性を検証用の中立ラベル（正/負のトレンド相関（検証用）/中立）へ変換する."""
+    key = _LEGACY_DIRECTION_KEYS.get(direction, direction)
+    return DIRECTION_LABELS.get(key, apply_compliance_terms(direction))
 
 # 日本語フォント設定（Windows環境優先）
 FONTS = ["Yu Gothic", "Meiryo", "MS Gothic", "TakaoPGothic", "IPAexGothic", "sans-serif"]
@@ -54,7 +72,7 @@ def get_pil_japanese_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFo
 def draw_radar_charts(
     picks_data: List[Dict[str, Any]],
     output_path: str,
-    title: str = "本日のAIピック 4分析レーダー比較",
+    title: str = "本日のアルゴリズム抽出銘柄 4分析レーダー比較",
 ) -> None:
     """各銘柄の4分析スコアをマルチレーダーチャート（2〜3列グリッド）として描画する."""
     n_picks = len(picks_data)
@@ -115,7 +133,7 @@ def draw_radar_charts(
         ax.set_ylim(0, 100)
         ax.grid(color="#ded4c8", linestyle="--", linewidth=0.8)
 
-        label_text = f"【{pick.get('symbol', '')}】{pick.get('name', '')}\n({pick.get('horizon', '')}・{pick.get('direction', '')})"
+        label_text = f"【{pick.get('symbol', '')}】{pick.get('name', '')}\n({pick.get('horizon', '')}・{neutral_direction(str(pick.get('direction', '')))})"
         ax.set_title(
             label_text,
             fontproperties=font_jp,
@@ -147,13 +165,16 @@ def draw_radar_charts(
 def draw_pick_table(
     table_data: List[Dict[str, Any]],
     output_path: str,
-    title: str = "本日のAIピック サマリー一覧",
-    footnote: str = "※価格は直近営業日終値ベース。売買目標値は金商法遵守・資金管理防衛のためマスクしています。",
+    title: str = "本日のアルゴリズム抽出銘柄 サマリー一覧",
+    footnote: str = (
+        "※アルゴリズムの動作検証記録です。方向性・スコアは過去データから機械的に算出した値であり、"
+        "売買の推奨ではありません。"
+    ),
 ) -> None:
     """サマリーテーブルをスマホでも読みやすい大フォント画像として描画する."""
     font_jp = get_japanese_font()
 
-    columns = ["区分", "銘柄コード", "銘柄名", "AI判定", "合成スコア", "審査員一致度", "確度"]
+    columns = ["区分", "銘柄コード", "銘柄名", "方向性（検証用）", "合成スコア", "審査員一致度", "確度"]
     cell_data = []
 
     for row in table_data:
@@ -161,7 +182,7 @@ def draw_pick_table(
             row.get("horizon", "中長期"),
             row.get("symbol", "-"),
             row.get("name", "-"),
-            row.get("direction", "強気"),
+            neutral_direction(str(row.get("direction", "中立"))),
             f"{row.get('composite_score', 0):.1f}",
             f"{row.get('concordance', 0):.2f}",
             f"{row.get('confidence', 0)}%",
@@ -175,6 +196,8 @@ def draw_pick_table(
     table = ax.table(
         cellText=cell_data,
         colLabels=columns,
+        # 中立ラベル「正のトレンド相関（検証用）」は旧「強気」より長いため方向性列を広く取る。
+        colWidths=[0.08, 0.1, 0.19, 0.27, 0.12, 0.13, 0.11],
         loc="center",
         cellLoc="center",
     )
@@ -230,7 +253,7 @@ def draw_cover_image(
     main_title: str,
     tickers_list: List[str],
     output_path: str,
-    sub_title: str = "AIが読む日本株・市況とスクリーニング銘柄の思考トレース",
+    sub_title: str = "ALPHA FORGE 検証ログ：日本株アルゴリズムの抽出銘柄と思考トレース",
 ) -> None:
     """note.com推奨比率（1.91:1 / 1280x670）のアイキャッチ画像を生成する."""
     W, H = 1280, 670
@@ -302,7 +325,7 @@ def draw_cover_image(
     tag_start_y = card_y2 - 95
     font_tag = get_pil_japanese_font(20, bold=True)
 
-    draw.text((badge_x, tag_start_y - 30), "■ 本日の注目ピック銘柄:", fill=(140, 120, 105), font=get_pil_japanese_font(18, bold=True))
+    draw.text((badge_x, tag_start_y - 30), "■ 本日の検証対象銘柄:", fill=(140, 120, 105), font=get_pil_japanese_font(18, bold=True))
 
     curr_x = badge_x
     for ticker in tickers_list[:5]:
@@ -392,7 +415,7 @@ def main() -> None:
     cover_out = os.path.join(args.output_dir, f"00_cover_{args.date}.png")
 
     tickers = args.tags if args.tags else [f"{p.get('symbol')} {p.get('name')}" for p in picks]
-    sub_title = args.sub_title if args.sub_title else "AIが読む日本株・市況とスクリーニング銘柄の思考トレース"
+    sub_title = args.sub_title if args.sub_title else "ALPHA FORGE 検証ログ：日本株アルゴリズムの抽出銘柄と思考トレース"
 
     if not args.skip_charts:
         draw_radar_charts(picks, radar_out)

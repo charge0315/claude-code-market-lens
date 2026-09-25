@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from backend.models.market import IndexQuote
 from backend.services.llm.errors import LLMError
 from backend.services.llm.registry import resolve_feature_provider
+from backend.services.notes.compliance_terms import (
+    COMPLIANCE_DISCLAIMER,
+    DIRECTION_LABELS,
+    apply_compliance_terms,
+    prompt_rules,
+)
 from backend.services.picks.pick_analysis import PickAnalysis
 
 __all__ = [
@@ -35,11 +41,8 @@ __all__ = [
     "review_from_row",
 ]
 
-DISCLAIMER = (
-    "\n\n---\n\n"
-    "※本記事はAIによる market データの分析結果を紹介する情報提供コンテンツであり、"
-    "投資助言ではありません。具体的な売買の判断・タイミングはご自身の責任で行ってください。"
-)
+# 金商法（投資助言・代理業規制）対応の定型免責ブロック（2026-09-25 ユーザー指示で差し替え）。
+DISCLAIMER = "\n\n" + COMPLIANCE_DISCLAIMER
 
 # 生成AIが自分でデータ出所を書くと不正確になりうるため、固定文言として必ず末尾に付与する
 # （情報ソースの明示、ユーザー指示）。実際のデータ取得経路（CLAUDE.md アーキテクチャ）と一致させる。
@@ -60,9 +63,13 @@ _PRICE_PATTERN = re.compile(r"[¥￥]\s?\d|\d+\s?円")
 # （テンプレート準拠の多章立て記事は通常これよりずっと長くなるため、しきい値は保守的に低く取る）。
 _MIN_BODY_LENGTH = 200
 
-_DIRECTION_LABELS: dict[str, str] = {"bullish": "強気", "bearish": "弱気", "neutral": "中立"}
+_DIRECTION_LABELS: dict[str, str] = DIRECTION_LABELS
 _HORIZON_TYPE_LABELS: dict[str, str] = {"mid_term": "中長期", "short_term": "短期"}
-_FIRST_HIT_LABELS: dict[str, str] = {"target": "目標到達", "stop": "損切りライン到達", "none": "未到達"}
+_FIRST_HIT_LABELS: dict[str, str] = {
+    "target": "想定レンジ上限到達",
+    "stop": "シナリオ無効化水準到達",
+    "none": "未到達",
+}
 _SOURCE_LABELS: dict[str, str] = {
     "technical": "テクニカル",
     "trend": "トレンド",
@@ -182,8 +189,10 @@ def _market_lines(market: list[IndexQuote]) -> str:
 
 
 # `90_Meta/Templates/StockForNote.md`（Obsidian、ユーザー提供）の章立てを構造の土台として
-# 踏襲する。同テンプレートには目安買値・損切りライン・目標利確（3値）とサマリーテーブルの
-# 価格列が含まれるが、投資助言業への抵触を避けるため出力からは除外する（ユーザー確認済み）。
+# 踏襲する。同テンプレートには3値（シミュレーション起点価格・シナリオ無効化水準・想定レンジ上限）と
+# サマリーテーブルの価格列が含まれるが、投資助言業への抵触を避けるため出力からは除外する（ユーザー確認済み）。
+# 章見出し・用語も「売買推奨」ではなく「アルゴリズム検証ログ」の語彙に揃える（2026-09-25 金商法対応、
+# `compliance_terms.py` 参照）。
 # 装飾的な数値例（NYダウの具体値・レーダー評価の「割安性/成長性」等の架空カテゴリ）は
 # Alpha Forgeの実データ・実際の4分析軸（テクニカル/トレンド/ファンダメンタル/センチメント）に
 # 置き換え、実在しない手法（LightGBM等）を捏造しないよう明示的に指示する。
@@ -197,17 +206,18 @@ _TEMPLATE_STRUCTURE_INSTRUCTIONS = """
   表形式で示す
 - 与えられた市況ニュースのメタ情報（あれば）を踏まえた寄り前の地合い解説
 
-## 2. 📈 前日ピックの決着レビュー＆改善点
+## 2. 📈 前日の検証対象銘柄の決着レビュー＆改善点
 - ⚠️ この章の見出し自体は、材料の有無に関わらず必ず出力すること（省略禁止・章番号の詰め直し
   禁止）。他の章番号（3〜7）もこの章がある前提で固定されているため、詰め直すと全体の番号が
   ズレる
-- 与えられた「直近で決着済みのピック」一覧を、的中/不的中・実現リターン・TOPIX超過リターン・
-  MFE/MAE・先着（target/stop）の実測値に基づいて振り返る
+- 与えられた「直近で決着済みの検証対象銘柄」一覧を、的中/不的中・実現リターン・TOPIX超過リターン・
+  MFE/MAE・先着（想定レンジ上限/シナリオ無効化水準）の実測値に基づいて振り返る
 - 一覧が空の場合は、傾向を創作せず「本日は決着件数が少なく傾向分析には至らない」等、章の本文
   として正直にそのまま書くこと（見出しを消してはならない）
 - 傾向を無理に断定せず、実データから読み取れる範囲の考察に留める
 - 次回のスクリーニング・確度較正に生かせる具体的な改善点を挙げる
-- 具体的な買値・損切りライン等の価格提示や、断定的な投資指示は書かないこと（他章と同様）
+- シミュレーション起点価格・シナリオ無効化水準等の具体的な価格提示や、断定的な投資指示は
+  書かないこと（他章と同様）
 
 ## 3. 🤖 AIモデルの思考プロセス＆スクリーニング方針
 - Alpha Forgeの実際の分析方式（テクニカル・トレンド・ファンダメンタル・センチメントの4分析を
@@ -215,18 +225,18 @@ _TEMPLATE_STRUCTURE_INSTRUCTIONS = """
 - 存在しない手法（LightGBM・SNS言及バズ等）を勝手に創作しないこと
 - 本日抽出された銘柄群に共通する傾向があれば触れる
 
-## 4. 📊 本日のAIピック一覧（サマリーテーブル）
+## 4. 📊 本日のアルゴリズム抽出銘柄一覧（サマリーテーブル）
 - 列: 銘柄コード / 銘柄名 / 方向性 / 合成スコア / 確度 / 4分析の方向一致度 / 想定保有期間の目安
-- 具体的な価格（買値・損切りライン・利確目標）は列に含めないこと
+- 具体的な価格（シミュレーション起点価格・シナリオ無効化水準・想定レンジ上限）は列に含めないこと
 
-## 5. 🔍 各ピック銘柄の徹底解説＆チャート分析
+## 5. 🔍 各検証対象銘柄の徹底解説＆チャート分析
 - 銘柄ごとの見出しは必ず「### {証券コード}（{銘柄名}）」から始めること
-  （例: ### 7203（トヨタ自動車）中長期・強気 — note.com貼り付け時にこの見出し直後へ
+  （例: ### 7203（トヨタ自動車）中長期・正のトレンド相関（検証用） — note.com貼り付け時にこの見出し直後へ
   証券コードのチャート自動挿入トリガーを機械的に挿入するため、見出しの表記ゆれは避けること）
 - 銘柄ごとに: 4分析スコア内訳、情報源内訳（寄与度・スコア）、着眼点、分析コメント、
   リスク要因、方向一致度を踏まえた考察
-- 「売買戦略」として具体的な価格水準を提示するのは禁止。定性的な観点（見るべきポイント・
-  注意すべきシナリオ）に留めること
+- 「売買戦略」として具体的な価格水準を提示するのは禁止。定性的な観点（検証上見るべきポイント・
+  仮説が崩れるシナリオ）に留めること
 
 ## 6. ⚖️ 4分析レーダー比較
 - 全銘柄横断で、テクニカル・トレンド・ファンダメンタル・センチメントの4軸を比較する表
@@ -234,7 +244,7 @@ _TEMPLATE_STRUCTURE_INSTRUCTIONS = """
 
 ## 7. 📝 編集メモ・免責事項
 - 有料記事化の際の構成案（どこから有料境界を引くか）への軽い言及
-- 免責事項（投資助言ではない旨）
+- 免責事項は記事末尾にシステムが定型文を自動付与するため、本文には簡潔な一言に留めること
 """
 
 
@@ -252,20 +262,22 @@ def build_prompt(
     short_lines = "\n".join(_pick_lines(short_term)) or "（本日は該当なし）"
     market_block = _market_lines(market or [])
     news = news_block or "（本日は市況ニュースのメタ情報がありません）"
-    review_lines = "\n".join(_prior_review_lines(prior_reviews or [])) or "（直近で決着済みのピックはありません）"
+    review_lines = "\n".join(_prior_review_lines(prior_reviews or [])) or "（直近で決着済みの検証対象銘柄はありません）"
 
     return (
-        "あなたは日本株AI分析noteの執筆者です。以下は本日のAI銘柄ピック（中長期・短期）の"
-        "詳細な分析結果です。具体的な買値・損切値・売値等の価格や、「買い時」「売るべき」等の"
-        "断定的な投資指示は一切書かないでください。\n\n"
+        "あなたは独自開発アルゴリズム「ALPHA FORGE」の動作検証ログを記録する執筆者です。"
+        "以下は本日のアルゴリズム抽出銘柄（中長期・短期）の詳細な分析結果です。記事は読者への"
+        "売買推奨ではなく、機械的に算出された検証データの客観的な記録として書いてください。"
+        "具体的な価格や、「買い時」「売るべき」等の断定的な投資指示は一切書かないでください。\n\n"
+        f"{prompt_rules()}\n\n"
         f"{_TEMPLATE_STRUCTURE_INSTRUCTIONS}\n"
         "根拠はできるだけ詳細に記述し、単なる数値の列挙ではなく、なぜそのスコアになったと"
         "考えられるかの解釈・考察を加えてください。\n\n"
         f"## 市況指標（実データ）\n{market_block}\n\n"
         f"## 市況ニュース（メタ情報のみ）\n{news}\n\n"
-        f"## 直近で決着済みのピック（前日レビュー用の実測値）\n{review_lines}\n\n"
-        f"## {note_date} 中長期ピック分析\n{mid_lines}\n\n"
-        f"## {note_date} 短期ピック分析\n{short_lines}\n\n"
+        f"## 直近で決着済みの検証対象銘柄（前日レビュー用の実測値）\n{review_lines}\n\n"
+        f"## {note_date} 中長期アルゴリズム抽出銘柄の分析\n{mid_lines}\n\n"
+        f"## {note_date} 短期アルゴリズム抽出銘柄の分析\n{short_lines}\n\n"
         "submit_daily_note で記事タイトルと本文（Markdown）を提出してください。"
     )
 
@@ -301,8 +313,9 @@ async def generate(
         body = "LLM呼び出しに失敗したため、本日の下書きを生成できませんでした。" + DISCLAIMER
         return title, body, f"{provider.provider_id}:error"
 
-    title = str(raw.get("title", "")).strip() or f"{note_date} AI分析ノート"
-    raw_body = str(raw.get("body_markdown", "")).strip()
+    # プロンプト指示だけではLLMがNG表現を書く可能性が残るため、出力側でも機械置換する。
+    title = apply_compliance_terms(str(raw.get("title", "")).strip()) or f"{note_date} AI分析ノート"
+    raw_body = apply_compliance_terms(str(raw.get("body_markdown", "")).strip())
     if len(raw_body) < _MIN_BODY_LENGTH:
         # 出力トークン上限到達等で本文が途中で切れ、ほぼ空のまま返ってくることがある
         # （実測: 2026-09-17、テンプレート準拠の多章立て記事で max_tokens 不足により発生）。
