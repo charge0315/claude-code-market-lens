@@ -254,6 +254,8 @@ def draw_cover_image(
     tickers_list: List[str],
     output_path: str,
     sub_title: str = "ALPHA FORGE 検証ログ：日本株アルゴリズムの抽出銘柄と思考トレース",
+    badge_label: str = "DAILY AI REPORT",
+    tag_label: str = "■ 本日の検証対象銘柄:",
 ) -> None:
     """note.com推奨比率（1.91:1 / 1280x670）のアイキャッチ画像を生成する."""
     W, H = 1280, 670
@@ -293,7 +295,7 @@ def draw_cover_image(
     badge_y = card_y1 + 40
     badge_h = 42
     font_badge = get_pil_japanese_font(20, bold=True)
-    badge_text = f"DAILY AI REPORT ｜ {date_str}"
+    badge_text = f"{badge_label} ｜ {date_str}"
     # 固定幅だと日付が切れるため、文字幅 + 左右パディングからバッジ幅を決める
     text_bbox = draw.textbbox((0, 0), badge_text, font=font_badge)
     badge_w = (text_bbox[2] - text_bbox[0]) + 36
@@ -325,7 +327,7 @@ def draw_cover_image(
     tag_start_y = card_y2 - 95
     font_tag = get_pil_japanese_font(20, bold=True)
 
-    draw.text((badge_x, tag_start_y - 30), "■ 本日の検証対象銘柄:", fill=(140, 120, 105), font=get_pil_japanese_font(18, bold=True))
+    draw.text((badge_x, tag_start_y - 30), tag_label, fill=(140, 120, 105), font=get_pil_japanese_font(18, bold=True))
 
     curr_x = badge_x
     for ticker in tickers_list[:5]:
@@ -350,6 +352,9 @@ def main() -> None:
     parser.add_argument("--sub-title", default=None, help="サブタイトル（省略時はデフォルト）")
     parser.add_argument("--tags", nargs="*", default=None, help="カバー画像下部に表示するタグ（空白区切り複数指定可）")
     parser.add_argument("--skip-charts", action="store_true", help="チャート・表の生成をスキップしカバーのみ生成")
+    # 休場日の週末版（週間振り返り）など、デイリー以外の記事でカバーの定型文言を差し替えるため。
+    parser.add_argument("--badge", default="DAILY AI REPORT", help="カバー左上の日付バッジの文言")
+    parser.add_argument("--tag-label", default="■ 本日の検証対象銘柄:", help="カバー下部タグ列の見出し")
     args = parser.parse_args()
 
     sample_picks = [
@@ -421,7 +426,15 @@ def main() -> None:
         draw_radar_charts(picks, radar_out)
         draw_pick_table(picks, table_out)
 
-    draw_cover_image(args.date, args.title, tickers, cover_out, sub_title=sub_title)
+    draw_cover_image(
+        args.date,
+        args.title,
+        tickers,
+        cover_out,
+        sub_title=sub_title,
+        badge_label=args.badge,
+        tag_label=args.tag_label,
+    )
 
 
 if __name__ == "__main__":
