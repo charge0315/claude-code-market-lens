@@ -21,6 +21,7 @@ const INITIAL: LLMProviderSettingsResponse = {
       configured: true,
       default_model: 'claude-sonnet-5',
       model_presets: ['claude-opus-5', 'claude-sonnet-5'],
+      model_source: 'api',
     },
     {
       value: 'openai',
@@ -28,6 +29,7 @@ const INITIAL: LLMProviderSettingsResponse = {
       configured: false,
       default_model: 'gpt-5.1',
       model_presets: ['gpt-5.1'],
+      model_source: 'preset',
     },
     {
       value: 'gemini',
@@ -35,6 +37,7 @@ const INITIAL: LLMProviderSettingsResponse = {
       configured: true,
       default_model: 'gemini-2.5-pro',
       model_presets: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+      model_source: 'api',
     },
   ],
   features: [
@@ -85,7 +88,7 @@ describe('LLMProviderPanel', () => {
     expect(screen.getByText('トレンド抽出')).toBeInTheDocument();
   });
 
-  it('公式プロバイダの現在の使用モデルを入力欄に表示する', async () => {
+  it('公式プロバイダの現在の使用モデルを選択欄に表示する', async () => {
     mockFetch.mockResolvedValue(INITIAL);
     render(<LLMProviderPanel />);
     await screen.findByText('AIピック判定');
@@ -122,7 +125,33 @@ describe('LLMProviderPanel', () => {
     expect(within(rows[0]).getByLabelText('OpenAI（ChatGPT） の使用モデル')).toBeInTheDocument();
   });
 
-  it('モデル入力欄を編集すると保存ボタンが有効になり、変更内容が送信される', async () => {
+  it('モデル選択欄は現在値に関係なくプリセットをすべて選択肢に出す', async () => {
+    mockFetch.mockResolvedValue(INITIAL);
+    render(<LLMProviderPanel />);
+    await screen.findByText('AIピック判定');
+
+    const rows = screen.getAllByRole('listitem');
+    const modelSelect = within(rows[0]).getByLabelText('Anthropic（Claude） の使用モデル');
+    const optionValues = within(modelSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value);
+    expect(optionValues).toEqual(['claude-opus-5', 'claude-sonnet-5', '__custom__']);
+  });
+
+  it('候補の出どころ（公式API取得 / 固定候補）を表示する', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(INITIAL);
+    render(<LLMProviderPanel />);
+    await screen.findByText('AIピック判定');
+
+    const rows = screen.getAllByRole('listitem');
+    // 公式(Anthropic)とシャドウ(Gemini)の両方が API 取得・各2件
+    expect(within(rows[0]).getAllByText('公式APIから取得した2件')).toHaveLength(2);
+    await user.selectOptions(within(rows[0]).getByLabelText('公式プロバイダ（判定を左右する）'), 'openai');
+    expect(within(rows[0]).getByText('固定候補（APIキー未設定または一覧取得に失敗）')).toBeInTheDocument();
+  });
+
+  it('「その他（手入力）」でプリセット外のモデル名を入力して送信できる', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValue(INITIAL);
     mockUpdate.mockResolvedValue(INITIAL);
@@ -131,9 +160,51 @@ describe('LLMProviderPanel', () => {
     await screen.findByText('AIピック判定');
 
     const rows = screen.getAllByRole('listitem');
-    const modelInput = within(rows[0]).getByLabelText('Anthropic（Claude） の使用モデル');
-    await user.clear(modelInput);
-    await user.type(modelInput, 'claude-opus-5');
+    await user.selectOptions(within(rows[0]).getByLabelText('Anthropic（Claude） の使用モデル'), '__custom__');
+    const customInput = within(rows[0]).getByLabelText('Anthropic（Claude） のモデル名（手入力）');
+    await user.clear(customInput);
+    await user.type(customInput, 'claude-experimental-x');
+    await user.click(within(rows[0]).getByRole('button', { name: '保存' }));
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({
+        feature: 'stock_pick',
+        primary_provider: 'anthropic',
+        shadow_providers: ['gemini'],
+        models: { ...MODELS, anthropic: 'claude-experimental-x' },
+      }),
+    );
+  });
+
+  it('プリセット外の現在値は手入力欄に表示される', async () => {
+    mockFetch.mockResolvedValue({
+      ...INITIAL,
+      features: [
+        { ...INITIAL.features[0], models: { ...MODELS, anthropic: 'claude-legacy-1' } },
+        ...INITIAL.features.slice(1),
+      ],
+    });
+    render(<LLMProviderPanel />);
+    await screen.findByText('AIピック判定');
+
+    const rows = screen.getAllByRole('listitem');
+    const modelSelect = within(rows[0]).getByLabelText('Anthropic（Claude） の使用モデル') as HTMLSelectElement;
+    expect(modelSelect.value).toBe('__custom__');
+    const customInput = within(rows[0]).getByLabelText('Anthropic（Claude） のモデル名（手入力）') as HTMLInputElement;
+    expect(customInput.value).toBe('claude-legacy-1');
+  });
+
+  it('モデルを選び直すと保存ボタンが有効になり、変更内容が送信される', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(INITIAL);
+    mockUpdate.mockResolvedValue(INITIAL);
+
+    render(<LLMProviderPanel />);
+    await screen.findByText('AIピック判定');
+
+    const rows = screen.getAllByRole('listitem');
+    const modelSelect = within(rows[0]).getByLabelText('Anthropic（Claude） の使用モデル');
+    await user.selectOptions(modelSelect, 'claude-opus-5');
 
     const saveButton = within(rows[0]).getByRole('button', { name: '保存' });
     expect(saveButton).toBeEnabled();

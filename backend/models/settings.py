@@ -62,7 +62,10 @@ class LLMProviderOption(BaseModel):
     label: str
     configured: bool
     default_model: str
+    # モデル選択の候補。`model_source="api"` なら公式モデル一覧APIの取得結果、"preset" なら固定プリセット
+    # （APIキー未設定・取得失敗時のフォールバック）。
     model_presets: list[str]
+    model_source: Literal["api", "preset"] = "preset"
 
 
 class FeatureProviderSetting(BaseModel):

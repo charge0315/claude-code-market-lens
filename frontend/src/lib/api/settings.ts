@@ -37,7 +37,10 @@ export interface LLMProviderOption {
   label: string;
   configured: boolean;
   default_model: string;
+  // モデル選択の候補。model_source が 'api' なら公式モデル一覧APIの取得結果、'preset' なら固定候補
+  // （APIキー未設定・取得失敗時のフォールバック）。
   model_presets: string[];
+  model_source: 'api' | 'preset';
 }
 
 export interface FeatureProviderSetting {

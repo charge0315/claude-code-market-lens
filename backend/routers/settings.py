@@ -23,6 +23,7 @@ from backend.models.settings import (
     LLMProviderUpdateRequest,
 )
 from backend.services import config_store
+from backend.services.llm import model_catalog
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -61,12 +62,15 @@ async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiResponse[ApiKeysRespo
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    model_catalog.clear_cache()  # キーが変わったらモデル一覧も取り直す
     return _status_response(restart_required=True)
 
 
-def _llm_provider_response(*, restart_required: bool) -> ApiResponse[LLMProviderSettingsResponse]:
+async def _llm_provider_response(*, restart_required: bool) -> ApiResponse[LLMProviderSettingsResponse]:
     features = [FeatureProviderSetting(**row) for row in config_store.get_llm_provider_settings()]
-    providers = [LLMProviderOption(**row) for row in config_store.get_llm_provider_options()]
+    # モデル候補は公式モデル一覧APIから取得（TTLキャッシュ付き、失敗時は固定プリセット）。
+    fetched = await model_catalog.fetch_all_models()
+    providers = [LLMProviderOption(**row) for row in config_store.get_llm_provider_options(fetched)]
     return ApiResponse.ok(
         LLMProviderSettingsResponse(features=features, available_providers=providers, restart_required=restart_required)
     )
@@ -79,7 +83,7 @@ def _llm_provider_response(*, restart_required: bool) -> ApiResponse[LLMProvider
 )
 async def get_llm_providers() -> ApiResponse[LLMProviderSettingsResponse]:
     """機能ごとの現在の公式/シャドウプロバイダ設定と、選択可能なプロバイダ一覧を返す."""
-    return _llm_provider_response(restart_required=False)
+    return await _llm_provider_response(restart_required=False)
 
 
 @router.patch(
@@ -106,4 +110,4 @@ async def update_llm_providers(req: LLMProviderUpdateRequest) -> ApiResponse[LLM
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return _llm_provider_response(restart_required=True)
+    return await _llm_provider_response(restart_required=True)

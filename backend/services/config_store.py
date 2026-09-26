@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 _ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
@@ -83,7 +83,13 @@ _PROVIDER_DEFAULT_MODEL_ENV: dict[str, tuple[str, str]] = {
 # 設定画面のモデル選択欄に出す代表的なモデル（プリセット、自由入力も併用可）。
 # モデル名は頻繁に更新されるため、ここに無いモデルも自由入力で指定できる。
 _PROVIDER_MODEL_PRESETS: dict[str, list[str]] = {
-    "anthropic": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"],
+    "anthropic": [
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+        "claude-fable-5-1",
+    ],
     "openai": ["gpt-5.1"],
     "gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
 }
@@ -136,15 +142,21 @@ def _provider_default_model(provider: str) -> str:
     return os.environ.get(env_name) or fallback
 
 
-def get_llm_provider_options() -> list[dict[str, object]]:
-    """選択肢として提示する全プロバイダの一覧（APIキー設定状況・既定モデル・プリセットつき）を返す."""
+def get_llm_provider_options(fetched_models: Mapping[str, list[str]] | None = None) -> list[dict[str, object]]:
+    """選択肢として提示する全プロバイダの一覧（APIキー設定状況・既定モデル・モデル候補つき）を返す.
+
+    `fetched_models` は公式モデル一覧APIの取得結果（`services/llm/model_catalog.py`）。
+    取得できたプロバイダはそれを候補にし、取得できなかったプロバイダは固定プリセットへフォールバックする。
+    """
+    fetched = fetched_models or {}
     return [
         {
             "value": provider,
             "label": label,
             "configured": bool(os.environ.get(_PROVIDER_KEY_ENV[provider], "")),
             "default_model": _provider_default_model(provider),
-            "model_presets": list(_PROVIDER_MODEL_PRESETS[provider]),
+            "model_presets": list(fetched.get(provider) or _PROVIDER_MODEL_PRESETS[provider]),
+            "model_source": "api" if fetched.get(provider) else "preset",
         }
         for provider, label in _PROVIDER_LABELS.items()
     ]
