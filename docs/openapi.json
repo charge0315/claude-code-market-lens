@@ -6329,15 +6329,6 @@
             },
             "type": "array",
             "title": "Model Presets"
-          },
-          "model_source": {
-            "type": "string",
-            "enum": [
-              "api",
-              "preset"
-            ],
-            "title": "Model Source",
-            "default": "preset"
           }
         },
         "type": "object",

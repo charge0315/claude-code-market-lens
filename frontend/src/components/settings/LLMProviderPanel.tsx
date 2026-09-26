@@ -18,9 +18,6 @@ import './settings.css';
 // （複数併用可、判定フローには一切影響しない）。保存は `.env` への永続化のみで、
 // 反映には backend / celery worker・beat の再起動が必要（APIキー設定と同じ方式）。
 
-// モデル選択 `<select>` の「その他（手入力）」を表す番兵値（実在のモデル名と衝突しない形）。
-const CUSTOM_MODEL_VALUE = '__custom__';
-
 function toggleProvider(list: LLMProviderId[], provider: LLMProviderId): LLMProviderId[] {
   return list.includes(provider) ? list.filter((p) => p !== provider) : [...list, provider];
 }
@@ -32,8 +29,6 @@ export function LLMProviderPanel(): ReactNode {
   const [savingFeature, setSavingFeature] = useState<LLMFeatureId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restartRequired, setRestartRequired] = useState(false);
-  // 「その他（手入力）」を選んだモデル欄（`${feature}-${provider}`）。プリセット値のままでも手入力へ切り替えられるよう保持する。
-  const [customModelFields, setCustomModelFields] = useState<string[]>([]);
 
   useEffect(() => {
     fetchLLMProviderSettings()
@@ -86,7 +81,6 @@ export function LLMProviderPanel(): ReactNode {
   const providerConfigured = (value: LLMProviderId): boolean =>
     providers.find((p) => p.value === value)?.configured ?? false;
   const providerPresets = (value: LLMProviderId): string[] => providers.find((p) => p.value === value)?.model_presets ?? [];
-  const presetsFromApi = (value: LLMProviderId): boolean => providers.find((p) => p.value === value)?.model_source === 'api';
 
   const setModel = (feature: FeatureProviderSetting, draft: FeatureProviderSetting, provider: LLMProviderId, model: string): void => {
     setDrafts((prev) => ({
@@ -95,57 +89,26 @@ export function LLMProviderPanel(): ReactNode {
     }));
   };
 
-  // `<datalist>` は入力中の値で候補を絞り込むため、現在値が入っていると他のプリセットが
-  // 表示されなかった。常に全候補を出せる `<select>` にし、プリセット外は「その他」で手入力する。
   const renderModelField = (feature: FeatureProviderSetting, draft: FeatureProviderSetting, provider: LLMProviderId): ReactNode => {
-    const fieldKey = `${feature.feature}-${provider}`;
-    const current = draft.models[provider] ?? '';
-    const presets = providerPresets(provider);
-    const isCustom = customModelFields.includes(fieldKey) || (current !== '' && !presets.includes(current));
+    const datalistId = `model-presets-${feature.feature}-${provider}`;
     return (
       <div className="llm-provider-model-field">
-        <label htmlFor={`model-${fieldKey}`} className="llm-provider-model-label">
+        <label htmlFor={`model-${feature.feature}-${provider}`} className="llm-provider-model-label">
           {providerLabel(provider)} の使用モデル
         </label>
-        <select
-          id={`model-${fieldKey}`}
-          className="llm-provider-select"
-          value={isCustom ? CUSTOM_MODEL_VALUE : current}
-          onChange={(e) => {
-            if (e.target.value === CUSTOM_MODEL_VALUE) {
-              setCustomModelFields((prev) => (prev.includes(fieldKey) ? prev : [...prev, fieldKey]));
-              return;
-            }
-            setCustomModelFields((prev) => prev.filter((k) => k !== fieldKey));
-            setModel(feature, draft, provider, e.target.value);
-          }}
-        >
-          {presets.map((preset) => (
-            <option key={preset} value={preset}>
-              {preset}
-            </option>
+        <input
+          id={`model-${feature.feature}-${provider}`}
+          type="text"
+          list={datalistId}
+          className="llm-provider-model-input"
+          value={draft.models[provider] ?? ''}
+          onChange={(e) => setModel(feature, draft, provider, e.target.value)}
+        />
+        <datalist id={datalistId}>
+          {providerPresets(provider).map((preset) => (
+            <option key={preset} value={preset} />
           ))}
-          <option value={CUSTOM_MODEL_VALUE}>その他（手入力）</option>
-        </select>
-        <span className="llm-provider-model-source">
-          {presetsFromApi(provider)
-            ? `公式APIから取得した${presets.length}件`
-            : '固定候補（APIキー未設定または一覧取得に失敗）'}
-        </span>
-        {isCustom && (
-          <>
-            <label htmlFor={`model-custom-${fieldKey}`} className="llm-provider-model-label">
-              {providerLabel(provider)} のモデル名（手入力）
-            </label>
-            <input
-              id={`model-custom-${fieldKey}`}
-              type="text"
-              className="llm-provider-model-input"
-              value={current}
-              onChange={(e) => setModel(feature, draft, provider, e.target.value)}
-            />
-          </>
-        )}
+        </datalist>
       </div>
     );
   };

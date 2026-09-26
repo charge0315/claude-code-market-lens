@@ -165,19 +165,6 @@ def test_get_llm_provider_options_includes_default_model_and_presets(monkeypatch
     assert options["anthropic"]["default_model"] == "claude-sonnet-5"  # config.py のフィールド default
     assert options["openai"]["default_model"] == "gpt-5.1-mini"  # .env 上書きを反映
     assert "claude-opus-5" in cast("list[str]", options["anthropic"]["model_presets"])
-    assert options["anthropic"]["model_source"] == "preset"
-
-
-def test_get_llm_provider_options_prefers_fetched_models_over_presets() -> None:
-    options = {
-        o["value"]: o for o in config_store.get_llm_provider_options({"gemini": ["gemini-3.8-flash", "gemini-2.5-pro"]})
-    }
-
-    assert options["gemini"]["model_presets"] == ["gemini-3.8-flash", "gemini-2.5-pro"]
-    assert options["gemini"]["model_source"] == "api"
-    # 取得できなかったプロバイダは固定プリセットへフォールバック
-    assert options["anthropic"]["model_source"] == "preset"
-    assert "claude-opus-5" in cast("list[str]", options["anthropic"]["model_presets"])
 
 
 def test_get_llm_provider_settings_models_fall_back_to_provider_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,8 +183,6 @@ def test_get_llm_provider_settings_models_fall_back_to_provider_default(monkeypa
 
 def test_get_llm_provider_settings_models_reflect_feature_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5")
-    # 実際の `.env` に他機能の上書きがあっても結果が変わらないよう明示的に消す。
-    monkeypatch.delenv("LLM_MODEL_PORTFOLIO_SIGNAL_ANTHROPIC", raising=False)
     monkeypatch.setenv("LLM_MODEL_STOCK_PICK_ANTHROPIC", "claude-opus-5")
 
     rows = {row["feature"]: row for row in config_store.get_llm_provider_settings()}

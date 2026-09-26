@@ -9,33 +9,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.services import config_store
-from backend.services.llm import model_catalog
-
-
-@pytest.fixture(autouse=True)
-def _no_real_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """設定APIのテストから公式モデル一覧APIを実際に叩かない（キーが環境にあっても）."""
-
-    async def _empty() -> dict[str, list[str]]:
-        return {}
-
-    monkeypatch.setattr(model_catalog, "fetch_all_models", _empty)
-
-
-async def test_get_llm_providers_uses_fetched_models(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _fetched() -> dict[str, list[str]]:
-        return {"gemini": ["gemini-3.8-flash"]}
-
-    monkeypatch.setattr(model_catalog, "fetch_all_models", _fetched)
-    from backend.main import app
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        res = await client.get("/api/settings/llm-providers")
-
-    providers = {p["value"]: p for p in res.json()["data"]["available_providers"]}
-    assert providers["gemini"]["model_presets"] == ["gemini-3.8-flash"]
-    assert providers["gemini"]["model_source"] == "api"
-    assert providers["anthropic"]["model_source"] == "preset"
 
 
 async def test_get_api_keys_returns_masked_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,9 +125,7 @@ async def test_patch_llm_providers_without_fields_returns_400() -> None:
     assert res.status_code == 400
 
 
-async def test_get_llm_providers_includes_model_presets_and_current_models(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 実際の `.env` に機能別のモデル上書きがあると既定値と一致しなくなるため消しておく。
-    monkeypatch.delenv("LLM_MODEL_STOCK_PICK_ANTHROPIC", raising=False)
+async def test_get_llm_providers_includes_model_presets_and_current_models() -> None:
     from backend.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

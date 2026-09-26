@@ -187,11 +187,6 @@
   white-space: nowrap;
 }
 
-.llm-provider-model-source {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-}
-
 .llm-provider-model-input {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
