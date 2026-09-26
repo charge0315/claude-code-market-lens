@@ -23,6 +23,13 @@ const nextConfig = {
   // クライアント側の再接続ループで React のハイドレーションが実質的に止まる（P6d の E2E で
   // 「ボタンを押しても aria-pressed が変わらない」という形で発覚した）。
   allowedDevOrigins: ['127.0.0.1'],
+  experimental: {
+    // rewrites プロキシの既定タイムアウトは 30 秒。`POST /api/picks/run` は同期で数分かかる
+    // （ショートリスト全銘柄の LLM 判定 + ナレッジ検索）ため、既定のままだとプロキシが
+    // socket hang up で接続を切り、backend は生成を完了しているのに画面は「ピック生成に
+    // 失敗しました」になる（2026-09-26 発生）。
+    proxyTimeout: 15 * 60 * 1000,
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
