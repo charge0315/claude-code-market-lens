@@ -114,6 +114,64 @@ async def test_propose_stock_pick_parses_structured_json(client: GeminiClient, m
     assert out == payload
 
 
+async def test_records_token_usage_from_usage_metadata(client: GeminiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[dict[str, object]] = []
+
+    async def _fake_record(*, feature: str, model: str, usage: object) -> None:
+        assert isinstance(usage, gc._GeminiUsage)
+        recorded.append(
+            {
+                "feature": feature,
+                "model": model,
+                "input": usage.input_tokens,
+                "output": usage.output_tokens,
+                "cache_read": usage.cache_read_input_tokens,
+            }
+        )
+
+    monkeypatch.setattr(gc.api_cost, "record_usage", _fake_record)
+    body = {
+        "candidates": [{"content": {"parts": [{"text": json.dumps({"should_include": False})}]}}],
+        # promptTokenCount はキャッシュ分を含む。思考トークンは出力として課金される。
+        "usageMetadata": {
+            "promptTokenCount": 3000,
+            "cachedContentTokenCount": 1000,
+            "candidatesTokenCount": 400,
+            "thoughtsTokenCount": 600,
+        },
+    }
+    _mock_client(monkeypatch, _FakeResponse(body))
+
+    await client.propose_stock_pick(ticker="7203", prompt="...")
+
+    assert recorded == [
+        {
+            "feature": "stock_pick_gemini",
+            "model": gc.resolve_model("stock_pick", "gemini"),
+            "input": 2000,
+            "output": 1000,
+            "cache_read": 1000,
+        }
+    ]
+
+
+async def test_skips_usage_recording_without_usage_metadata(
+    client: GeminiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    async def _fake_record(*, feature: str, model: str, usage: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(gc.api_cost, "record_usage", _fake_record)
+    _mock_client(monkeypatch, _candidate_response({"should_include": False}))
+
+    await client.propose_stock_pick(ticker="7203", prompt="...")
+
+    assert called is False
+
+
 async def test_propose_portfolio_signal_parses_structured_json(
     client: GeminiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

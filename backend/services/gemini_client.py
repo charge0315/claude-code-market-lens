@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import cast
 
 import httpx
 
 from backend.config import settings
+from backend.services import api_cost
 from backend.services.circuit_breaker import CircuitBreaker
 from backend.services.gemini_errors import (
     GeminiAuthError,
@@ -63,6 +65,38 @@ _EOD_REVIEW_RESPONSE_SCHEMA: JsonDict = _to_gemini(EOD_REVIEW_SCHEMA)
 _TREND_RESPONSE_SCHEMA: JsonDict = _to_gemini(TREND_SCHEMA)
 _NOTE_RESPONSE_SCHEMA: JsonDict = _to_gemini(NOTE_SCHEMA)
 _NEWS_SENTIMENT_RESPONSE_SCHEMA: JsonDict = _to_gemini(NEWS_SENTIMENT_SCHEMA)
+
+
+@dataclass(frozen=True)
+class _GeminiUsage:
+    """`api_cost.record_usage` が読む Anthropic 形式の属性名へ `usageMetadata` を揃えたもの."""
+
+    input_tokens: int
+    output_tokens: int
+    cache_read_input_tokens: int
+    cache_creation_input_tokens: int = 0
+
+
+def _meta_int(meta: dict[str, object], key: str) -> int:
+    value = meta.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _usage_from_metadata(meta: object) -> _GeminiUsage | None:
+    """Gemini の `usageMetadata` をトークン使用量へ変換する（無ければ None）.
+
+    以前は Gemini だけ使用量を記録しておらず、シャドウ推論のコストが `api_costs` に現れなかった。
+    `promptTokenCount` はキャッシュ分を含むため差し引き、思考トークン（`thoughtsTokenCount`）は
+    出力として課金されるため出力へ合算する。
+    """
+    if not isinstance(meta, dict):
+        return None
+    cached = _meta_int(meta, "cachedContentTokenCount")
+    return _GeminiUsage(
+        input_tokens=max(_meta_int(meta, "promptTokenCount") - cached, 0),
+        output_tokens=_meta_int(meta, "candidatesTokenCount") + _meta_int(meta, "thoughtsTokenCount"),
+        cache_read_input_tokens=cached,
+    )
 
 
 class GeminiClient:
@@ -139,6 +173,9 @@ class GeminiClient:
 
         self._breaker.record_success()
         body = res.json()
+        usage = _usage_from_metadata(body.get("usageMetadata") if isinstance(body, dict) else None)
+        if usage is not None:
+            await api_cost.record_usage(feature=feature, model=model, usage=usage)
         try:
             text = body["candidates"][0]["content"]["parts"][0]["text"]
             parsed = json.loads(text)
