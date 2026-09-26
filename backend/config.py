@@ -182,6 +182,10 @@ class Settings(BaseSettings):
     model_auto_promote: bool = Field(default=False, validation_alias="MODEL_AUTO_PROMOTE")
     # champion 昇格ゲートの最小ペーパー成績日数（P0 でユーザー確認済み: 20 営業日）。
     paper_min_days: int = Field(default=20, validation_alias="PAPER_MIN_DAYS", ge=1)
+    # AIピック判定プロンプトの挑戦者（`picks/prompt.py` の PROMPT_VARIANTS、例 "persona-v1"）。
+    # 空なら無効。有効時は公式と同じモデルで別プロンプトを並走させ、`is_shadow=1` で台帳化して
+    # 昇格評価だけに使う（`inference/prompt_challenger.py`）。公式ピックには影響しない。
+    pick_prompt_challenger: str = Field(default="", validation_alias="PICK_PROMPT_CHALLENGER")
     # 特徴量分布ドリフト（PSI）の警告閾値。0.2 超で drift_flag。
     drift_psi_threshold: float = Field(default=0.2, validation_alias="DRIFT_PSI_THRESHOLD", ge=0.0)
 

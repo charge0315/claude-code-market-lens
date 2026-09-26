@@ -109,6 +109,46 @@ async def test_evaluate_promotion_rejects_when_challenger_worse(migrated_db: Pat
     assert out["verdict"] == "reject"
 
 
+async def test_evaluate_promotion_compares_champion_only_on_challenger_dates(migrated_db: Path) -> None:
+    """挑戦者が後から並走を始めても、champion は挑戦者と同じ発行日の成績だけで比べる.
+
+    champion の過去（挑戦者が存在しなかった期間）が好成績でも、同じ日の比較で挑戦者が勝っていれば
+    昇格を提案する（期間のずれで相場環境の差を拾わないため）。
+    """
+    await mr.ensure_registered("champ", lane="mid_term")
+    await mr.ensure_registered("chal", lane="mid_term")
+    await mr.bootstrap_champion_if_missing("mid_term", "champ")
+
+    await _seed_model("champ", n=100, win_rate=0.90)  # 3〜6 月の全期間（挑戦者のいない日を含む）
+    await _seed_model("chal", n=25, win_rate=0.70)  # 3〜6 月の 25 日分だけ
+    # 挑戦者と同じ 25 日の champion は負け越し（champ-0..24 は前半が勝ちになるので、ここで上書き）
+    for i in range(25):
+        await pick_outcome_db.upsert_outcome(
+            pick_id=f"champ-{i}",
+            horizon_days=20,
+            resolved_at="2026-05-01T16:38:00+09:00",
+            realized_return=-0.02,
+            win=False,
+            hit_stop=True,
+            hit_target=False,
+            first_hit="stop",
+            mfe=0.0,
+            mae=-0.02,
+            benchmark_return=0.0,
+            excess_return=-0.02,
+            confidence_bucket="high",
+            direction="bullish",
+        )
+
+    out = await promotion.evaluate_promotion("mid_term", "chal", horizon_days=20)
+
+    assert out["verdict"] == "propose_promote"
+    rationale = out["rationale"]
+    assert isinstance(rationale, dict)
+    champion_metrics = rationale["champion_metrics"]
+    assert isinstance(champion_metrics, dict) and champion_metrics["paper_days"] == 25
+
+
 async def test_evaluate_promotion_holds_when_paper_days_insufficient(migrated_db: Path) -> None:
     await mr.ensure_registered("champ", lane="mid_term")
     await mr.ensure_registered("chal", lane="mid_term")

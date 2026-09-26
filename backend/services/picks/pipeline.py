@@ -156,6 +156,22 @@ async def score_candidate(
     return await asyncio.to_thread(_score_one, code, fundamental, ml_score_provider)
 
 
+async def _ledger_challenger_picks(challenger_picks: list[LedgerEntry], horizon_type: str) -> None:
+    """プロンプト挑戦者の採用分を `is_shadow=1` で台帳化し、昇格評価の対象としてレジストリへ登録する.
+
+    champion にはしない（`ensure_registered` は登録だけ。champion の差し替えは昇格ゲートの提案を
+    人が承認したときだけ）。挑戦者は比較用なので、台帳化に失敗しても公式の結果は返す（フェイルソフト）。
+    """
+    if not challenger_picks:
+        return
+    try:
+        for version in sorted({p.model_version for p in challenger_picks}):
+            await ensure_registered(version, lane=horizon_type)
+        await pl.insert_picks(challenger_picks)
+    except Exception:  # noqa: BLE001 — 挑戦者の記録失敗で公式ピックの結果返却を止めない
+        logger.warning("プロンプト挑戦者の台帳化に失敗しました（%d 件）", len(challenger_picks), exc_info=True)
+
+
 async def run_picks(horizon_type: str) -> PickRunResult:
     """1 系統（中長期 or 短期）のピックを生成し、台帳化して結果を返す."""
     cfg = POOL_CONFIG[horizon_type]
@@ -247,6 +263,7 @@ async def run_picks(horizon_type: str) -> PickRunResult:
     picks: list[LedgerEntry] = []
     rejected: list[RejectedPick] = []
     accepted_outcomes: list[InferenceOutcome] = []
+    challenger_picks: list[LedgerEntry] = []
     gate_horizon = 3 if horizon_type == "short_term" else 20
 
     for code, rec, atr, trend_score in shortlist:
@@ -262,7 +279,10 @@ async def run_picks(horizon_type: str) -> PickRunResult:
             news_block=news_block,
             trend_block=trend_block,
             gate_horizon=gate_horizon,
+            run_challenger=True,
         )
+        if outcome.challenger_pick is not None:
+            challenger_picks.append(outcome.challenger_pick)
         if outcome.pick is not None:
             picks.append(outcome.pick)
             accepted_outcomes.append(outcome)
@@ -277,6 +297,8 @@ async def run_picks(horizon_type: str) -> PickRunResult:
         # 台帳確定（`insert_picks`）の後でのみ呼べる。未設定・失敗時は無視（フェイルソフト）。
         for accepted in accepted_outcomes:
             await record_shadow_judgments(accepted, pick_id=accepted.pick.pick_id if accepted.pick else None)
+
+    await _ledger_challenger_picks(challenger_picks, horizon_type)
 
     summaries = [
         PickSummary(

@@ -28,6 +28,10 @@ confidence cap には統合しない（v1、較正・promotion gate への影響
 行わない（決算サプライズは発表直後の値動きに直結するイベントドリブン材料のため短期・中長期の
 両方が対象、ニュースセンチメントと同じ扱い）。J-Quants の構造化数値のみで自由記述本文が無いため
 隔離LLM呼び出しは不要。composite_score や confidence cap には統合しない（v1、需給軸と同じ理由）。
+
+🆕 llm_overlay の応答検証〜bracket〜verify（E1〜E3・確度較正・確度フロア・台帳行の組み立て）は
+`judgment.py` へ切り出した。プロンプト挑戦者（`prompt_challenger.py`）が公式と同じ基準で
+採点されるようにするため（挑戦者だけ基準が違うと昇格評価が不公平になる）。
 """
 
 from __future__ import annotations
@@ -36,146 +40,38 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
-from typing import cast
 
 from backend.models.inference import InferenceOutcome
-from backend.models.pick import Direction, HorizonType, LedgerEntry, RejectedPick, SubScores
+from backend.models.pick import RejectedPick
 from backend.services.db.inference_trace_db import attach_pick_id, insert_trace_event
-from backend.services.db.pick_outcome_db import cohort_winrate
 from backend.services.db.shadow_prediction_db import insert_shadow_prediction
+from backend.services.inference.judgment import JudgmentContext, judge, num
+from backend.services.inference.prompt_challenger import judge_with_challenger
 from backend.services.jst_time import JST
 from backend.services.learning.pit_snapshot_service import (
     record_earnings_surprise_snapshot,
     record_llm_sentiment_snapshot,
     record_supply_demand_snapshot,
 )
-from backend.services.ledger import prediction_ledger as pl
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
 from backend.services.llm.registry import resolve_feature_provider, resolve_shadow_providers
 from backend.services.picks.bracket import finalize_bracket, standardize_holding_period
 from backend.services.picks.prompt import build_pick_prompt
-from backend.services.registry.calibration import apply_calibration
 from backend.services.scoring.earnings_surprise_analyzer import (
     get_earnings_surprise_data,
     render_earnings_surprise_block,
 )
 from backend.services.scoring.llm_news_sentiment_service import (
-    LlmNewsSentimentResult,
     get_llm_news_sentiment,
     render_news_sentiment_block,
 )
 from backend.services.scoring.supply_demand_analyzer import get_supply_demand_data, render_supply_demand_block
-from backend.services.vault.brand_notes_service import BrandNote, get_brand_note
+from backend.services.vault.brand_notes_service import get_brand_note
 from backend.services.vault.daily_note_service import read_daily_frontmatter
 from backend.services.vault.knowledge_search_client import extract_related_daily_dates, search_ticker_notes
 
 logger = logging.getLogger(__name__)
-
-_VALUE_TRAP_CONFIDENCE_CAP = 35.0
-_CONFLICTING_CONFIDENCE_CAP = 60.0
-# 強いネガティブ×高確信度×高影響度のニュースセンチメント（🆕）のみで発動する confidence cap。
-# 単一の補助シグナルであり、構造的な問題を示す value_trap ほど強くは効かせない
-# （`_VALUE_TRAP_CONFIDENCE_CAP` より緩く、`_CONFLICTING_CONFIDENCE_CAP` よりやや厳しい）。
-# ポジティブ判定で confidence を引き上げる処理は意図的に追加しない（非対称設計、
-# 較正されていない新バイアスを確度スコアへ導入しないため）。
-_NEWS_SENTIMENT_CONFIDENCE_CAP = 55.0
-_NEWS_SENTIMENT_CAP_MIN_LLM_CONFIDENCE = 50.0
-_NEWS_SENTIMENT_CAP_MIN_IMPACT = 50.0
-_MIN_CONFIDENCE = 40.0
-# E3 実測勝率ゲート: コホート約定 n がこれ以上で、勝率がこれ未満なら除外。
-_WINRATE_GATE = 0.45
-_WINRATE_GATE_MIN_SAMPLE = 20
-
-_DIRECTION_MAP: dict[str, str] = {"bullish": "bullish", "bearish": "bearish", "neutral": "neutral", "mixed": "neutral"}
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    """`rec` / `raw` の入れ子フィールドを安全に dict へ絞り込む（非 dict は空）."""
-    return value if isinstance(value, dict) else {}
-
-
-def _num(value: object) -> float | None:
-    """数値なら float、それ以外（bool 含む）は None."""
-    if isinstance(value, bool):
-        return None
-    return float(value) if isinstance(value, (int, float)) else None
-
-
-def _pit_fundamental_snapshot(brand: BrandNote | None) -> dict[str, object] | None:
-    """Vault frontmatter の生の財務指標（数値・enum のみ）を `feature_snapshot` 埋め込み用に返す.
-
-    🆕 P29: 従来は `score_breakdown.fundamental`（recommender のヒューリスティック合成スコア、
-    0-100）しか台帳に残らず、PER/PBR/ROE 等の生値は将来の特徴量エンジニアリングにも PSI
-    ドリフト監視（`registry/drift.py`）にも使えなかった（`plans/03_システム設計` §1.9）。
-    """
-    return brand.to_prompt_dict() if brand else None
-
-
-def _pit_sentiment_snapshot(news_sentiment: LlmNewsSentimentResult | None) -> dict[str, object] | None:
-    """LLM ニュースセンチメント判定の生フィールド（enum/number のみ）を `feature_snapshot` 用に返す.
-
-    🆕 P29: `reasoning`（自由記述）は含めない — `llm_news_sentiment_service` の
-    enum/number 転送境界を `feature_snapshot` の側でも一貫させる。
-    """
-    if news_sentiment is None:
-        return None
-    return {
-        "llm_sentiment_label": news_sentiment.sentiment_label,
-        "llm_sentiment_score": news_sentiment.sentiment_score,
-        "llm_impact_score": news_sentiment.impact_score,
-        "llm_confidence": news_sentiment.confidence,
-        "news_count": news_sentiment.news_count,
-    }
-
-
-def _pit_supply_demand_snapshot(supply_demand: dict[str, object] | None) -> dict[str, object] | None:
-    """週末信用取引残高の生フィールドを `feature_snapshot` 用に返す（🆕、中長期限定）."""
-    return supply_demand
-
-
-def _pit_earnings_surprise_snapshot(earnings_surprise: dict[str, object] | None) -> dict[str, object] | None:
-    """決算サプライズ・予想修正モメンタムの生フィールドを `feature_snapshot` 用に返す（🆕、両ホライズン対象）."""
-    return earnings_surprise
-
-
-def _feature_snapshot(
-    rec: dict[str, object],
-    atr: float | None,
-    trend_score: float | None,
-    *,
-    brand: BrandNote | None = None,
-    news_sentiment: LlmNewsSentimentResult | None = None,
-    supply_demand: dict[str, object] | None = None,
-    earnings_surprise: dict[str, object] | None = None,
-) -> dict[str, object]:
-    return {
-        "score_breakdown": rec.get("score_breakdown"),
-        "technical_signals": rec.get("technical_signals"),
-        "fundamental_signals": rec.get("fundamental_signals"),
-        "sentiment_average": rec.get("sentiment_average"),
-        "ml_prediction_rate": rec.get("ml_prediction_rate"),
-        "trend_score": trend_score,
-        "atr_14": atr,
-        "current_price": _as_dict(rec.get("technical_signals")).get("current_price"),
-        # 🆕 P29: 遡及的な特徴量エンジニアリング・生粒度 PSI 監視のための生値（§1.9）。
-        "pit_fundamental": _pit_fundamental_snapshot(brand),
-        "pit_sentiment": _pit_sentiment_snapshot(news_sentiment),
-        # 🆕 週末信用取引残高（中長期限定、`supply_demand_analyzer`）。短期ピックでは常に None。
-        "pit_supply_demand": _pit_supply_demand_snapshot(supply_demand),
-        # 🆕 決算サプライズ・予想修正モメンタム（`earnings_surprise_analyzer`）。短期・中長期の両方が対象。
-        "pit_earnings_surprise": _pit_earnings_surprise_snapshot(earnings_surprise),
-    }
-
-
-def _sub_scores(rec: dict[str, object], trend_score: float | None) -> SubScores:
-    breakdown = _as_dict(rec.get("score_breakdown"))
-    return SubScores(
-        technical=_num(breakdown.get("technical")) or 50.0,
-        trend=float(trend_score) if trend_score is not None else 50.0,
-        fundamental=_num(breakdown.get("fundamental")) or 50.0,
-        sentiment=_num(breakdown.get("sentiment")) or 50.0,
-    )
 
 
 class _Recorder:
@@ -230,10 +126,10 @@ async def _record_one_shadow_judgment(provider: LLMProvider, outcome: InferenceO
     if not raw.get("should_include", True):
         return
 
-    raw_entry = _num(raw.get("buy_price"))
-    raw_stop = _num(raw.get("stop_loss_price"))
-    raw_target = _num(raw.get("take_profit_price"))
-    confidence_raw = _num(raw.get("confidence"))
+    raw_entry = num(raw.get("buy_price"))
+    raw_stop = num(raw.get("stop_loss_price"))
+    raw_target = num(raw.get("take_profit_price"))
+    confidence_raw = num(raw.get("confidence"))
     if raw_entry is None or raw_stop is None or raw_target is None or confidence_raw is None:
         logger.warning("%s shadow 判定のレスポンス形式が不正です（%s）", provider.provider_id, pick.symbol)
         return
@@ -305,6 +201,7 @@ async def run_inference(
     trend_block: str | None,
     gate_horizon: int,
     run_id: str | None = None,
+    run_challenger: bool = False,
 ) -> InferenceOutcome:
     """1 銘柄ぶんの推論を stage DAG として実行し、トレースを記録しながらピック or 却下を返す.
 
@@ -313,13 +210,16 @@ async def run_inference(
     `run_id` 省略時は内部生成（既定、`pipeline.run_picks` からの通常呼び出し）。🆕 P36:
     `services/inference/sandbox.py` は事前生成した `run_id` を渡し、API が非同期タスク起動と
     同時に `run_id` を即座に返せるようにする（フロントはその `run_id` で SSE 購読を開始する）。
+    🆕 `run_challenger=True`（`pipeline.run_picks` のみ）で、`PICK_PROMPT_CHALLENGER` が有効なら
+    プロンプト挑戦者も同じ材料で判定し、採用分を `outcome.challenger_pick` に載せる（台帳化は呼び出し側）。
+    sandbox は台帳化しないため挑戦者を呼ばない（既定 False）。
     """
     run_id = run_id or str(uuid.uuid4())
     recorder = _Recorder(run_id, symbol, horizon_type)
 
     # --- stage 1: collect ---
-    tech = _as_dict(rec.get("technical_signals"))
-    current_price = _num(tech.get("current_price"))
+    tech = rec.get("technical_signals")
+    current_price = num(tech.get("current_price")) if isinstance(tech, dict) else None
     if current_price is None or current_price <= 0:
         rejected = RejectedPick(symbol=symbol, status="rejected_inconsistent", reason="現在値が取得できません")
         await recorder.emit("collect", "failed", {"current_price": current_price}, run_status="rejected")
@@ -376,169 +276,65 @@ async def run_inference(
     earnings_surprise_block = render_earnings_surprise_block(earnings_surprise)
     if earnings_surprise is not None:
         await record_earnings_surprise_snapshot(symbol, earnings_surprise)
-    prompt = build_pick_prompt(
+
+    def _build_prompt(variant: str) -> str:
+        return build_pick_prompt(
+            horizon_type=horizon_type,
+            recommendation=rec,
+            current_price=current_price,
+            atr=atr,
+            brand_frontmatter=brand.to_prompt_dict() if brand else None,
+            news_digest_block=news_block,
+            trend_context_block=trend_block,
+            related_daily_frontmatter=related_daily or None,
+            news_sentiment_block=news_sentiment_block,
+            supply_demand_block=supply_demand_block,
+            earnings_surprise_block=earnings_surprise_block,
+            variant=variant,
+        )
+
+    ctx = JudgmentContext(
+        symbol=symbol,
         horizon_type=horizon_type,
-        recommendation=rec,
-        current_price=current_price,
+        batch_run_id=batch_run_id,
+        issued_at=issued_at,
+        rec=rec,
         atr=atr,
-        brand_frontmatter=brand.to_prompt_dict() if brand else None,
-        news_digest_block=news_block,
-        trend_context_block=trend_block,
-        related_daily_frontmatter=related_daily or None,
-        news_sentiment_block=news_sentiment_block,
-        supply_demand_block=supply_demand_block,
-        earnings_surprise_block=earnings_surprise_block,
+        trend_score=trend_score,
+        gate_horizon=gate_horizon,
+        current_price=current_price,
+        brand=brand,
+        news_sentiment=news_sentiment,
+        supply_demand=supply_demand,
+        earnings_surprise=earnings_surprise,
     )
+    provider = resolve_feature_provider("stock_pick")
+    prompt = _build_prompt("v1")
+    # 挑戦者は公式の採否に関係なく判定させるため、公式の LLM 呼び出しより前に独立して実行する。
+    challenger_pick = (
+        await judge_with_challenger(
+            ctx, provider=provider, build_prompt=_build_prompt, base_model_version=model_version
+        )
+        if run_challenger
+        else None
+    )
+
     try:
-        raw = await resolve_feature_provider("stock_pick").propose_stock_pick(ticker=symbol, prompt=prompt)
+        raw = await provider.propose_stock_pick(ticker=symbol, prompt=prompt)
     except LLMError as e:
         rejected = RejectedPick(symbol=symbol, status="llm_error", reason=str(e))
         await recorder.emit("llm_overlay", "failed", {"error": str(e)}, run_status="rejected")
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    if not raw.get("should_include", True):
-        await recorder.emit(
-            "llm_overlay", "done", {"should_include": False, "reasoning": raw.get("reasoning")}, run_status="rejected"
+        return InferenceOutcome(
+            run_id=run_id, symbol=symbol, status="rejected", rejected=rejected, challenger_pick=challenger_pick
         )
-        rejected = RejectedPick(symbol=symbol, status="rejected_hard_excluded", reason="AI が対象外と判断しました")
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
 
-    raw_entry = _num(raw.get("buy_price"))
-    raw_stop = _num(raw.get("stop_loss_price"))
-    raw_target = _num(raw.get("take_profit_price"))
-    confidence_raw = _num(raw.get("confidence"))
-    if raw_entry is None or raw_stop is None or raw_target is None or confidence_raw is None:
-        await recorder.emit("llm_overlay", "failed", {"raw": raw}, run_status="rejected")
-        reason = "AI レスポンスの数値形式が不正です"
-        rejected = RejectedPick(symbol=symbol, status="rejected_inconsistent", reason=reason)
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    await recorder.emit(
-        "llm_overlay",
-        "done",
-        {
-            "should_include": True,
-            "confidence_raw": confidence_raw,
-            "buy_price": raw_entry,
-            "stop_loss_price": raw_stop,
-            "take_profit_price": raw_target,
-            "risk_factors": raw.get("risk_factors") or [],
-            "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
-            "supply_demand": supply_demand,
-            "earnings_surprise": earnings_surprise,
-        },
-        run_status="running",
-    )
-
-    # --- stage 5: bracket ---
-    capped = confidence_raw
-    if _as_dict(rec.get("fundamental_signals")).get("value_trap"):
-        capped = min(capped, _VALUE_TRAP_CONFIDENCE_CAP)  # E2
-    if tech.get("signal_agreement") == "conflicting":
-        capped = min(capped, _CONFLICTING_CONFIDENCE_CAP)
-    if (
-        news_sentiment is not None
-        and news_sentiment.sentiment_label in ("negative", "strongly_negative")
-        and news_sentiment.confidence >= _NEWS_SENTIMENT_CAP_MIN_LLM_CONFIDENCE
-        and news_sentiment.impact_score >= _NEWS_SENTIMENT_CAP_MIN_IMPACT
-    ):
-        capped = min(capped, _NEWS_SENTIMENT_CONFIDENCE_CAP)
-
-    bracket, bracket_reason = finalize_bracket(current_price, atr, raw_entry, raw_stop, raw_target)
-    if bracket is None:
-        await recorder.emit(
-            "bracket", "failed", {"reason": bracket_reason, "capped_confidence": capped}, run_status="rejected"
+    # --- stage 4 後半〜6（llm_overlay の検証 → bracket → verify）は挑戦者と共通（`judgment.judge`）---
+    result = await judge(ctx, raw, model_version=model_version, is_shadow=False, emitter=recorder)
+    if result.pick is None:
+        return InferenceOutcome(
+            run_id=run_id, symbol=symbol, status="rejected", rejected=result.rejected, challenger_pick=challenger_pick
         )
-        rejected = RejectedPick(symbol=symbol, status="rejected_inconsistent", reason=bracket_reason or "3 値不整合")
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    await recorder.emit(
-        "bracket",
-        "done",
-        {"entry": bracket.entry, "stop": bracket.stop, "target": bracket.target, "capped_confidence": capped},
-        run_status="running",
-    )
-
-    # --- stage 6: verify ---
-    if rec.get("recommendation") == "SELL":  # E1
-        await recorder.emit("verify", "failed", {"reason": "recommender SELL"}, run_status="rejected")
-        rejected = RejectedPick(
-            symbol=symbol, status="rejected_hard_excluded", reason="recommender の判定が SELL のため除外"
-        )
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    # 確度の事後較正（CL-7 / N3）。台帳が薄いうちは較正器が無く恒等写像のまま。
-    confidence, _calib_method = apply_calibration(horizon_type, gate_horizon, capped)
-
-    raw_direction = str(rec.get("direction") or "neutral")
-    direction = cast("Direction", _DIRECTION_MAP.get(raw_direction, "neutral"))
-    bucket = pl.confidence_bucket(confidence)
-
-    # E3: 実測勝率ゲート。決着済みコホート（確度バケット × 方向）の勝率が閾値未満で、
-    # かつ約定サンプルが十分（>= _WINRATE_GATE_MIN_SAMPLE）なら、LLM の確度に関わらず除外する。
-    win_rate, n_filled = await cohort_winrate(confidence_bucket=bucket, direction=direction, horizon_days=gate_horizon)
-    if n_filled >= _WINRATE_GATE_MIN_SAMPLE and win_rate is not None and win_rate < _WINRATE_GATE:
-        reason = (
-            f"実測勝率ゲート: {bucket}/{direction} コホート勝率 {win_rate:.0%}"
-            f"（n={n_filled}）が基準 {_WINRATE_GATE:.0%} 未満"
-        )
-        await recorder.emit(
-            "verify", "failed", {"reason": reason, "win_rate": win_rate, "n_filled": n_filled}, run_status="rejected"
-        )
-        rejected = RejectedPick(symbol=symbol, status="rejected_hard_excluded", reason=reason)
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    if confidence < _MIN_CONFIDENCE:
-        reason = f"確度 {confidence:.0f}% が基準（{_MIN_CONFIDENCE:.0f}%）未満"
-        await recorder.emit("verify", "failed", {"reason": reason, "confidence": confidence}, run_status="rejected")
-        rejected = RejectedPick(symbol=symbol, status="rejected_low_confidence", reason=reason)
-        return InferenceOutcome(run_id=run_id, symbol=symbol, status="rejected", rejected=rejected)
-
-    pick = LedgerEntry(
-        pick_id=pl.new_pick_id(),
-        run_id=batch_run_id,
-        issued_at=issued_at,
-        horizon_type=cast("HorizonType", horizon_type),
-        symbol=symbol,
-        direction=direction,
-        entry=round(bracket.entry, 2),
-        stop=round(bracket.stop, 2),
-        target=round(bracket.target, 2),
-        sub_scores=_sub_scores(rec, trend_score),
-        composite_score=_num(rec.get("composite_score")) or 50.0,
-        concordance=_num(rec.get("concordance")) or 0.0,
-        confidence_raw=confidence_raw,
-        confidence=confidence,
-        confidence_bucket=bucket,
-        feature_snapshot=_feature_snapshot(
-            rec,
-            atr,
-            trend_score,
-            brand=brand,
-            news_sentiment=news_sentiment,
-            supply_demand=supply_demand,
-            earnings_surprise=earnings_surprise,
-        ),
-        rationale_struct={
-            "recommender_reasoning": rec.get("reasoning"),
-            "llm_risk_factors": raw.get("risk_factors") or [],
-            "holding_period_days": standardize_holding_period(raw.get("holding_period_days")),
-            "news_sentiment": news_sentiment.to_rationale_dict() if news_sentiment else None,
-            "supply_demand": supply_demand,
-            "earnings_surprise": earnings_surprise,
-        },
-        rationale_text=str(raw.get("reasoning") or "総合スコアに基づく判定"),
-        model_version=model_version,
-        source_contributions=_as_dict(rec.get("source_contributions")),
-        created_at=datetime.now(JST).isoformat(timespec="seconds"),
-    )
-    await recorder.emit(
-        "verify",
-        "done",
-        {"confidence": confidence, "confidence_bucket": bucket, "win_rate": win_rate, "n_filled": n_filled},
-        run_status="done",
-        pick_id=pick.pick_id,
-    )
+    pick = result.pick
     # 確定したピック ID を、この run の全ステージ行へ遡って紐付ける（銘柄詳細画面が
     # pick_id からトレース全体を引けるようにするため。collect〜bracket は当初 None）。
     await attach_pick_id(run_id, pick.pick_id)
@@ -555,4 +351,5 @@ async def run_inference(
         llm_prompt=prompt,
         current_price=current_price,
         atr=atr,
+        challenger_pick=challenger_pick,
     )

@@ -1,10 +1,10 @@
 """昇格ゲート — champion / challenger の判定（N1）.
 
 `plans/03_システム設計` §3.3。challenger（現行 champion 以外の登録済みバージョン）を、
-そのバージョンが実際に生成し決着済みのピック実績で champion と比較する。Alpha Forge には
-まだ shadow 推論（同一日に challenger 版を並走させる仕組み）が無いため、challenger の実績は
-「そのバージョンが本番ピックとして生成し、後から決着した」実測値を使う（`is_shadow=0` の
-`prediction_ledger` 行）。これは本物の walk-forward 実績であり、リークはない。
+そのバージョンが実際に生成し決着済みのピック実績で champion と比較する。challenger の実績は
+「そのバージョンが生成し、後から決着した」実測値（walk-forward、リークなし）で、本番ピック
+（`is_shadow=0`）とプロンプト挑戦者の shadow 並走（`is_shadow=1`、`inference/prompt_challenger.py`）の
+両方を読む。champion は challenger と同じ発行日の成績だけで比べる（並走開始前の期間を混ぜない）。
 
 昇格条件（すべて満たす）:
 - ペーパー日数（challenger の決着済みピックの発行日ユニーク数）>= `settings.paper_min_days`
@@ -56,10 +56,22 @@ def _r_multiple(realized: float, entry: float, stop: float) -> float | None:
     return realized / risk if risk > 0 else None
 
 
+async def _resolved_rows(model_version: str, *, horizon_days: int) -> list[dict[str, object]]:
+    """指定バージョンの決着済みピック行（挑戦者の `is_shadow=1` 行も含む）."""
+    rows = await pick_outcome_db.list_resolved_for_eval(horizon_days=horizon_days, include_shadow=True)
+    return [r for r in rows if r["model_version"] == model_version]
+
+
+def _issued_date(row: dict[str, object]) -> str:
+    return str(row["issued_at"])[:10]
+
+
 async def compute_model_metrics(model_version: str, *, horizon_days: int) -> ModelMetrics:
     """指定バージョンが生成し決着済みのピックから成績サマリを算出する."""
-    rows = await pick_outcome_db.list_resolved_for_eval(horizon_days=horizon_days)
-    rows = [r for r in rows if r["model_version"] == model_version]
+    return _metrics_from_rows(await _resolved_rows(model_version, horizon_days=horizon_days))
+
+
+def _metrics_from_rows(rows: list[dict[str, object]]) -> ModelMetrics:
     n = len(rows)
     if n == 0:
         return ModelMetrics(sample_n=0, win_rate=None, avg_r_multiple=None, brier=None, paper_days=0)
@@ -82,7 +94,8 @@ async def compute_model_metrics(model_version: str, *, horizon_days: int) -> Mod
 async def evaluate_promotion(lane: str, challenger_version: str, *, horizon_days: int) -> dict[str, object]:
     """challenger を champion と比較し、判定を `model_promotions` へ記録する（提案のみ）."""
     champion_version = await model_registry_db.get_champion(lane)
-    challenger_metrics = await compute_model_metrics(challenger_version, horizon_days=horizon_days)
+    challenger_rows = await _resolved_rows(challenger_version, horizon_days=horizon_days)
+    challenger_metrics = _metrics_from_rows(challenger_rows)
 
     rationale: dict[str, object] = {
         "challenger_metrics": vars(challenger_metrics),
@@ -97,8 +110,13 @@ async def evaluate_promotion(lane: str, challenger_version: str, *, horizon_days
         paper_perf_delta = 0.0
         rationale["reason"] = "champion 未設定、または challenger が既に champion のため比較不要"
     else:
-        champion_metrics = await compute_model_metrics(champion_version, horizon_days=horizon_days)
+        # champion は挑戦者と同じ発行日の成績だけで比べる。挑戦者が後から並走を始めた場合に、
+        # 挑戦者のいない期間（相場環境が違う）の champion 成績と比べてしまうのを防ぐ。
+        challenger_dates = {_issued_date(r) for r in challenger_rows}
+        champion_rows = await _resolved_rows(champion_version, horizon_days=horizon_days)
+        champion_metrics = _metrics_from_rows([r for r in champion_rows if _issued_date(r) in challenger_dates])
         rationale["champion_metrics"] = vars(champion_metrics)
+        rationale["comparison_period"] = "challenger と同じ発行日のみ"
 
         holdout_delta = (challenger_metrics.win_rate or 0.0) - (champion_metrics.win_rate or 0.0)
         calib_regressed = (

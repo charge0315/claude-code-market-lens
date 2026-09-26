@@ -23,6 +23,37 @@ from backend.services.picks.bracket import suggested_bracket
 
 _HORIZON_LABEL = {"mid_term": "中長期（保有目安 数週間〜数ヶ月）", "short_term": "短期（当日〜3 営業日）"}
 
+# プロンプトの版。"v1" が champion（本番）の文面で、それ以外は挑戦者として shadow 並走させる版。
+# 版ごとに変えるのは冒頭の役割・判断基準だけで、材料（銘柄以降）と「制約」は全版で共通にする
+# （違いをプロンプトの指示だけの効果として実測するため。`inference/prompt_challenger.py` 参照）。
+PROMPT_VARIANTS: tuple[str, ...] = ("v1", "persona-v1")
+
+# persona-v1: 人物設定（口調・権威づけ）ではなく、判断基準の明文化を目的とした版。
+# 「推奨する」「プロとして」のような言い回しは入れない（外部公開物の検証用語方針と整合させる）。
+_PERSONA_V1_RULES: tuple[str, ...] = (
+    "目的は当システムの定量分析を点検し、根拠が揃った候補だけを残すことです。",
+    "## 判断基準",
+    "- 定量分析（サブスコア・concordance）と材料（トレンド・ニュース判定・決算・需給）が同じ方向を"
+    "向いているときだけ確信度を高くする。食い違いがあれば確信度を下げ、根拠に明記する。",
+    "- 損切り価格を先に決める。ATR の目安ブラケットから大きく外れる場合は理由を書く。",
+    "- 想定リスクに対して想定リターンが見合わない（目安: 1.5 倍未満）なら should_include=false にする。",
+    "- 材料が乏しい・データが欠けている場合は、無理に採用せず見送ってよい。",
+    "- 確信度は「同じ条件の候補を 10 回選んだら何回当たるか」の感覚で付ける。",
+)
+
+
+def _intro_lines(horizon_type: str, variant: str) -> list[str]:
+    """版ごとの冒頭（役割と判断基準）を返す."""
+    horizon = _HORIZON_LABEL.get(horizon_type, horizon_type)
+    if variant == "v1":
+        return [f"あなたは日本株の {horizon} 投資の分析を補助するアシスタントです。"]
+    if variant == "persona-v1":
+        return [
+            f"あなたは日本株の {horizon} における、リスク管理を重視する検証担当アナリストです。",
+            *_PERSONA_V1_RULES,
+        ]
+    raise ValueError(f"未知のプロンプト版です: {variant}")
+
 
 def build_pick_prompt(
     *,
@@ -37,11 +68,12 @@ def build_pick_prompt(
     news_sentiment_block: str | None = None,
     supply_demand_block: str | None = None,
     earnings_surprise_block: str | None = None,
+    variant: str = "v1",
 ) -> str:
     """1 銘柄分の深掘りプロンプトを組み立てる（forced tool-use `propose_stock_pick` 前提）."""
     symbol = str(recommendation.get("ticker", ""))
     lines: list[str] = [
-        f"あなたは日本株の {_HORIZON_LABEL.get(horizon_type, horizon_type)} 投資の分析を補助するアシスタントです。",
+        *_intro_lines(horizon_type, variant),
         "以下は当システムの定量分析結果です。これを踏まえ、propose_stock_pick ツールで"
         "推奨買値・損切り価格・推奨売値・確信度・根拠を返してください。",
         "",

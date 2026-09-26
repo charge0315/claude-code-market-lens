@@ -10,7 +10,9 @@ import pandas as pd
 import pytest
 
 from backend.services.anthropic_errors import AnthropicRateLimitError
+from backend.services.db import model_registry_db
 from backend.services.inference import orchestrator as orch
+from backend.services.inference import prompt_challenger as pc
 from backend.services.ledger import prediction_ledger as pl
 from backend.services.picks import pipeline as pp
 
@@ -329,3 +331,36 @@ def test_order_candidate_codes_follows_horizon_rules() -> None:
     assert order_candidate_codes(rankings, "short_term", 10) == ["2222", "4444", "1111"]
     assert order_candidate_codes(rankings, "mid_term", 10) == ["1111", "2222", "4444", "3333"]
     assert order_candidate_codes(rankings, "mid_term", 2) == ["1111", "2222"]
+
+
+# --- プロンプト挑戦者（`inference/prompt_challenger.py`）の台帳化 ---
+
+
+async def test_run_picks_ledgers_challenger_as_shadow_and_registers_it(
+    wired: WiredState, migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pc, "settings", pc.settings.model_copy(update={"pick_prompt_challenger": "persona-v1"}))
+    challenger_version = f"{pp.MODEL_VERSION}+persona-v1"
+
+    result = await pp.run_picks("mid_term")
+
+    official = await pl.list_picks(horizon_type="mid_term")
+    everything = await pl.list_picks(horizon_type="mid_term", include_shadow=True)
+    shadow = [p for p in everything if p.model_version == challenger_version]
+    # 公式の結果・一覧は挑戦者を含まない
+    assert {p.symbol for p in result.picks} == {"7203", "6758"}
+    assert all(p.model_version == pp.MODEL_VERSION for p in result.picks)
+    assert {p.symbol for p in official} == {"7203", "6758"}
+    assert all(p.model_version == pp.MODEL_VERSION for p in official)
+    # 挑戦者は同じ銘柄について is_shadow で台帳化される
+    assert {p.symbol for p in shadow} == {"7203", "6758"}
+    # 昇格評価の対象になるようレジストリへ登録され、champion は公式のまま
+    assert await model_registry_db.get_model(challenger_version) is not None
+    assert await model_registry_db.get_champion("mid_term") == pp.MODEL_VERSION
+
+
+async def test_run_picks_without_challenger_writes_no_shadow_rows(wired: WiredState, migrated_db: Path) -> None:
+    await pp.run_picks("mid_term")
+
+    everything = await pl.list_picks(horizon_type="mid_term", include_shadow=True)
+    assert {p.model_version for p in everything} == {pp.MODEL_VERSION}

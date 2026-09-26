@@ -66,6 +66,9 @@ class InferenceOutcome(BaseModel):
     llm_prompt: str | None = None
     current_price: float | None = None
     atr: float | None = None
+    # 🆕 プロンプト挑戦者（`inference/prompt_challenger.py`）の採用分（`is_shadow=True`）。
+    # 公式の採否（status）とは独立して入る。台帳化は `pipeline.run_picks` が行う。
+    challenger_pick: LedgerEntry | None = None
 
 
 class SandboxTriggerRequest(BaseModel):

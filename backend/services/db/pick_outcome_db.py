@@ -80,7 +80,10 @@ async def upsert_outcome(
 
 
 async def list_picks_with_missing_outcomes(*, horizon_count: int) -> list[dict[str, object]]:
-    """決着行が `horizon_count` 件そろっていないピック（本番のみ）を古い順に、書き済みホライズン付きで返す.
+    """決着行が `horizon_count` 件そろっていないピックを、書き済みホライズン付きで返す.
+
+    🆕 プロンプト挑戦者（`is_shadow=1`）も昇格評価のために決着させる。夜間の件数上限を公式が
+    優先して使えるよう、公式（`is_shadow=0`）を先に、その中で古い順に並べる。
 
     🔧 2026-09-26: 旧 `list_unresolved_picks` は「決着行が 1 つもない」ピックだけを古い順に
     LIMIT 付きで返していたため、(1) 最初のホライズンだけ書かれたピックの残り（中長期の 20/60 日、
@@ -95,10 +98,9 @@ async def list_picks_with_missing_outcomes(*, horizon_count: int) -> list[dict[s
                 SELECT p.*, GROUP_CONCAT(o.horizon_days) AS written_horizons
                 FROM prediction_ledger p
                 LEFT JOIN pick_outcomes o ON o.pick_id = p.pick_id
-                WHERE p.is_shadow = 0
                 GROUP BY p.pick_id
                 HAVING COUNT(o.outcome_id) < :horizon_count
-                ORDER BY p.issued_at ASC
+                ORDER BY p.is_shadow ASC, p.issued_at ASC
                 """),
             {"horizon_count": horizon_count},
         )
@@ -115,9 +117,17 @@ async def list_outcomes(pick_id: str) -> list[dict[str, object]]:
         return [dict(r._mapping) for r in result]
 
 
-async def list_resolved_for_eval(*, horizon_days: int, since: str | None = None) -> list[dict[str, object]]:
-    """評価集計用に、決着済みピックの (台帳 + 決着) を結合して返す（指定ホライズン）."""
+async def list_resolved_for_eval(
+    *, horizon_days: int, since: str | None = None, include_shadow: bool = False
+) -> list[dict[str, object]]:
+    """評価集計用に、決着済みピックの (台帳 + 決着) を結合して返す（指定ホライズン）.
+
+    既定は公式ピックのみ。評価画面・確度較正・ファクター重みに挑戦者を混ぜないため。
+    `include_shadow=True` は昇格評価（champion と challenger の比較）専用。
+    """
     clause = "AND p.issued_at >= :since" if since else ""
+    if not include_shadow:
+        clause += " AND p.is_shadow = 0"
     params: dict[str, object] = {"horizon_days": horizon_days}
     if since:
         params["since"] = since
@@ -171,8 +181,9 @@ async def cohort_winrate(
 
     実測勝率ゲート（E3、ピックパイプライン P3d のハード除外）が参照する。台帳が薄いうちは
     件数が小さく、ゲート発動条件（min_sample）に満たない。
+    挑戦者（`is_shadow=1`）の決着は本番のゲート判断に使わない（台帳と結合して除外する）。
     """
-    clauses = ["o.horizon_days = :horizon_days"]
+    clauses = ["o.horizon_days = :horizon_days", "p.is_shadow = 0"]
     params: dict[str, object] = {"horizon_days": horizon_days}
     if confidence_bucket is not None:
         clauses.append("o.confidence_bucket = :cb")
@@ -184,7 +195,8 @@ async def cohort_winrate(
     async with get_db() as db:
         result = await db.execute(
             text(
-                f"SELECT excess_return FROM pick_outcomes o WHERE {where}"  # noqa: S608  # nosec B608 - where は定数のみ
+                "SELECT o.excess_return FROM pick_outcomes o"
+                f" JOIN prediction_ledger p ON p.pick_id = o.pick_id WHERE {where}"  # noqa: S608  # nosec B608 - where は定数のみ
             ),
             params,
         )
