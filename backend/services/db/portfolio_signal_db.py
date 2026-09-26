@@ -90,6 +90,26 @@ async def get_signal(signal_id: str) -> dict[str, object] | None:
         return dict(row._mapping) if row is not None else None
 
 
+async def get_latest_approved_signal(symbol: str, *, since: str) -> dict[str, object] | None:
+    """指定銘柄で人が承認した（`approved`/`executed`）最新の判定を返す（無ければ None）.
+
+    保有中の損切値を「承認済みの値より下げない」基準に使う（`signal_service`）。未承認・却下の
+    判定は人が合意していないので基準にしない。`since`（ロットの取得日）より前の判定は、売却後に
+    買い直した場合の前回ポジションのものなので除外する。
+    """
+    async with get_db() as db:
+        result = await db.execute(
+            text("""
+                SELECT * FROM portfolio_signals
+                WHERE symbol = :symbol AND status IN ('approved', 'executed') AND evaluated_at >= :since
+                ORDER BY evaluated_at DESC LIMIT 1
+                """),
+            {"symbol": symbol, "since": since},
+        )
+        row = result.first()
+        return dict(row._mapping) if row is not None else None
+
+
 async def set_status(signal_id: str, status: str) -> bool:
     """`status` を更新する（`proposed`→`approved`/`rejected` の遷移用）。対象行が無ければ False."""
     async with get_db() as db:

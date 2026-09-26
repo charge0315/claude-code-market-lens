@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.services.db.portfolio_signal_db import (
+    get_latest_approved_signal,
     get_signal,
     insert_signal,
     list_signals,
@@ -152,3 +153,50 @@ async def test_supersede_pending_also_removes_shadow_judgments(migrated_db: Path
 
 async def test_supersede_pending_no_rows_returns_zero(migrated_db: Path) -> None:
     assert await supersede_pending("7203") == 0
+
+
+async def _insert_with_status(symbol: str, stop: float, evaluated_at: str, status: str) -> str:
+    signal_id = await insert_signal(
+        symbol=symbol,
+        action="hold",
+        stop=stop,
+        target=stop * 2,
+        confidence=60.0,
+        rationale="x",
+        evaluated_at=evaluated_at,
+    )
+    if status == "executed":
+        await set_fill_report(signal_id, "{}")
+    elif status != "proposed":
+        await set_status(signal_id, status)
+    return signal_id
+
+
+async def test_get_latest_approved_signal_returns_newest_approved_or_executed(migrated_db: Path) -> None:
+    await _insert_with_status("3856", 171.25, "2026-09-24T09:30:00+09:00", "approved")
+    await _insert_with_status("3856", 175.0, "2026-09-24T10:00:00+09:00", "executed")
+
+    row = await get_latest_approved_signal("3856", since="2026-09-01")
+    assert row is not None and row["stop"] == 175.0
+
+
+async def test_get_latest_approved_signal_ignores_proposed_and_rejected(migrated_db: Path) -> None:
+    await _insert_with_status("3856", 171.25, "2026-09-24T09:30:00+09:00", "approved")
+    await _insert_with_status("3856", 180.0, "2026-09-24T10:00:00+09:00", "rejected")
+    await _insert_with_status("3856", 185.0, "2026-09-24T10:05:00+09:00", "proposed")
+
+    row = await get_latest_approved_signal("3856", since="2026-09-01")
+    assert row is not None and row["stop"] == 171.25
+
+
+async def test_get_latest_approved_signal_ignores_signals_before_acquisition(migrated_db: Path) -> None:
+    """同じ銘柄を売却後に買い直した場合、前回ポジションの損切値を引き継がない."""
+    await _insert_with_status("3856", 171.25, "2026-09-10T09:30:00+09:00", "approved")
+
+    assert await get_latest_approved_signal("3856", since="2026-09-20") is None
+
+
+async def test_get_latest_approved_signal_is_per_symbol(migrated_db: Path) -> None:
+    await _insert_with_status("7203", 900.0, "2026-09-24T09:30:00+09:00", "approved")
+
+    assert await get_latest_approved_signal("3856", since="2026-09-01") is None

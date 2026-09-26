@@ -11,7 +11,7 @@ from backend.models.portfolio import PortfolioHolding
 from backend.services.anthropic_errors import AnthropicRateLimitError
 from backend.services.db.notification_db import list_notifications
 from backend.services.db.portfolio_db import insert_holding
-from backend.services.db.portfolio_signal_db import get_signal, list_signals
+from backend.services.db.portfolio_signal_db import get_signal, insert_signal, list_signals, set_status
 from backend.services.db.portfolio_signal_shadow_db import get_shadows_for_signals
 from backend.services.gemini_errors import GeminiRateLimitError
 from backend.services.portfolio import signal_service as svc
@@ -285,6 +285,137 @@ async def test_evaluate_holding_gemini_invalid_action_records_no_shadow(
     assert signal_id is not None
     shadows = await get_shadows_for_signals([signal_id])
     assert shadows == {}
+
+
+class _MustNotCallLLM:
+    """損切到達時は LLM を呼ばずに判定することを検証するスタブ（呼ばれたらテスト失敗）."""
+
+    provider_id = "anthropic"
+
+    async def propose_portfolio_signal(self, *, symbol: str, prompt: str) -> dict[str, object]:  # noqa: ARG002
+        raise AssertionError("損切到達時に LLM を呼んではならない")
+
+
+async def _approved_signal(
+    *, stop: float, target: float = 1200.0, evaluated_at: str = "2026-09-24T09:30:00+09:00", symbol: str = "7203"
+) -> str:
+    signal_id = await insert_signal(
+        symbol=symbol,
+        action="hold",
+        stop=stop,
+        target=target,
+        confidence=60.0,
+        rationale="承認済みの判定",
+        evaluated_at=evaluated_at,
+    )
+    await set_status(signal_id, "approved")
+    return signal_id
+
+
+# 以下の損切値の数値は `_stub_price_data`（ATR=20、現在値 1050）と `_DEFAULT_LLM`（stop 950）が前提。
+# LLM の 950 は ATR 許容レンジ（1050-3×20 〜 1050-1×20）へクランプされて 990 になる。
+
+
+async def test_evaluate_holding_hold_does_not_lower_stop_below_approved(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """保有中は承認済みの損切値より下げない（値下がりに合わせて損切値がずり下がる不具合の回帰防止）."""
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    await _approved_signal(stop=1000.0)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["action"] == "hold"
+    assert row["stop"] == pytest.approx(1000.0)
+    assert "1000" in str(row["rationale"])
+
+
+async def test_evaluate_holding_hold_allows_raising_stop_above_approved(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    await _approved_signal(stop=980.0)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["stop"] == pytest.approx(990.0)
+    assert row["rationale"] == "堅調に推移"
+
+
+async def test_evaluate_holding_trim_does_not_lower_stop_below_approved(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire_official(monkeypatch, {**_DEFAULT_LLM, "action": "trim"})
+    await _approved_signal(stop=1000.0)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["stop"] == pytest.approx(1000.0)
+
+
+async def test_evaluate_holding_ignores_approved_stop_before_acquisition(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """売却後に買い直したロットへ、前回ポジションの損切値を持ち込まない."""
+    _wire_official(monkeypatch, _DEFAULT_LLM)
+    await _approved_signal(stop=1000.0, evaluated_at="2026-09-10T09:30:00+09:00")
+
+    signal_id = await svc.evaluate_holding(_holding(acquired_at="2026-09-20"))
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["stop"] == pytest.approx(990.0)
+
+
+async def test_evaluate_holding_proposes_stop_loss_when_price_breaches_approved_stop(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """現在値が承認済みの損切値以下なら、LLM を呼ばずに損切を提案して通知する."""
+    monkeypatch.setattr(svc, "resolve_feature_provider", lambda _feature: _MustNotCallLLM())
+    await _approved_signal(stop=1060.0, target=1250.0)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["action"] == "stop_loss"
+    assert row["status"] == "proposed"
+    assert row["stop"] == pytest.approx(1060.0)
+    assert row["target"] == pytest.approx(1250.0)
+    assert "1060" in str(row["rationale"])
+
+    notifications = await list_notifications()
+    assert len(notifications) == 1
+    assert notifications[0]["kind"] == "stop_loss"
+
+
+async def test_evaluate_holding_add_is_not_affected_by_approved_stop(
+    migrated_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """買い増し（add）は新規建てを含むため、損切値の引き下げ禁止の対象外."""
+    _wire_official(
+        monkeypatch,
+        {**_DEFAULT_LLM, "action": "add", "entry": 1055.0, "take_profit_price": 1200.0},
+    )
+    await _approved_signal(stop=1000.0)
+
+    signal_id = await svc.evaluate_holding(_holding())
+
+    assert signal_id is not None
+    row = await get_signal(signal_id)
+    assert row is not None
+    assert row["stop"] == pytest.approx(990.0)
 
 
 async def test_run_portfolio_monitor_evaluates_all_holdings(migrated_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:

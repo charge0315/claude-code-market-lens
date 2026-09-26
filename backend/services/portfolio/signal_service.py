@@ -16,7 +16,7 @@ import logging
 
 from backend.models.portfolio import PortfolioHolding
 from backend.services.data.data_fetcher import get_stock_data
-from backend.services.db.portfolio_signal_db import insert_signal, supersede_pending
+from backend.services.db.portfolio_signal_db import get_latest_approved_signal, insert_signal, supersede_pending
 from backend.services.db.portfolio_signal_shadow_db import insert_shadow
 from backend.services.llm.errors import LLMError
 from backend.services.llm.provider import LLMProvider
@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 _ATR_PERIOD = 14
 _ATR_LOOKBACK = "3mo"
 _VALID_ACTIONS = frozenset({"hold", "trim", "stop_loss", "add"})
+# 承認済みの損切値より下げない action。add は新規建てを含み損切値を置き直す判断なので対象外。
+_NO_LOWER_STOP_ACTIONS = frozenset({"hold", "trim"})
+# 承認済み損切値への到達はルール判定（LLM の確信度ではない）なので最大値で記録する。
+_BREACH_CONFIDENCE = 100.0
 
 
 def _num(value: object) -> float | None:
@@ -130,15 +134,96 @@ async def _record_shadow_signals(
     )
 
 
+async def _approved_levels(holding: PortfolioHolding) -> tuple[float, float] | None:
+    """このロットで人が承認した最新判定の (損切値, 売値) を返す（無ければ None）."""
+    row = await get_latest_approved_signal(holding.symbol, since=holding.acquired_at)
+    if row is None:
+        return None
+    stop, target = _num(row["stop"]), _num(row["target"])
+    if stop is None or target is None:
+        return None
+    return stop, target
+
+
+async def _record_signal(
+    holding: PortfolioHolding,
+    *,
+    action: str,
+    entry: float | None,
+    stop: float,
+    target: float,
+    confidence: float,
+    rationale: str,
+) -> str:
+    """判定を承認待ちとして記録し通知する（同一銘柄の古い未承認判定は置き換える）."""
+    # 承認待ちキューに古い判定が積み上がらないよう、新規判定の挿入直前に同一銘柄の未承認
+    # （status='proposed'）判定を削除する（最新の1件だけを承認待ちに残す、CLAUDE.md 承認制）。
+    await supersede_pending(holding.symbol)
+    signal_id = await insert_signal(
+        symbol=holding.symbol,
+        action=action,
+        entry=entry,
+        stop=stop,
+        target=target,
+        confidence=confidence,
+        rationale=rationale,
+    )
+    await notify_signal(
+        symbol=holding.symbol,
+        action=action,
+        stop=stop,
+        target=target,
+        confidence=confidence,
+        rationale=rationale,
+        entry=entry,
+    )
+    return signal_id
+
+
+async def _propose_stop_loss_on_breach(
+    holding: PortfolioHolding, current_price: float, approved_stop: float, approved_target: float
+) -> str:
+    """現在値が承認済みの損切値以下に到達したとき、LLM を介さず損切を提案する.
+
+    LLM 判定に任せると、現在値を基準に損切値を引き直して hold を返し続けるため到達を
+    見逃す（2026-09-26 に 3856 で発生）。到達の判定は定量ルールなのでサーバ側で確定させる。
+    この場合 `stop >= 現在値` になるが、新規建ての3値検証（`stop < 現在値 < target`）は
+    「これから置く損切値」の妥当性の検査であり、到達済みの損切値の報告には当てはまらない。
+    """
+    rationale = (
+        f"現在値 {current_price:.1f} 円が承認済みの損切値 {approved_stop:.2f} 円以下に到達したため、"
+        "損切を提案します（サーバ側のルール判定、LLM 判定なし）。"
+    )
+    logger.info(
+        "ポートフォリオ判定: 承認済み損切値に到達 %s (%.1f <= %.2f)", holding.symbol, current_price, approved_stop
+    )
+    return await _record_signal(
+        holding,
+        action="stop_loss",
+        entry=None,
+        stop=approved_stop,
+        target=approved_target,
+        confidence=_BREACH_CONFIDENCE,
+        rationale=rationale,
+    )
+
+
 async def evaluate_holding(holding: PortfolioHolding) -> str | None:
     """保有 1 ロットを LLM で評価し、判定を `portfolio_signals` へ記録する（提案のみ）.
 
     現在値が取得できない、LLM 呼び出しが失敗する、または応答が3値検証で却下される場合は
     何も記録せず None を返す（次回の監視サイクルで再評価される）。
+
+    保有中の損切値は人が承認した最新判定の値を下限とする（上方向にのみ動かす）。現在値が
+    その値以下なら LLM を呼ばずに損切を提案する（`_propose_stop_loss_on_breach`）。
     """
     if holding.current_price is None:
         logger.debug("ポートフォリオ判定スキップ（現在値未取得）: %s", holding.symbol)
         return None
+
+    approved = await _approved_levels(holding)
+    if approved is not None and holding.current_price <= approved[0]:
+        return await _propose_stop_loss_on_breach(holding, holding.current_price, *approved)
 
     df = get_stock_data(holding.symbol, period=_ATR_LOOKBACK)
     atr = compute_atr(df, _ATR_PERIOD)
@@ -184,26 +269,13 @@ async def evaluate_holding(holding: PortfolioHolding) -> str | None:
     stop = round(bracket.stop, 2)
     target = round(bracket.target, 2)
     rationale = str(raw.get("reasoning") or "定量分析に基づく判定")
-    # 承認待ちキューに古い判定が積み上がらないよう、新規判定の挿入直前に同一銘柄の未承認
-    # （status='proposed'）判定を削除する（最新の1件だけを承認待ちに残す、CLAUDE.md 承認制）。
-    await supersede_pending(holding.symbol)
-    signal_id = await insert_signal(
-        symbol=holding.symbol,
-        action=action,
-        entry=entry,
-        stop=stop,
-        target=target,
-        confidence=confidence,
-        rationale=rationale,
-    )
-    await notify_signal(
-        symbol=holding.symbol,
-        action=action,
-        stop=stop,
-        target=target,
-        confidence=confidence,
-        rationale=rationale,
-        entry=entry,
+    if action in _NO_LOWER_STOP_ACTIONS and approved is not None and stop < approved[0]:
+        # LLM は毎回現在値を基準に損切値を引き直すため、値下がりに合わせて損切値がずり下がる。
+        # 承認済みの値を下限に戻し、LLM の根拠文と記録値の食い違いを注記で明示する。
+        rationale += f"（損切値は LLM 提案の {stop:.2f} 円から、承認済みの {approved[0]:.2f} 円へ補正）"
+        stop = approved[0]
+    signal_id = await _record_signal(
+        holding, action=action, entry=entry, stop=stop, target=target, confidence=confidence, rationale=rationale
     )
     await _record_shadow_signals(
         signal_id=signal_id, holding=holding, prompt=prompt, current_price=holding.current_price, atr=atr
